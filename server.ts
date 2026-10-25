@@ -41,7 +41,7 @@ async function startServer() {
     });
   }
 
-  const PORT = Number(process.env.PORT || 3000);
+  const PORT = Number(process.env.PORT || 5000);
   const httpServer = createHttpServer(app);
   // Voice notes base64 me aate hain — default 1MB buffer bahut chhota hai.
   const socketServer = new SocketIOServer(httpServer, {
