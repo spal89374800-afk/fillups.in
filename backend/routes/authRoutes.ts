@@ -240,21 +240,35 @@ authRouter.post('/auth/send-otp', async (req, res) => {
   const channels: string[] = [];
 
   if (hasEmail) {
-    const smtpPort = Number(process.env.SMTP_PORT || 465);
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: smtpPort,
-      secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : smtpPort === 465,
-      auth: { user: smtpUser, pass: smtpPass }
-    });
-    deliveries.push(
-      transporter.sendMail({
-        from: `"DigiSeva Pro" <${smtpUser}>`,
-        to: normalizedEmail,
-        subject: 'Your DigiSeva Pro login OTP',
-        text: `Your DigiSeva Pro login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`
-      })
-    );
+    deliveries.push((async () => {
+      const portsToTry = [Number(process.env.SMTP_PORT || 465)];
+      if (!portsToTry.includes(587)) portsToTry.push(587);
+      let lastError: unknown;
+      for (const port of portsToTry) {
+        try {
+          const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST || 'smtp.gmail.com',
+            port,
+            secure: port === 465,
+            auth: { user: smtpUser, pass: smtpPass },
+            connectionTimeout: 12000,
+            greetingTimeout: 12000,
+            socketTimeout: 15000
+          });
+          await transporter.sendMail({
+            from: `"DigiSeva Pro" <${smtpUser}>`,
+            to: normalizedEmail,
+            subject: 'Your DigiSeva Pro login OTP',
+            text: `Your DigiSeva Pro login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`
+          });
+          return;
+        } catch (err) {
+          lastError = err;
+          console.error(`[Gmail OTP] port ${port} failed:`, err instanceof Error ? err.message : err);
+        }
+      }
+      throw (lastError instanceof Error ? lastError : new Error('Gmail delivery failed'));
+    })());
     channels.push('Gmail');
   }
 
@@ -293,6 +307,32 @@ authRouter.post('/auth/send-otp', async (req, res) => {
     channels.push('WhatsApp');
   }
 
+  const resendKey = readEnvValue('RESEND_API_KEY');
+  if (resendKey) {
+    deliveries.push(
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM || 'DigiSeva Pro <onboarding@resend.dev>',
+          to: [normalizedEmail],
+          subject: 'Your DigiSeva Pro login OTP',
+          text: `Your DigiSeva Pro login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`
+        })
+      }).then(async response => {
+        if (!response.ok) {
+          console.error(`[Resend OTP] HTTP ${response.status}`);
+          throw new Error(`Resend API returned HTTP ${response.status}.`);
+        }
+        return response.json();
+      })
+    );
+    channels.push('Email');
+  }
+
   const results = await Promise.allSettled(deliveries);
   const succeeded: string[] = [];
   results.forEach((result, index) => {
@@ -306,9 +346,29 @@ authRouter.post('/auth/send-otp', async (req, res) => {
   });
 
   if (succeeded.length === 0) {
+    // Delivery failed (common on Render/PaaS where outbound SMTP is blocked).
+    // Fall back to a test OTP so login keeps working when TEST_OTP_ENABLED=true.
+    if (isTestOtpEnabled()) {
+      activeOtpStore[normalizedTarget] = {
+        code,
+        email: normalizedEmail,
+        role: userRole,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        attempts: 0
+      };
+      console.log(`[TEST OTP fallback] delivery failed; code=${code} target=${normalizedTarget}`);
+      return res.json({
+        success: true,
+        channel: 'test',
+        target: cleanPhone,
+        emailTarget: normalizedEmail,
+        testOtp: code,
+        message: 'Email/WhatsApp delivery failed on the server. A test OTP has been generated and auto-filled.'
+      });
+    }
     return res.status(502).json({
       success: false,
-      error: `Could not deliver the OTP via ${channels.join(' or ')}. Check the credentials and try again.`
+      error: `Could not deliver the OTP via ${channels.join(' or ')}. Check the server SMTP/WhatsApp settings and try again.`
     });
   }
 
