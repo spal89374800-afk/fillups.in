@@ -14,7 +14,10 @@ export default defineConfig(() => {
       },
     },
     build: {
-      outDir: path.resolve(rootDir, 'dist'),
+      // Build to the repository root `dist/` so the existing Render static-site
+      // publish directory keeps working. `npm run build` also mirrors it into
+      // `frontend/dist/` for static hosts configured with that publish path.
+      outDir: path.resolve(rootDir, '..', 'dist'),
       emptyOutDir: true,
     },
     server: {

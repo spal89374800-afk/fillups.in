@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "tsx server.ts",
-    "build": "vite build --config frontend/vite.config.ts",
+    "build": "vite build --config frontend/vite.config.ts && node frontend/sync-dist.mjs",
     "postinstall": "npm run build",
     "preview": "vite preview",
     "clean": "rm -rf dist frontend/dist server.js",

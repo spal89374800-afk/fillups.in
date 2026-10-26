@@ -17,7 +17,13 @@ const frontendDir = path.resolve(projectRoot, 'frontend');
 async function startServer() {
   const app = createExpressApp();
 
-  const distPath = path.resolve(frontendDir, 'dist');
+  // The build is written to the repository root `dist/` and mirrored to
+  // `frontend/dist/`. Prefer the root copy, fall back to the mirror.
+  const rootDistPath = path.resolve(projectRoot, 'dist');
+  const mirroredDistPath = path.resolve(frontendDir, 'dist');
+  const distPath = fs.existsSync(path.join(rootDistPath, 'index.html'))
+    ? rootDistPath
+    : mirroredDistPath;
   let hasDist = fs.existsSync(path.join(distPath, 'index.html'));
 
   // Render does not always set NODE_ENV=production. Detect Render explicitly so
