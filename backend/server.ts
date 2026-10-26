@@ -13,6 +13,12 @@ import { startDocumentRetentionScheduler } from './services/documentRetentionSer
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
 const frontendDir = path.resolve(projectRoot, 'frontend');
+// Vite is only installed when the frontend build dependencies are present
+// (monolithic deploy). A pure backend (API-only) service on Render does not
+// have them, so we must not try to build or serve the frontend there.
+const viteAvailable =
+  fs.existsSync(path.join(projectRoot, 'node_modules', 'vite', 'package.json')) ||
+  fs.existsSync(path.join(frontendDir, 'node_modules', 'vite', 'package.json'));
 
 async function startServer() {
   const app = createExpressApp();
@@ -39,7 +45,7 @@ async function startServer() {
   // If a production build is missing, build it on startup so the app always
   // serves a real bundle. `frontend/dist` is generated (not committed), so this
   // also acts as a safety net if the Render build step is skipped.
-  if (isProduction && fs.existsSync(frontendDir) && !hasDist) {
+  if (isProduction && fs.existsSync(frontendDir) && viteAvailable && !hasDist) {
     try {
       console.log('[startup] dist build missing — running npm run build...');
       execSync('npm run build', { stdio: 'inherit', cwd: projectRoot });
@@ -51,7 +57,7 @@ async function startServer() {
 
   // Serve the built frontend in production. Vite middleware is used only for
   // local development (or if the production build genuinely failed).
-  if (fs.existsSync(frontendDir) && isProduction && hasDist) {
+  if (fs.existsSync(frontendDir) && viteAvailable && isProduction && hasDist) {
     console.log('[startup] serving built frontend from dist');
     app.use(express.static(distPath, {
       setHeaders: (res, filePath) => {
@@ -69,7 +75,7 @@ async function startServer() {
       res.setHeader('cache-control', 'no-cache');
       res.sendFile(path.join(distPath, 'index.html'));
     });
-  } else if (fs.existsSync(frontendDir)) {
+  } else if (fs.existsSync(frontendDir) && viteAvailable) {
     if (isProduction) process.env.DISABLE_HMR = 'true';
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
