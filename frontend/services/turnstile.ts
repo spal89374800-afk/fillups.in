@@ -1,3 +1,4 @@
+async function parseJsonResponse(response: any) { try { const text = await response.text(); if (!text) return {}; return JSON.parse(text); } catch { return {}; } }
 // ========================================================
 // 🛡️ CLOUDFLARE TURNSTILE HELPER (frontend)
 // ========================================================
@@ -28,7 +29,7 @@ let scriptPromise: Promise<void> | null = null;
 export async function getTurnstileSiteKey(): Promise<string | null> {
   if (!siteKeyPromise) {
     siteKeyPromise = fetch('/api/auth/public-config')
-      .then(response => (response.ok ? response.json() : null))
+      .then(response => (response.ok ? parseJsonResponse(response) : null))
       .then((data: { turnstileSiteKey?: string | null; turnstileEnabled?: boolean } | null) => {
         if (data?.turnstileEnabled && data?.turnstileSiteKey) return data.turnstileSiteKey as string;
         return null;

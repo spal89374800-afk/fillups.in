@@ -1,3 +1,4 @@
+async function parseJsonResponse(response: any) { try { const text = await response.text(); if (!text) return {}; return JSON.parse(text); } catch { return {}; } }
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MapPin, Loader2 } from 'lucide-react';
 
@@ -17,6 +18,8 @@ interface LocationAutocompleteProps {
   wrapperClassName?: string;
   // Set to focus suggestions on one type (optional). When omitted, both district & city show.
   preferType?: LocationSuggestionType;
+  // Optional state filter so district/city suggestions stay within the chosen state.
+  state?: string;
   autoComplete?: string;
   disabled?: boolean;
   onBlur?: () => void;
@@ -34,6 +37,7 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
   className,
   wrapperClassName,
   preferType,
+  state,
   autoComplete = 'off',
   disabled,
   onBlur
@@ -76,7 +80,7 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
       return;
     }
 
-    const cacheKey = `${preferType || 'all'}:${query.toLowerCase()}`;
+    const cacheKey = `${preferType || 'all'}:${(state || '').toLowerCase()}:${query.toLowerCase()}`;
     const cached = cache.get(cacheKey);
     if (cached) {
       setSuggestions(cached);
@@ -89,8 +93,9 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/locations?q=${encodeURIComponent(query)}`);
-        const data = await res.json();
+        const stateParam = state ? `&state=${encodeURIComponent(state)}` : '';
+        const res = await fetch(`/api/locations?q=${encodeURIComponent(query)}${stateParam}`);
+        const data = await parseJsonResponse(res);
         if (cancelled) return;
         const list: LocationSuggestion[] = Array.isArray(data?.suggestions) ? data.suggestions : [];
         const ordered = preferType ? list.filter(suggestion => suggestion.type === preferType) : list;
@@ -113,7 +118,7 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputValue, preferType]);
+  }, [inputValue, preferType, state]);
 
   const topSuggestions = useMemo(() => suggestions.slice(0, 20), [suggestions]);
 

@@ -1,3 +1,4 @@
+async function parseJsonResponse(response: any) { try { const text = await response.text(); if (!text) return {}; return JSON.parse(text); } catch { return {}; } }
 import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock3, LockKeyhole, QrCode, ShieldCheck } from 'lucide-react';
 import { LocalizedTree, type AppLanguage } from '../localization';
@@ -32,7 +33,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
     let cancelled = false;
     fetch('/api/payments/profile')
       .then(async response => {
-        const data = await response.json();
+        const data = await parseJsonResponse(response);
         if (!response.ok || !data.success) throw new Error(data.error || 'Could not load payout profile.');
         if (!cancelled && data.profile) {
           setProfile(data.profile);
@@ -54,7 +55,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel: 'both', target: phone, emailTarget: email, role })
       });
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not send verification code.');
       setOtpSent(true);
       setVerificationToken('');
@@ -84,7 +85,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: phone, code: otpCode })
         });
-        const verifyData = await verifyResponse.json();
+        const verifyData = await parseJsonResponse(verifyResponse);
         if (!verifyResponse.ok || !verifyData.verified || !verifyData.verificationToken) {
           throw new Error(verifyData.error || 'OTP verify nahi hua. Dobara check karke try karein.');
         }
@@ -103,7 +104,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
           upiId: upiId.trim()
         })
       });
-      const saveData = await saveResponse.json();
+      const saveData = await parseJsonResponse(saveResponse);
       if (!saveResponse.ok || !saveData.success) throw new Error(saveData.error || 'Could not save payout details.');
       setProfile(saveData.profile);
       setOtpCode('');

@@ -1,3 +1,4 @@
+async function parseJsonResponse(response: any) { try { const text = await response.text(); if (!text) return {}; return JSON.parse(text); } catch { return {}; } }
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ShieldAlert, ShieldCheck, Ban, RefreshCw, Globe2, Server, Activity, Lock, Unlock, CreditCard, Save, Trash2, BookOpen, CheckCircle, XCircle, Building2 } from 'lucide-react';
 
@@ -86,7 +87,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
     setLedgerLoading(true);
     try {
       const res = await fetch('/api/admin/payments/ledger');
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (data.success && Array.isArray(data.ledger)) setLedger(data.ledger);
     } catch {}
     setLedgerLoading(false);
@@ -129,10 +130,10 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
         fetch('/api/admin/settings/govt-upi', { headers: authHeaders })
       ]);
 
-      const summaryData = await summaryResponse.json();
-      const logData = await logResponse.json();
-      const upiData = await upiResponse.json();
-      const govtUpiData = await govtUpiResponse.json();
+      const summaryData = await parseJsonResponse(summaryResponse);
+      const logData = await parseJsonResponse(logResponse);
+      const upiData = await parseJsonResponse(upiResponse);
+      const govtUpiData = await parseJsonResponse(govtUpiResponse);
 
       if (!summaryResponse.ok || !summaryData.success) {
         throw new Error(summaryData.error || 'Could not load the security summary.');
@@ -184,7 +185,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
         headers: authHeaders,
         body: JSON.stringify({ ip })
       });
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok || !data.success) throw new Error(data.error || 'Action failed.');
       setMessage({
         text: action === 'block' ? `Blocked ${ip}.` : `Unblocked ${ip}.`,
@@ -206,7 +207,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
         headers: authHeaders,
         body: JSON.stringify({ upiId: upiInput.trim(), payeeName: upiNameInput.trim() })
       });
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not save the admin UPI.');
       setUpiSettings(data.settings as AdminUpiSettings);
       setMessage({ text: data.message || 'Admin UPI saved.', type: 'ok' });
@@ -225,7 +226,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
         headers: authHeaders,
         body: JSON.stringify({ upiId: '', payeeName: '' })
       });
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not clear the admin UPI.');
       setUpiSettings(data.settings as AdminUpiSettings);
       setUpiInput(data.settings?.upiId || '');
@@ -245,7 +246,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
         headers: authHeaders,
         body: JSON.stringify({ upiId: govtUpiInput.trim(), payeeName: govtUpiNameInput.trim() })
       });
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not save the government UPI.');
       setGovtUpiSettings(data.settings as AdminUpiSettings);
       setMessage({ text: data.message || 'Government UPI saved.', type: 'ok' });
@@ -264,7 +265,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
         headers: authHeaders,
         body: JSON.stringify({ upiId: '', payeeName: '' })
       });
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not clear the government UPI.');
       setGovtUpiSettings(data.settings as AdminUpiSettings);
       setGovtUpiInput(data.settings?.upiId || '');

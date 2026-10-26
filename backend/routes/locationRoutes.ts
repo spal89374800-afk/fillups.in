@@ -35,9 +35,14 @@ function scoreMatch(value: string, query: string): number {
   return 99;
 }
 
-function collectSuggestions(query: string): LocationSuggestion[] {
+function collectSuggestions(query: string, stateFilter?: string): LocationSuggestion[] {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
+
+  const normalizedState = String(stateFilter || '').trim().toLowerCase();
+  const stateEntries = normalizedState
+    ? STATES_LOCATIONS.filter(entry => entry.state.trim().toLowerCase() === normalizedState)
+    : STATES_LOCATIONS;
 
   const candidates: LocationSuggestion[] = [];
   const seen = new Set<string>();
@@ -51,19 +56,22 @@ function collectSuggestions(query: string): LocationSuggestion[] {
     candidates.push({ value: clean, type, state });
   };
 
-  for (const district of ALL_DISTRICTS) {
-    if (scoreMatch(district, q) < 99) addCandidate(district, 'district', DISTRICT_STATE.get(district.toLowerCase()));
-  }
-  for (const city of ALL_CITIES) {
-    if (scoreMatch(city, q) < 99) addCandidate(city, 'city');
+  for (const entry of stateEntries) {
+    for (const district of entry.districts) {
+      if (scoreMatch(district, q) < 99) addCandidate(district, 'district', entry.state);
+    }
+    for (const city of entry.cities) {
+      if (scoreMatch(city, q) < 99) addCandidate(city, 'city', entry.state);
+    }
   }
 
   // Registered VLEs ke district/city bhi include karo (live data)
   for (const operator of vleListStore) {
+    if (normalizedState && String(operator.state || '').trim().toLowerCase() !== normalizedState) continue;
     const district = String(operator.district || '').trim();
     const city = String(operator.city || '').trim();
-    if (district && scoreMatch(district, q) < 99) addCandidate(district, 'district', DISTRICT_STATE.get(district.toLowerCase()));
-    if (city && scoreMatch(city, q) < 99) addCandidate(city, 'city');
+    if (district && scoreMatch(district, q) < 99) addCandidate(district, 'district', operator.state || DISTRICT_STATE.get(district.toLowerCase()));
+    if (city && scoreMatch(city, q) < 99) addCandidate(city, 'city', operator.state);
   }
 
   candidates.sort((a, b) => {
@@ -81,12 +89,13 @@ function collectSuggestions(query: string): LocationSuggestion[] {
 locationRouter.get('/locations', (req, res) => {
   const rawQuery = typeof req.query.q === 'string' ? req.query.q : '';
   const query = rawQuery.trim();
+  const stateFilter = typeof req.query.state === 'string' ? req.query.state : '';
 
   if (query.length < 2) {
     return res.json({ success: true, query, suggestions: [] });
   }
 
-  const suggestions = collectSuggestions(query);
+  const suggestions = collectSuggestions(query, stateFilter);
   return res.json({ success: true, query, suggestions });
 });
 

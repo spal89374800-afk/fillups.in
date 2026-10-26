@@ -22,5 +22,18 @@ export function createExpressApp() {
   // Mount all backend API routes under /api
   app.use('/api', apiRouter);
 
+  // 🛡️ Ensure every error (including async/JSON parse errors) returns JSON instead
+  // of an empty/HTML response, so the frontend can parse it reliably.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: any, _req: any, res: any, _next: any) => {
+    console.error('[Express] Unhandled error:', err?.stack || err?.message || err);
+    if (res.headersSent) return;
+    const status = Number(err?.status || err?.statusCode) || 500;
+    res.status(status).json({
+      success: false,
+      error: err?.message || 'Internal server error. Please try again.'
+    });
+  });
+
   return app;
 }

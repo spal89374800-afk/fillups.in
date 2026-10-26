@@ -13,7 +13,11 @@ export function readEnvValue(name: string): string | undefined {
 }
 
 export function isTestOtpEnabled(): boolean {
-  return process.env.TEST_OTP_ENABLED === 'true' && process.env.NODE_ENV !== 'production';
+  // Allow the test-OTP fallback on live deployments too, but ONLY when no real
+  // delivery channel (SMTP/WhatsApp) is configured. This keeps login working on
+  // Render even if provider credentials are missing, while normal production
+  // traffic with SMTP configured is unaffected.
+  return process.env.TEST_OTP_ENABLED === 'true';
 }
 
 export function getAdminToken(): string | undefined {

@@ -326,6 +326,18 @@ const INDIAN_STATES = [
   'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
 ];
 
+// Safe JSON parsing helper: prevents "Unexpected end of JSON input" crashes when
+// the server returns an empty/non-JSON response (e.g. during cold starts).
+async function parseJsonResponse(response: Response): Promise<any> {
+  try {
+    const text = await response.text();
+    if (!text) return {};
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
 function readStoredSession(): StoredSession | null {
   try {
     const raw = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -675,7 +687,7 @@ export default function App() {
           photoBase64: canvas.toDataURL('image/jpeg', 0.88)
         })
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok || !data.success) throw new Error(data.error || 'Could not submit the live photo.');
       setLiveCamSuccess(true);
       stopLiveCamera(false);
@@ -1542,7 +1554,7 @@ export default function App() {
     setPaymentIntentError('');
     fetch(`/api/payments/order-intent/${encodeURIComponent(orderId)}`)
       .then(async response => {
-        const data = await response.json();
+        const data = await parseJsonResponse(response);
         if (!response.ok || !data.success) throw new Error(data.error || 'Could not prepare the operator UPI payment.');
         if (!cancelled) setWorkspacePaymentIntent({
           amount: data.amount,
@@ -1629,7 +1641,7 @@ export default function App() {
     try {
       const res = await fetch(url);
       if (!res.ok) return null;
-      return await res.json();
+      return await parseJsonResponse(res);
     } catch {
       return null;
     }
@@ -1774,7 +1786,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rating, review: review || '', clientName })
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (data.success) {
         fetchAllData();
         if (soundAlertEnabled) playChime();
@@ -2400,7 +2412,7 @@ export default function App() {
       method: 'POST',
       body: formData
     });
-    const data = await res.json().catch(() => ({}) as any);
+    const data = await parseJsonResponse(res).catch(() => ({}) as any);
     if (!res.ok || !data.success) {
       throw new Error(data?.error || 'The documents could not be uploaded.');
     }
@@ -2419,7 +2431,7 @@ export default function App() {
       if (res.status === 410) message = '🔒 Ye document 24 ghante baad privacy policy ke tahat delete ho chuka hai.';
       else if (res.status === 401 || res.status === 403) message = 'Login karke is document ko kholein.';
       else {
-        const err = await res.json().catch(() => null as any);
+        const err = await parseJsonResponse(res).catch(() => null as any);
         if (err?.error) message = err.error;
       }
       throw new Error(message);
@@ -2506,7 +2518,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ govtFee, serviceCharge })
       });
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok || !data.success) throw new Error(data.error || 'Fees could not be saved.');
       setActiveWorkspaceOrder(data.order);
       feeDraftTouchedRef.current = false;
@@ -2535,7 +2547,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: '{}'
       });
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok || !data.success) throw new Error(data.error || 'Fees could not be approved.');
       setActiveWorkspaceOrder(data.order);
       setWorkspaceStatusMsg({ text: '✅ Fees approved. Chat is now unlocked.', type: 'success' });
@@ -2630,7 +2642,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (res.ok && data.success) {
         setActiveWorkspaceOrder(data.order);
         setWorkspacePaymentIntent(prev => prev ? { ...prev, splits: data.splits, isPaymentDoneInApp: data.fullyPaid ?? prev.isPaymentDoneInApp } : prev);
@@ -2661,7 +2673,7 @@ export default function App() {
           leg
         })
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (res.ok && data.success) {
         setActiveWorkspaceOrder(data.order);
         setWorkspacePaymentIntent(prev => prev ? { ...prev, splits: data.splits } : prev);
@@ -2723,7 +2735,7 @@ export default function App() {
           govtFee: fee
         })
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (res.ok && data.success) {
         setWorkspaceStatusMsg({ text: data.message || 'Government fee, UPI/QR saved successfully.', type: 'success' });
         showSaveToast('✅ Government details saved successfully!');
@@ -2779,7 +2791,7 @@ export default function App() {
           icon: newFormIcon || '📝'
         })
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (res.ok && data.success) {
         if (Array.isArray(data.services)) {
           setFillerServices(data.services);
@@ -2868,7 +2880,7 @@ export default function App() {
     }
     try {
       const res = await fetch(`/api/filler/services/${serviceId}`, { method: 'DELETE' });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (data.success && Array.isArray(data.services)) {
         setFillerServices(data.services);
       } else {
@@ -2901,7 +2913,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ appNumber, pass })
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (res.ok && data.success) {
         setActiveWorkspaceOrder(data.order);
         fetchAllData();
@@ -3001,7 +3013,7 @@ export default function App() {
           orderType: 'online_form_filling'
         })
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (data.success) {
         fetchAllData();
         setExamFormDesc('');
@@ -3060,7 +3072,7 @@ export default function App() {
           govtFee
         })
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (data.success) {
         if (data.order) {
           setVleExclusiveOrders((orders: any[]) => [
@@ -3126,7 +3138,7 @@ export default function App() {
           targetOperatorEmail: targetVle.email
         })
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (data.success) {
         await fetchAllData();
         const successNotice = `✅ Successfully Application Submitted! Direct request sent to ${targetVle.name}. Awaiting acceptance.`;
@@ -3186,7 +3198,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pricingList: listToSave, formFillingList: vleFormFillingList })
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await parseJsonResponse(res).catch(() => ({}));
       if (!res.ok || data.success === false) {
         throw new Error(data.error || 'Could not save pricing.');
       }
@@ -4906,7 +4918,7 @@ export default function App() {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ channel: 'both', target: clientPhone, emailTarget: clientEmail, role: 'client', name: clientName, captchaToken })
                     });
-                    const data = await response.json();
+                    const data = await parseJsonResponse(response);
                     if (!response.ok || !data.success) {
                       throw new Error(data.error || 'Could not send the verification code.');
                     }
@@ -5023,6 +5035,7 @@ export default function App() {
                           value={clientDistrictFilter}
                           onChange={(val) => setClientDistrictFilter(val.slice(0, 40))}
                           preferType="district"
+                          state={clientState}
                           placeholder="Lucknow / Kanpur"
                           wrapperClassName="w-full h-full flex items-center"
                           className="w-full h-full px-4 bg-transparent text-white text-sm font-medium focus:outline-none placeholder:text-zinc-500 min-w-0"
@@ -5043,6 +5056,7 @@ export default function App() {
                           value={clientCityFilter}
                           onChange={(val) => setClientCityFilter(val.slice(0, 40))}
                           preferType="city"
+                          state={clientState}
                           placeholder="e.g. Sadar"
                           wrapperClassName="w-full h-full flex items-center"
                           className="w-full h-full px-4 bg-transparent text-white text-sm font-medium focus:outline-none placeholder:text-zinc-500 min-w-0"
@@ -5092,7 +5106,7 @@ export default function App() {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ target: clientPhone, code: clientMobileOtpCode })
                     });
-                    const verifyData = await verifyResponse.json();
+                    const verifyData = await parseJsonResponse(verifyResponse);
                     if (!verifyResponse.ok || !verifyData.verified) {
                       throw new Error(verifyData.error || 'Invalid OTP. Check the code and try again.');
                     }
@@ -5114,7 +5128,7 @@ export default function App() {
                         verificationToken: verifyData.verificationToken
                       })
                     });
-                    const loginData = await loginResponse.json();
+                    const loginData = await parseJsonResponse(loginResponse);
                     if (!loginResponse.ok || !loginData.success) {
                       throw new Error(loginData.error || 'Login failed after verification. Please try again.');
                     }
@@ -5460,6 +5474,7 @@ export default function App() {
                   value={clientDistrictFilter}
                   onChange={setClientDistrictFilter}
                   preferType="district"
+                  state={clientState}
                   wrapperClassName="w-24"
                   className="w-full px-1 py-0.5 bg-transparent border-b border-slate-700 text-white text-xs font-semibold focus:outline-none"
                 />
@@ -5469,6 +5484,7 @@ export default function App() {
                   value={clientCityFilter}
                   onChange={setClientCityFilter}
                   preferType="city"
+                  state={clientState}
                   wrapperClassName="w-24"
                   className="w-full px-1 py-0.5 bg-transparent border-b border-slate-700 text-white text-xs font-semibold focus:outline-none"
                 />
@@ -6289,7 +6305,7 @@ export default function App() {
                                     govtFee
                                   })
                                 });
-                                const data = await res.json();
+                                const data = await parseJsonResponse(res);
                                 if (data.success) {
                                   fetchAllData();
                                   setActiveWorkspaceOrder(data.order);
@@ -7490,7 +7506,7 @@ export default function App() {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ channel: 'both', target: vlePhone, emailTarget: vleEmail, role: 'vle', name: vleName, captchaToken })
                     });
-                    const data = await response.json();
+                    const data = await parseJsonResponse(response);
                     if (!response.ok || !data.success) {
                       throw new Error(data.error || 'Could not send the verification code.');
                     }
@@ -7608,7 +7624,7 @@ export default function App() {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ target: vlePhone, code: vleMobileOtpCode })
                     });
-                    const verifyData = await verifyResponse.json();
+                    const verifyData = await parseJsonResponse(verifyResponse);
                     if (!verifyResponse.ok || !verifyData.verified) {
                       throw new Error(verifyData.error || 'Invalid OTP. Please check the code and try again.');
                     }
@@ -7642,7 +7658,7 @@ export default function App() {
                         verificationToken: verifyData.verificationToken
                       })
                     });
-                    const loginData = await loginResponse.json();
+                    const loginData = await parseJsonResponse(loginResponse);
                     if (!loginResponse.ok || !loginData.success) {
                       throw new Error(loginData.error || 'Operator login failed. Please try again.');
                     }
@@ -7806,7 +7822,7 @@ export default function App() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ channel: 'both', target: vlePhone, emailTarget: vleEmail, role: 'vle', name: vleName, captchaToken })
                   });
-                  const data = await response.json();
+                  const data = await parseJsonResponse(response);
                   if (!response.ok || !data.success) {
                     throw new Error(data.error || 'Could not send the registration code.');
                   }
@@ -7885,6 +7901,7 @@ export default function App() {
                         value={vleDistrict}
                         onChange={(val) => setVleDistrict(val.slice(0, 40))}
                         preferType="district"
+                        state={vleState}
                         placeholder=""
                         className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
@@ -7895,6 +7912,7 @@ export default function App() {
                         value={vleCity}
                         onChange={(val) => setVleCity(val.slice(0, 40))}
                         preferType="city"
+                        state={vleState}
                         placeholder=""
                         className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
@@ -7964,7 +7982,7 @@ export default function App() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ target: vlePhone, code: vleRegistrationOtpCode })
                   });
-                  const verifyData = await verifyResponse.json();
+                  const verifyData = await parseJsonResponse(verifyResponse);
                   if (!verifyResponse.ok || !verifyData.verified || !verifyData.verificationToken) {
                     throw new Error(verifyData.error || 'Invalid code. Check your email and try again.');
                   }
@@ -7983,7 +8001,7 @@ export default function App() {
                       verificationToken: verifyData.verificationToken
                     })
                   });
-                  const registerData = await registerResponse.json();
+                  const registerData = await parseJsonResponse(registerResponse);
                   if (!registerResponse.ok || !registerData.success) {
                     throw new Error(registerData.error || 'Could not register this operator.');
                   }
@@ -8148,6 +8166,7 @@ export default function App() {
                   value={vleDistrict}
                   onChange={val => setVleDistrict(val.slice(0, 40))}
                   preferType="district"
+                  state={vleState}
                   placeholder=""
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-bold focus:border-sky-500 outline-none"
                 />
@@ -8158,6 +8177,7 @@ export default function App() {
                   value={vleCity}
                   onChange={val => setVleCity(val.slice(0, 40))}
                   preferType="city"
+                  state={vleState}
                   placeholder=""
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-bold focus:border-sky-500 outline-none"
                 />
@@ -8586,7 +8606,7 @@ export default function App() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ pricingList: customPricingList, formFillingList: vleFormFillingList })
                       });
-                      const data = await res.json().catch(() => ({}));
+                      const data = await parseJsonResponse(res).catch(() => ({}));
                       if (res.ok && data.success !== false) {
                         setVleNotificationMsg('✅ Form Filling Prices saved successfully!');
                         showSaveToast('✅ Form prices saved successfully!');
@@ -8655,7 +8675,7 @@ export default function App() {
                                    try {
                                      setVleBidStatusMsg(null);
                                      const res = await fetch(`/api/vle/orders/${ord.id}/accept`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vleId, vleName }) });
-                                     const data = await res.json();
+                                     const data = await parseJsonResponse(res);
                                      if (data.success) { 
                                        setVleBidStatusMsg({ text: '✅ Bid accepted! Please set the fees to unlock chat.', type: 'success' });
                                        if (soundAlertEnabled) playChime();
@@ -8797,7 +8817,7 @@ export default function App() {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ channel: 'both', target: fillerPhone, emailTarget: fillerEmail, role: 'filler', name: fillerName, captchaToken })
                     });
-                    const data = await response.json();
+                    const data = await parseJsonResponse(response);
                     if (!response.ok || !data.success) {
                       throw new Error(data.error || 'Could not send the verification code.');
                     }
@@ -8904,6 +8924,7 @@ export default function App() {
                             value={fillerDistrict}
                             onChange={(val) => setFillerDistrict(val.slice(0, 40))}
                             preferType="district"
+                            state={fillerState}
                             placeholder="Lucknow / Kanpur"
                             wrapperClassName="w-full h-full flex items-center"
                             className="w-full h-full px-3.5 sm:px-4 bg-transparent text-white text-sm focus:outline-none placeholder:text-zinc-500 min-w-0"
@@ -8922,6 +8943,7 @@ export default function App() {
                             value={fillerCity}
                             onChange={(val) => setFillerCity(val.slice(0, 40))}
                             preferType="city"
+                            state={fillerState}
                             placeholder="e.g. Sadar"
                             wrapperClassName="w-full h-full flex items-center"
                             className="w-full h-full px-3.5 sm:px-4 bg-transparent text-white text-sm focus:outline-none placeholder:text-zinc-500 min-w-0"
@@ -8968,7 +8990,7 @@ export default function App() {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ target: fillerPhone, code: fillerMobileOtpCode })
                     });
-                    const verifyData = await verifyResponse.json();
+                    const verifyData = await parseJsonResponse(verifyResponse);
                     if (!verifyResponse.ok || !verifyData.verified) {
                       throw new Error(verifyData.error || 'Invalid OTP. Please check the code and try again.');
                     }
@@ -8988,7 +9010,7 @@ export default function App() {
                         verificationToken: verifyData.verificationToken
                       })
                     });
-                    const loginData = await loginResponse.json();
+                    const loginData = await parseJsonResponse(loginResponse);
                     if (!loginResponse.ok || !loginData.success) {
                       throw new Error(loginData.error || 'Form Filler login failed. Please try again.');
                     }
@@ -9533,7 +9555,7 @@ export default function App() {
                                       fillerName: fillerName
                                     })
                                   });
-                                  const data = await res.json();
+                                  const data = await parseJsonResponse(res);
                                   if (data.success) {
                                     setFillerNotificationMsg(`🎉 Bid #${ord.id} accepted successfully! Please set the fees to unlock chat.`);
                                     if (soundAlertEnabled) playChime();
@@ -10155,7 +10177,7 @@ export default function App() {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' }
                                 });
-                                const data = await res.json();
+                                const data = await parseJsonResponse(res);
                                 if (data.success && data.order) {
                                   setActiveWorkspaceOrder(data.order);
                                   setPaymentIntentRefreshKey(key => key + 1);
@@ -10204,7 +10226,7 @@ export default function App() {
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({ photoUrl: base64Url })
                                       });
-                                      const data = await res.json();
+                                      const data = await parseJsonResponse(res);
                                       if (data.success) {
                                         setActiveWorkspaceOrder(data.order);
                                         fetchAllData();
@@ -10548,7 +10570,7 @@ export default function App() {
                           const res = await fetch(`/api/orders/${activeWorkspaceOrder.id}/dispatch-whatsapp`, {
                             method: 'POST'
                           });
-                          const data = await res.json();
+                          const data = await parseJsonResponse(res);
                           if (data.success) {
                             setActiveWorkspaceOrder(data.order);
                             fetchAllData();

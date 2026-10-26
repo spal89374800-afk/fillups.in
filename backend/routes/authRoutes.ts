@@ -142,6 +142,7 @@ export function consumeOtpVerification(target: unknown, token: unknown, role: 'c
 }
 
 authRouter.post('/auth/send-otp', async (req, res) => {
+  try {
   const { channel = 'both', target, emailTarget, role = 'client' } = req.body;
 
   if (channel === 'sms') {
@@ -330,6 +331,12 @@ authRouter.post('/auth/send-otp', async (req, res) => {
       ? 'The verification code was sent to both your Gmail and WhatsApp.'
       : `The verification code was sent to your ${succeeded[0]}.`
   });
+  } catch (error) {
+    console.error('[send-otp] unexpected error:', error);
+    if (!res.headersSent) {
+      return res.status(500).json({ success: false, error: 'Could not send the verification code. Please try again.' });
+    }
+  }
 });
 
 // Verify OTP
