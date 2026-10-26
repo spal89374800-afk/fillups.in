@@ -338,15 +338,16 @@ async function parseJsonResponse(response: Response): Promise<any> {
   }
 }
 
-async function fetchWithRetry(url: string, options: RequestInit, retries = 1): Promise<Response> {
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3): Promise<Response> {
+  const delays = [2000, 5000, 10000];
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url, options);
       if (res.ok) return res;
-      if (attempt < retries) await new Promise(r => setTimeout(r, 1500));
+      if (attempt < retries) await new Promise(r => setTimeout(r, delays[attempt] || 3000));
       else return res;
     } catch (err) {
-      if (attempt < retries) await new Promise(r => setTimeout(r, 1500));
+      if (attempt < retries) await new Promise(r => setTimeout(r, delays[attempt] || 3000));
       else throw err;
     }
   }
