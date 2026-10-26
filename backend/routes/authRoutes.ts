@@ -174,9 +174,6 @@ authRouter.post('/auth/send-otp', async (req, res) => {
 
   const smtpUser = readEnvValue('SMTP_USER');
   const smtpPass = readEnvValue('SMTP_PASS');
-  const whatsappToken = readEnvValue('WHATSAPP_API_KEY');
-  const whatsappPhoneNumberId = readEnvValue('WHATSAPP_PHONE_NUMBER_ID');
-  const whatsappTemplateName = readEnvValue('WHATSAPP_OTP_TEMPLATE_NAME');
   const code = randomInt(1000, 10000).toString();
 
   // 🛡️ CAPTCHA (Cloudflare Turnstile) — bot ko OTP bhejne se rokta hai.
@@ -207,11 +204,11 @@ authRouter.post('/auth/send-otp', async (req, res) => {
   // Meta only allows business-initiated OTP via a pre-approved template, so we
   // only use WhatsApp when the full set of credentials is present.
   const hasEmail = Boolean(smtpUser && smtpPass);
-  const hasWhatsapp = Boolean(whatsappToken && whatsappPhoneNumberId && whatsappTemplateName);
 
+  // Sirf Gmail OTP — WhatsApp/phone OTP hata diya gaya hai.
   // The TEST_OTP_ENABLED shortcut is only used as a local fallback when no real
   // delivery channel is configured.
-  if (!hasEmail && !hasWhatsapp) {
+  if (!hasEmail) {
     if (isTestOtpEnabled()) {
       activeOtpStore[normalizedTarget] = {
         code,
@@ -270,41 +267,6 @@ authRouter.post('/auth/send-otp', async (req, res) => {
       throw (lastError instanceof Error ? lastError : new Error('Gmail delivery failed'));
     })());
     channels.push('Gmail');
-  }
-
-  if (hasWhatsapp) {
-    const apiVersion = process.env.WHATSAPP_API_VERSION || 'v22.0';
-    const templateLanguage = process.env.WHATSAPP_OTP_TEMPLATE_LANGUAGE || 'en_US';
-    const whatsappRecipient = `91${cleanPhone}`;
-    deliveries.push(
-      fetch(`https://graph.facebook.com/${apiVersion}/${whatsappPhoneNumberId}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${whatsappToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to: whatsappRecipient,
-          type: 'template',
-          template: {
-            name: whatsappTemplateName,
-            language: { code: templateLanguage },
-            components: [{
-              type: 'body',
-              parameters: [{ type: 'text', text: code }]
-            }]
-          }
-        })
-      }).then(async response => {
-        if (!response.ok) {
-          console.error(`WhatsApp OTP delivery failed with HTTP ${response.status}.`);
-          throw new Error(`WhatsApp API returned HTTP ${response.status}.`);
-        }
-        return response.json();
-      })
-    );
-    channels.push('WhatsApp');
   }
 
   const resendKey = readEnvValue('RESEND_API_KEY');
@@ -383,13 +345,11 @@ authRouter.post('/auth/send-otp', async (req, res) => {
 
   return res.json({
     success: true,
-    channel: channels.length === succeeded.length ? (succeeded.length === 2 ? 'both' : succeeded[0]) : succeeded.join(','),
+    channel: succeeded[0] || 'Gmail',
     target: cleanPhone,
     emailTarget: normalizedEmail,
     testOtp: code,
-    message: succeeded.length === 2
-      ? 'The verification code was sent to both your Gmail and WhatsApp.'
-      : `The verification code was sent to your ${succeeded[0]}.`
+    message: `The verification code was sent to your ${succeeded[0] || 'Gmail'}.`
   });
   } catch (error) {
     console.error('[send-otp] unexpected error:', error);

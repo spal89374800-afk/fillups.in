@@ -7591,7 +7591,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <p className="text-[11px] text-slate-500">{vleOtpDeliveryMessage || 'A verification code will be sent to your Gmail (and WhatsApp when enabled).'}</p>
+                  <p className="text-[11px] text-slate-500">{vleOtpDeliveryMessage || 'A verification code will be sent to your Gmail.'}</p>
                   {vleAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{vleAuthError}</p>}
                   <button
                     type="submit"
@@ -8953,7 +8953,7 @@ export default function App() {
                     </div>
                   )}
 
-                  <p className="text-[11px] text-slate-500">{fillerOtpDeliveryMessage || 'A verification code will be sent to your Gmail (and WhatsApp when enabled).'}</p>
+                  <p className="text-[11px] text-slate-500">{fillerOtpDeliveryMessage || 'A verification code will be sent to your Gmail.'}</p>
                   {fillerAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{fillerAuthError}</p>}
                   <button
                     type="submit"
