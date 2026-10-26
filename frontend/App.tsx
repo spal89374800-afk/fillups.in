@@ -15,6 +15,7 @@ import { LocalizedTree } from './localization';
 import { realtimeSocket } from './realtime';
 import { createBlinkLivenessEngine } from './services/blinkLiveness';
 import { getCaptchaToken } from './services/turnstile';
+import { fetchWithRetry, parseJsonResponse } from './services/apiClient';
 import type { BlinkEngine } from './services/blinkLiveness';
 
 export const getDocRequirements = (item: { id?: string; docName?: string; requirements?: string; title?: string }) => {
@@ -325,34 +326,6 @@ const INDIAN_STATES = [
   'Mizoram', 'Nagaland', 'Odisha', 'Puducherry', 'Punjab', 'Rajasthan', 'Sikkim',
   'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
 ];
-
-// Safe JSON parsing helper: prevents "Unexpected end of JSON input" crashes when
-// the server returns an empty/non-JSON response (e.g. during cold starts).
-async function parseJsonResponse(response: Response): Promise<any> {
-  try {
-    const text = await response.text();
-    if (!text) return {};
-    return JSON.parse(text);
-  } catch {
-    return {};
-  }
-}
-
-async function fetchWithRetry(url: string, options: RequestInit, retries = 3): Promise<Response> {
-  const delays = [2000, 5000, 10000];
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(url, options);
-      if (res.ok) return res;
-      if (attempt < retries) await new Promise(r => setTimeout(r, delays[attempt] || 3000));
-      else return res;
-    } catch (err) {
-      if (attempt < retries) await new Promise(r => setTimeout(r, delays[attempt] || 3000));
-      else throw err;
-    }
-  }
-  return fetch(url, options);
-}
 
 function readStoredSession(): StoredSession | null {
   try {
@@ -2989,7 +2962,7 @@ export default function App() {
     if (!examFormTitle.trim()) return;
     const session = readStoredSession();
     if (!session?.token || session.role !== 'client') {
-      setClientOrderSuccessMsg('⚠️ Please log in as a Citizen (Gmail/WhatsApp OTP) to send this request.');
+      setClientOrderSuccessMsg('⚠️ Please log in as a Citizen (Gmail OTP) to send this request.');
       setStep('client_login');
       return;
     }
@@ -4939,7 +4912,7 @@ export default function App() {
                       throw new Error(data.error || ('Could not send the verification code. (HTTP ' + response.status + ') body=' + JSON.stringify(data)));
                     }
                     setClientOtpDeliveryMessage(data.message || '');
-                    setClientMobileOtpCode(data.testOtp || '');
+                    setClientMobileOtpCode('');
                     setClientOtpSent(true);
                   } catch (error) {
                     setClientAuthError(error instanceof Error ? error.message : 'Could not start verification. Please try again.');
@@ -5188,7 +5161,7 @@ export default function App() {
                       <div className="h-5 flex items-center">
                         <label className="text-[11px] font-bold text-emerald-400 tracking-wider truncate flex items-center gap-1.5">
                           <Mail className="w-3 h-3 shrink-0" />
-                          <span>{t('Gmail & WhatsApp OTP', 'Gmail और WhatsApp OTP')}</span>
+                          <span>{t('Gmail OTP', 'Gmail OTP')}</span>
                         </label>
                       </div>
                       <div className="h-12 relative rounded-2xl bg-[#090F1D]/90 border border-white/[0.08] focus-within:border-cyan-400/70 focus-within:ring-2 focus-within:ring-cyan-500/20 shadow-[inset_0_2px_4px_rgba(0,0,0,0.7)] transition-all flex items-center">
@@ -7527,7 +7500,7 @@ export default function App() {
                       throw new Error(data.error || ('Could not send the verification code. (HTTP ' + response.status + ') body=' + JSON.stringify(data)));
                     }
                     setVleOtpDeliveryMessage(data.message || '');
-                    setVleMobileOtpCode(data.testOtp || '');
+                    setVleMobileOtpCode('');
                     setVleAuthError('');
                     setVleOtpSent(true);
                   } catch (error) {
@@ -7721,7 +7694,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="block text-[10px] uppercase font-bold text-emerald-400">Gmail & WhatsApp OTP</label>
+                    <label className="block text-[10px] uppercase font-bold text-emerald-400">Gmail OTP</label>
                     <input
                       type="text"
                       maxLength={4}
@@ -7735,7 +7708,7 @@ export default function App() {
                     />
                   </div>
 
-                  <p className="text-xs text-slate-400">The same code was sent to {vleEmail} and your WhatsApp number.</p>
+                  <p className="text-xs text-slate-400">The code was sent to {vleEmail}.</p>
                   {vleAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{vleAuthError}</p>}
                   <button
                     type="submit"
@@ -7843,7 +7816,7 @@ export default function App() {
                     throw new Error(data.error || ('Could not send the registration code. (HTTP ' + response.status + ') body=' + JSON.stringify(data)));
                   }
                   setVleOtpDeliveryMessage(data.message || '');
-                  setVleRegistrationOtpCode(data.testOtp || '');
+                  setVleRegistrationOtpCode('');
                   setVleAuthError('');
                   setVleOtpSent(true);
                 } catch (error) {
@@ -8051,7 +8024,7 @@ export default function App() {
                   setVerifyingGovt(false);
                 }
               }} className="space-y-4">
-                <p className="text-sm text-slate-300">Enter the 4-digit code sent to {vleEmail} and your WhatsApp number.</p>
+                <p className="text-sm text-slate-300">Enter the 4-digit code sent to {vleEmail}.</p>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -8838,7 +8811,7 @@ export default function App() {
                       throw new Error(data.error || ('Could not send the verification code. (HTTP ' + response.status + ') body=' + JSON.stringify(data)));
                     }
                     setFillerOtpDeliveryMessage(data.message || '');
-                    setFillerMobileOtpCode(data.testOtp || '');
+                    setFillerMobileOtpCode('');
                     setFillerAuthError('');
                     setFillerOtpSent(true);
                   } catch (error) {
@@ -9081,7 +9054,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="block text-[10px] uppercase font-bold text-emerald-400">Gmail & WhatsApp OTP</label>
+                    <label className="block text-[10px] uppercase font-bold text-emerald-400">Gmail OTP</label>
                     <input
                       type="text"
                       maxLength={4}
@@ -9095,7 +9068,7 @@ export default function App() {
                     />
                   </div>
 
-                  <p className="text-xs text-slate-400">The same code was sent to {fillerEmail} and your WhatsApp number.</p>
+                  <p className="text-xs text-slate-400">The code was sent to {fillerEmail}.</p>
                   {fillerAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{fillerAuthError}</p>}
                   <button
                     type="submit"

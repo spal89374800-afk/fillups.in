@@ -17,7 +17,7 @@ Do not open `index.html` directly as a `file://` URL. This app uses React/TypeSc
 1. Install dependencies:
    `npm install`
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key.
-3. To enable login OTP delivery, configure Gmail SMTP with `SMTP_USER` and `SMTP_PASS` (a Google App Password), and configure the WhatsApp Cloud API with `WHATSAPP_API_KEY`, `WHATSAPP_PHONE_NUMBER_ID`, and an approved `WHATSAPP_OTP_TEMPLATE_NAME` in `.env.local`. The template must accept the OTP as its first body text parameter; `WHATSAPP_OTP_TEMPLATE_LANGUAGE` defaults to `en_US`. `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, and `WHATSAPP_API_VERSION` have defaults; see [.env.example](.env.example). Both email and WhatsApp delivery must be configured, and login sends the same OTP to both. Do not commit or share provider credentials.
+3. To enable real Gmail OTP delivery, configure either Gmail SMTP (`SMTP_USER` + `SMTP_PASS`, a Google App Password) or an HTTPS email API (`BREVO_API_KEY`, `RESEND_API_KEY`, or `SENDGRID_API_KEY`) in `.env.local`; see [.env.example](.env.example). **Render free web services block outbound SMTP ports 25/465/587**, so a free Render deployment must use an HTTPS email API (Brevo is recommended). Test OTP is not supported: the code never returns an OTP in the API response. Do not commit or share provider credentials.
 4. Run the app:
    `npm run dev`
 5. Open `http://localhost:3000` in your browser.
@@ -30,7 +30,7 @@ Live order chat is delivered over Socket.IO and remains stored on the order for 
 
 ## Operator UPI Profile (Prototype)
 
-Jan Seva Kendra and Form Filler dashboards include an OTP-verified operator UPI ID profile. Only the UPI ID is collected; no bank account number, bank name, or IFSC is requested. The registered mobile number is used to bind the profile and for OTP verification. The same OTP is delivered to the registered email and WhatsApp number through configured SMTP and WhatsApp Cloud API; SMS OTP is not enabled. UPI profiles are currently held in server memory and cleared on restart.
+Jan Seva Kendra and Form Filler dashboards include an OTP-verified operator UPI ID profile. Only the UPI ID is collected; no bank account number, bank name, or IFSC is requested. The registered mobile number is used to bind the profile and for OTP verification. The OTP is delivered to the registered Gmail address through SMTP or an HTTPS email API; SMS and WhatsApp OTP are not enabled. UPI profiles are currently held in server memory and cleared on restart.
 
 Checkout uses three separate single-recipient `upi://pay` intents after the citizen approves the proof, because plain UPI P2P cannot route one payment to multiple VPAs:
 

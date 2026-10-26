@@ -1,7 +1,7 @@
-async function parseJsonResponse(response: any) { try { const text = await response.text(); if (!text) return {}; return JSON.parse(text); } catch { return {}; } }
 import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock3, LockKeyhole, QrCode, ShieldCheck } from 'lucide-react';
 import { LocalizedTree, type AppLanguage } from '../localization';
+import { fetchWithRetry, parseJsonResponse } from '../services/apiClient';
 
 type OperatorRole = 'vle' | 'filler';
 
@@ -31,7 +31,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
   useEffect(() => {
     if (!phone || !email) return;
     let cancelled = false;
-    fetch('/api/payments/profile')
+    fetchWithRetry('/api/payments/profile')
       .then(async response => {
         const data = await parseJsonResponse(response);
         if (!response.ok || !data.success) throw new Error(data.error || 'Could not load payout profile.');
@@ -50,7 +50,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
     setMessage('');
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/send-otp', {
+      const response = await fetchWithRetry('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel: 'both', target: phone, emailTarget: email, role })
@@ -59,7 +59,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not send verification code.');
       setOtpSent(true);
       setVerificationToken('');
-      setOtpCode(data.testOtp || '');
+      setOtpCode('');
       setMessage(data.message || 'Verification code sent.');
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : 'Could not send verification code.');
@@ -80,7 +80,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
     try {
       let token = verificationToken;
       if (!token) {
-        const verifyResponse = await fetch('/api/auth/verify-otp', {
+        const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: phone, code: otpCode })

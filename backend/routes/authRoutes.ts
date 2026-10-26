@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import { saveOrUpdateUserAccount, userAccountsStore } from '../services/storeService.ts';
-import { isTestOtpEnabled, readEnvValue } from '../env.ts';
+import { readEnvValue } from '../env.ts';
 import { getRequestAccount } from '../middleware/securityMiddleware.ts';
 import { resolveClientIp } from '../middleware/botShieldMiddleware.ts';
 import { isTurnstileEnabled, getTurnstileSiteKey, verifyTurnstileToken } from '../services/turnstileService.ts';
@@ -15,10 +15,20 @@ export const authRouter = Router();
 // ========================================================
 // Sirf public info — Turnstile site key. Koi secret nahi.
 authRouter.get('/auth/public-config', (_req, res) => {
+  const httpsEmailConfigured = Boolean(
+    readEnvValue('BREVO_API_KEY') ||
+    readEnvValue('RESEND_API_KEY') ||
+    readEnvValue('SENDGRID_API_KEY')
+  );
+  const smtpConfigured = Boolean(readEnvValue('SMTP_USER') && readEnvValue('SMTP_PASS'));
   res.json({
     success: true,
     turnstileSiteKey: getTurnstileSiteKey() || null,
-    turnstileEnabled: isTurnstileEnabled()
+    turnstileEnabled: isTurnstileEnabled(),
+    // Booleans only — never expose keys or credentials.
+    emailConfigured: httpsEmailConfigured || smtpConfigured,
+    httpsEmailConfigured,
+    smtpConfigured
   });
 });
 
@@ -146,11 +156,8 @@ authRouter.post('/auth/send-otp', async (req, res) => {
   console.log('[send-otp] received', { target: req.body?.target, emailTarget: req.body?.emailTarget, role: req.body?.role });
   const { channel = 'both', target, emailTarget, role = 'client' } = req.body;
 
-  if (channel === 'sms') {
-    return res.status(400).json({ success: false, error: 'Carrier SMS is disabled. Request the OTP to your Gmail (and WhatsApp when enabled).' });
-  }
-  if (channel !== 'both') {
-    return res.status(400).json({ success: false, error: 'OTP must be requested to your Gmail (and WhatsApp when enabled).' });
+  if (channel === 'sms' || channel !== 'both') {
+    return res.status(400).json({ success: false, error: 'OTP is sent to your Gmail only. Request a new code to continue.' });
   }
   if (typeof target !== 'string' || !target.trim() || typeof emailTarget !== 'string' || !emailTarget.trim()) {
     return res.status(400).json({ success: false, error: 'Both a mobile number and email address are required.' });
@@ -201,127 +208,164 @@ authRouter.post('/auth/send-otp', async (req, res) => {
 
   delete activeOtpStore[normalizedTarget];
 
-  // Gmail is the primary, always-required real channel. WhatsApp is OPTIONAL:
-  // Meta only allows business-initiated OTP via a pre-approved template, so we
-  // only use WhatsApp when the full set of credentials is present.
-  const hasEmail = Boolean(smtpUser && smtpPass);
+  const otpSubject = 'Your DigiSeva Pro login OTP';
+  const otpText = `Your DigiSeva Pro login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`;
+  const senderName = 'DigiSeva Pro';
+  const deliveryErrors: string[] = [];
+  let deliveredVia = '';
 
-  // Sirf Gmail OTP — WhatsApp/phone OTP hata diya gaya hai.
-  // The TEST_OTP_ENABLED shortcut is only used as a local fallback when no real
-  // delivery channel is configured.
-  if (!hasEmail) {
-    // No email channel configured (common on Render without env vars): fall back to a
-    // test OTP so login keeps working. The code is returned and auto-filled by the UI.
-    activeOtpStore[normalizedTarget] = {
-      code,
-      email: normalizedEmail,
-      role: userRole,
-      expiresAt: Date.now() + 10 * 60 * 1000,
-      attempts: 0
-    };
-    console.log(`[TEST OTP] ${cleanPhone} / ${normalizedEmail} -> ${code} (real delivery not configured)`);
-    return res.json({
-      success: true,
-      channel: 'test',
-      target: cleanPhone,
-      emailTarget: normalizedEmail,
-      testOtp: code,
-      message: `Email is not configured on the server. TEST MODE code: ${code} (auto-filled).`
-    });
-  }
+  // ========================================================
+  // 1) HTTPS EMAIL APIs (work on Render free; SMTP ports are blocked there)
+  // ========================================================
+  // Render free web services block outbound SMTP ports 25/465/587. An HTTPS
+  // provider is the only way to deliver a real OTP from a free instance.
+  // Configure ONE of these in the server environment:
+  //   BREVO_API_KEY    + BREVO_FROM (recommended: free, verify your Gmail as sender)
+  //   RESEND_API_KEY   + RESEND_FROM
+  //   SENDGRID_API_KEY + SENDGRID_FROM
+  const httpsProviders: Array<{ name: string; send: () => Promise<unknown> }> = [];
 
-  const deliveries: Promise<unknown>[] = [];
-  const channels: string[] = [];
-
-  if (hasEmail) {
-    deliveries.push((async () => {
-      const portsToTry = [Number(process.env.SMTP_PORT || 465)];
-      if (!portsToTry.includes(587)) portsToTry.push(587);
-      let lastError: unknown;
-      for (const port of portsToTry) {
-        try {
-          const transporter = nodemailer.createTransport({
-            host: process.env.SMTP_HOST || 'smtp.gmail.com',
-            port,
-            secure: port === 465,
-            auth: { user: smtpUser, pass: smtpPass },
-            connectionTimeout: 12000,
-            greetingTimeout: 12000,
-            socketTimeout: 15000
-          });
-          await transporter.sendMail({
-            from: `"DigiSeva Pro" <${smtpUser}>`,
-            to: normalizedEmail,
-            subject: 'Your DigiSeva Pro login OTP',
-            text: `Your DigiSeva Pro login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`
-          });
-          return;
-        } catch (err) {
-          lastError = err;
-          console.error(`[Gmail OTP] port ${port} failed:`, err instanceof Error ? err.message : err);
+  const brevoKey = readEnvValue('BREVO_API_KEY');
+  const brevoFrom = readEnvValue('BREVO_FROM') || smtpUser;
+  if (brevoKey && brevoFrom) {
+    httpsProviders.push({
+      name: 'Brevo',
+      send: () => fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoKey,
+          'content-type': 'application/json',
+          accept: 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: senderName, email: brevoFrom },
+          to: [{ email: normalizedEmail }],
+          subject: otpSubject,
+          textContent: otpText
+        })
+      }).then(async response => {
+        if (!response.ok) {
+          const body = await response.text().catch(() => '');
+          throw new Error(`Brevo HTTP ${response.status}${body ? `: ${body.slice(0, 240)}` : ''}`);
         }
-      }
-      throw (lastError instanceof Error ? lastError : new Error('Gmail delivery failed'));
-    })());
-    channels.push('Gmail');
+        return response.json().catch(() => ({}));
+      })
+    });
   }
 
   const resendKey = readEnvValue('RESEND_API_KEY');
   if (resendKey) {
-    deliveries.push(
-      fetch('https://api.resend.com/emails', {
+    const resendFrom = readEnvValue('RESEND_FROM') || 'DigiSeva Pro <onboarding@resend.dev>';
+    httpsProviders.push({
+      name: 'Resend',
+      send: () => fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${resendKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: process.env.RESEND_FROM || 'DigiSeva Pro <onboarding@resend.dev>',
+          from: resendFrom,
           to: [normalizedEmail],
-          subject: 'Your DigiSeva Pro login OTP',
-          text: `Your DigiSeva Pro login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`
+          subject: otpSubject,
+          text: otpText
         })
       }).then(async response => {
         if (!response.ok) {
-          console.error(`[Resend OTP] HTTP ${response.status}`);
-          throw new Error(`Resend API returned HTTP ${response.status}.`);
+          const body = await response.text().catch(() => '');
+          throw new Error(`Resend HTTP ${response.status}${body ? `: ${body.slice(0, 240)}` : ''}`);
         }
-        return response.json();
+        return response.json().catch(() => ({}));
       })
-    );
-    channels.push('Email');
+    });
   }
 
-  const results = await Promise.allSettled(deliveries);
-  const succeeded: string[] = [];
-  results.forEach((result, index) => {
-    const label = channels[index];
-    if (result.status === 'fulfilled') {
-      succeeded.push(label);
-    } else {
-      const reason = result.reason instanceof Error ? result.reason.message : 'Unknown error';
-      console.error(`${label} OTP delivery failed:`, reason);
-    }
-  });
+  const sendgridKey = readEnvValue('SENDGRID_API_KEY');
+  const sendgridFrom = readEnvValue('SENDGRID_FROM') || smtpUser;
+  if (sendgridKey && sendgridFrom) {
+    httpsProviders.push({
+      name: 'SendGrid',
+      send: () => fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${sendgridKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: normalizedEmail }] }],
+          from: { email: sendgridFrom, name: senderName },
+          subject: otpSubject,
+          content: [{ type: 'text/plain', value: otpText }]
+        })
+      }).then(async response => {
+        if (!response.ok) {
+          const body = await response.text().catch(() => '');
+          throw new Error(`SendGrid HTTP ${response.status}${body ? `: ${body.slice(0, 240)}` : ''}`);
+        }
+        return { ok: true };
+      })
+    });
+  }
 
-  if (succeeded.length === 0) {
-    // Delivery failed (common on Render/PaaS where outbound SMTP is blocked).
-    // Fall back to a test OTP so login keeps working without any env configuration.
-    activeOtpStore[normalizedTarget] = {
-      code,
-      email: normalizedEmail,
-      role: userRole,
-      expiresAt: Date.now() + 10 * 60 * 1000,
-      attempts: 0
-    };
-    console.log(`[TEST OTP fallback] delivery failed; code=${code} target=${normalizedTarget}`);
-    return res.json({
-      success: true,
-      channel: 'test',
-      target: cleanPhone,
-      emailTarget: normalizedEmail,
-      testOtp: code,
-      message: 'Email delivery failed on the server. A test OTP has been generated and auto-filled.'
+  for (const provider of httpsProviders) {
+    try {
+      await provider.send();
+      deliveredVia = provider.name;
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      deliveryErrors.push(`${provider.name}: ${message}`);
+      console.error(`[OTP] ${provider.name} delivery failed:`, message);
+    }
+  }
+
+  // ========================================================
+  // 2) SMTP fallback (local dev, or a paid Render instance)
+  // ========================================================
+  if (!deliveredVia && smtpUser && smtpPass) {
+    // 2525 is accepted by some relays (e.g. Brevo) and is not blocked on
+    // Render free. Gmail itself only listens on 465/587, so on a free Render
+    // instance this branch still cannot deliver — an HTTPS provider above is
+    // required for real delivery.
+    const configuredPort = Number(process.env.SMTP_PORT || 465);
+    const portsToTry = [...new Set([configuredPort, 587, 465, 2525])].filter(port => Number.isFinite(port));
+    for (const port of portsToTry) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST || 'smtp.gmail.com',
+          port,
+          secure: port === 465,
+          auth: { user: smtpUser, pass: smtpPass },
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 15000
+        });
+        await transporter.sendMail({
+          from: `"${senderName}" <${smtpUser}>`,
+          to: normalizedEmail,
+          subject: otpSubject,
+          text: otpText
+        });
+        deliveredVia = 'Gmail SMTP';
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        deliveryErrors.push(`SMTP port ${port}: ${message}`);
+        console.error(`[OTP] SMTP port ${port} failed:`, message);
+      }
+    }
+  }
+
+  if (!deliveredVia) {
+    const runningOnRender = Boolean(process.env.RENDER || process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_ID);
+    console.error('[send-otp] all delivery channels failed:', deliveryErrors.join(' | '));
+    return res.status(502).json({
+      success: false,
+      code: 'OTP_DELIVERY_FAILED',
+      error: runningOnRender
+        ? 'OTP email nahi bhej paaya. Render free plan SMTP block karta hai. Server par BREVO_API_KEY (free) ya RESEND_API_KEY set karna zaroori hai.'
+        : 'OTP email nahi bhej paaya. Server ki SMTP/email provider settings check karein.',
+      details: deliveryErrors
     });
   }
 
@@ -332,15 +376,14 @@ authRouter.post('/auth/send-otp', async (req, res) => {
     expiresAt: Date.now() + 10 * 60 * 1000,
     attempts: 0
   };
-  console.log(`[DEBUG OTP] target=${normalizedTarget} code=${code}`);
+  console.log(`[send-otp] delivered via ${deliveredVia} to ${normalizedEmail} (target ${cleanPhone})`);
 
   return res.json({
     success: true,
-    channel: succeeded[0] || 'Gmail',
+    channel: deliveredVia,
     target: cleanPhone,
     emailTarget: normalizedEmail,
-    testOtp: code,
-    message: `The verification code was sent to your ${succeeded[0] || 'Gmail'}.`
+    message: `Verification code aapke Gmail (${normalizedEmail}) par bheja gaya hai. Phone ke Gmail app me check karein.`
   });
   } catch (error) {
     console.error('[send-otp] unexpected error:', error);
@@ -442,9 +485,9 @@ authRouter.get('/auth/retention-policy', (_req, res) => {
       },
       otpDelivery: {
         smsDisabled: true,
-        allowedChannels: ['whatsapp_cloud_api', 'gmail_smtp'],
-        costPerOtp: 'Email and WhatsApp delivery depend on the configured providers and their pricing.',
-        description: 'Carrier SMS is disabled. The same OTP is sent to the verified login email through SMTP and the mobile number through an approved WhatsApp Business template.'
+        allowedChannels: ['gmail_smtp', 'https_email_api'],
+        costPerOtp: 'Gmail SMTP or HTTPS email API delivery depends on the configured provider and its pricing.',
+        description: 'Carrier SMS and WhatsApp OTP are disabled. The OTP is sent to the verified login Gmail address through SMTP or an HTTPS email API.'
       }
     }
   });

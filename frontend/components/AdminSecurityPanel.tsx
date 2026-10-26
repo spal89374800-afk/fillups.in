@@ -1,6 +1,6 @@
-async function parseJsonResponse(response: any) { try { const text = await response.text(); if (!text) return {}; return JSON.parse(text); } catch { return {}; } }
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ShieldAlert, ShieldCheck, Ban, RefreshCw, Globe2, Server, Activity, Lock, Unlock, CreditCard, Save, Trash2, BookOpen, CheckCircle, XCircle, Building2 } from 'lucide-react';
+import { fetchWithRetry, parseJsonResponse } from '../services/apiClient';
 
 // ========================================================
 // 🛡️ ADMIN SECURITY CONSOLE
@@ -86,7 +86,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
   const loadLedger = async () => {
     setLedgerLoading(true);
     try {
-      const res = await fetch('/api/admin/payments/ledger');
+      const res = await fetchWithRetry('/api/admin/payments/ledger');
       const data = await parseJsonResponse(res);
       if (data.success && Array.isArray(data.ledger)) setLedger(data.ledger);
     } catch {}
@@ -95,7 +95,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
 
   const updateLedgerStatus = async (id: string, status: 'Reconciled' | 'Reversed') => {
     try {
-      await fetch(`/api/admin/payments/ledger/${id}/status`, {
+      await fetchWithRetry(`/api/admin/payments/ledger/${id}/status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, note: ledgerNote })
@@ -124,10 +124,10 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
       if (countryFilter.trim()) query.set('country', countryFilter.trim());
 
       const [summaryResponse, logResponse, upiResponse, govtUpiResponse] = await Promise.all([
-        fetch('/api/admin/security/summary', { headers: authHeaders }),
-        fetch(`/api/admin/security/log?${query.toString()}`, { headers: authHeaders }),
-        fetch('/api/admin/settings/upi', { headers: authHeaders }),
-        fetch('/api/admin/settings/govt-upi', { headers: authHeaders })
+        fetchWithRetry('/api/admin/security/summary', { headers: authHeaders }),
+        fetchWithRetry(`/api/admin/security/log?${query.toString()}`, { headers: authHeaders }),
+        fetchWithRetry('/api/admin/settings/upi', { headers: authHeaders }),
+        fetchWithRetry('/api/admin/settings/govt-upi', { headers: authHeaders })
       ]);
 
       const summaryData = await parseJsonResponse(summaryResponse);
@@ -180,7 +180,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
 
   const handleBlockIp = async (ip: string, action: 'block' | 'unblock') => {
     try {
-      const response = await fetch(`/api/admin/security/${action}-ip`, {
+      const response = await fetchWithRetry(`/api/admin/security/${action}-ip`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ ip })
@@ -202,7 +202,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
   const handleSaveUpi = async () => {
     setIsSavingUpi(true);
     try {
-      const response = await fetch('/api/admin/settings/upi', {
+      const response = await fetchWithRetry('/api/admin/settings/upi', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ upiId: upiInput.trim(), payeeName: upiNameInput.trim() })
@@ -221,7 +221,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
   const handleClearUpi = async () => {
     setIsSavingUpi(true);
     try {
-      const response = await fetch('/api/admin/settings/upi', {
+      const response = await fetchWithRetry('/api/admin/settings/upi', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ upiId: '', payeeName: '' })
@@ -241,7 +241,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
   const handleSaveGovtUpi = async () => {
     setIsSavingGovtUpi(true);
     try {
-      const response = await fetch('/api/admin/settings/govt-upi', {
+      const response = await fetchWithRetry('/api/admin/settings/govt-upi', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ upiId: govtUpiInput.trim(), payeeName: govtUpiNameInput.trim() })
@@ -260,7 +260,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
   const handleClearGovtUpi = async () => {
     setIsSavingGovtUpi(true);
     try {
-      const response = await fetch('/api/admin/settings/govt-upi', {
+      const response = await fetchWithRetry('/api/admin/settings/govt-upi', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ upiId: '', payeeName: '' })

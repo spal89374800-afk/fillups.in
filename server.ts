@@ -5,7 +5,6 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'url';
 import fs from 'node:fs';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { Server as SocketIOServer } from 'socket.io';
 import { createExpressApp } from './backend/app.ts';
 import { getIceServers, setRealtimeServer } from './backend/services/realtimeService.ts';
@@ -19,9 +18,20 @@ async function startServer() {
   const distPath = path.resolve(__dirname, 'dist');
   let hasDist = fs.existsSync(path.join(distPath, 'index.html'));
 
-  // In production on Render the pre-built dist may be missing. Build it on startup
-  // so the app always serves a real production bundle instead of Vite dev server.
-  if (process.env.NODE_ENV === 'production' && !hasDist) {
+  // Render does not always set NODE_ENV=production. Detect Render explicitly so
+  // the deployed app serves the built frontend instead of the Vite dev server
+  // (the dev server blocks unknown hosts and returns HTML for API calls).
+  const runningOnRender = Boolean(
+    process.env.RENDER ||
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.RENDER_SERVICE_ID
+  );
+  const isProduction = process.env.NODE_ENV === 'production' || runningOnRender;
+
+  // If a production build is missing, build it on startup so the app always
+  // serves a real bundle. The repository also ships a prebuilt dist/ as a
+  // fallback, so this normally does not run on Render.
+  if (isProduction && !hasDist) {
     try {
       console.log('[startup] dist build missing — running npm run build...');
       execSync('npm run build', { stdio: 'inherit', cwd: __dirname });
@@ -31,15 +41,10 @@ async function startServer() {
     }
   }
 
-  // Vite middleware only for local development or when build truly failed.
-  if (process.env.NODE_ENV !== 'production' || !hasDist) {
-    if (process.env.NODE_ENV === 'production') process.env.DISABLE_HMR = 'true';
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
+  // Serve the built frontend in production. Vite middleware is used only for
+  // local development (or if the production build genuinely failed).
+  if (isProduction && hasDist) {
+    console.log('[startup] serving built frontend from dist');
     app.use(express.static(distPath, {
       setHeaders: (res, filePath) => {
         const normalized = filePath.replace(/\\/g, '/');
@@ -56,6 +61,14 @@ async function startServer() {
       res.setHeader('cache-control', 'no-cache');
       res.sendFile(path.join(distPath, 'index.html'));
     });
+  } else {
+    if (isProduction) process.env.DISABLE_HMR = 'true';
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
   }
 
   const PORT = Number(process.env.PORT || 5000);
