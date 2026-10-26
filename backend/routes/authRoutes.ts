@@ -340,8 +340,9 @@ authRouter.post('/auth/send-otp', async (req, res) => {
           greetingTimeout: 10000,
           socketTimeout: 15000
         });
+        const mailFrom = readEnvValue('SMTP_FROM') || readEnvValue('BREVO_FROM') || smtpUser;
         await transporter.sendMail({
-          from: `"${senderName}" <${smtpUser}>`,
+          from: `"${senderName}" <${mailFrom}>`,
           to: normalizedEmail,
           subject: otpSubject,
           text: otpText
