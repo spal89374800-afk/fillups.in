@@ -4936,7 +4936,7 @@ export default function App() {
                     });
                     const data = await parseJsonResponse(response);
                     if (!response.ok || !data.success) {
-                      throw new Error(data.error || 'Could not send the verification code.');
+                      throw new Error(data.error || 'Could not send the verification code. (HTTP ' + response.status + ')');
                     }
                     setClientOtpDeliveryMessage(data.message || '');
                     setClientMobileOtpCode(data.testOtp || '');
@@ -7524,7 +7524,7 @@ export default function App() {
                     });
                     const data = await parseJsonResponse(response);
                     if (!response.ok || !data.success) {
-                      throw new Error(data.error || 'Could not send the verification code.');
+                      throw new Error(data.error || 'Could not send the verification code. (HTTP ' + response.status + ')');
                     }
                     setVleOtpDeliveryMessage(data.message || '');
                     setVleMobileOtpCode(data.testOtp || '');
@@ -7840,7 +7840,7 @@ export default function App() {
                   });
                   const data = await parseJsonResponse(response);
                   if (!response.ok || !data.success) {
-                    throw new Error(data.error || 'Could not send the registration code.');
+                    throw new Error(data.error || 'Could not send the registration code. (HTTP ' + response.status + ')');
                   }
                   setVleOtpDeliveryMessage(data.message || '');
                   setVleRegistrationOtpCode(data.testOtp || '');
@@ -8835,7 +8835,7 @@ export default function App() {
                     });
                     const data = await parseJsonResponse(response);
                     if (!response.ok || !data.success) {
-                      throw new Error(data.error || 'Could not send the verification code.');
+                      throw new Error(data.error || 'Could not send the verification code. (HTTP ' + response.status + ')');
                     }
                     setFillerOtpDeliveryMessage(data.message || '');
                     setFillerMobileOtpCode(data.testOtp || '');
