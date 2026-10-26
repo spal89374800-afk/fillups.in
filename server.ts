@@ -17,19 +17,23 @@ async function startServer() {
   const app = createExpressApp();
 
   const distPath = path.resolve(__dirname, 'dist');
-  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+  let hasDist = fs.existsSync(path.join(distPath, 'index.html'));
 
-  // Vite middleware setup for development, or when the production build is missing
-  // (e.g. Render without a build step). This guarantees the frontend is served.
-  if (process.env.NODE_ENV !== 'production' || !hasDist) {
-    if (process.env.NODE_ENV === 'production' && !hasDist) {
-      try {
-        console.log('[startup] dist build missing — running npm run build...');
-        execSync('npm run build', { stdio: 'inherit', cwd: __dirname });
-      } catch (err) {
-        console.error('[startup] build failed:', err);
-      }
+  // In production on Render the pre-built dist may be missing. Build it on startup
+  // so the app always serves a real production bundle instead of Vite dev server.
+  if (process.env.NODE_ENV === 'production' && !hasDist) {
+    try {
+      console.log('[startup] dist build missing — running npm run build...');
+      execSync('npm run build', { stdio: 'inherit', cwd: __dirname });
+      hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+    } catch (err) {
+      console.error('[startup] build failed:', err);
     }
+  }
+
+  // Vite middleware only for local development or when build truly failed.
+  if (process.env.NODE_ENV !== 'production' || !hasDist) {
+    if (process.env.NODE_ENV === 'production') process.env.DISABLE_HMR = 'true';
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
