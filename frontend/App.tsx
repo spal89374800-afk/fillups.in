@@ -338,6 +338,21 @@ async function parseJsonResponse(response: Response): Promise<any> {
   }
 }
 
+async function fetchWithRetry(url: string, options: RequestInit, retries = 1): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.ok) return res;
+      if (attempt < retries) await new Promise(r => setTimeout(r, 1500));
+      else return res;
+    } catch (err) {
+      if (attempt < retries) await new Promise(r => setTimeout(r, 1500));
+      else throw err;
+    }
+  }
+  return fetch(url, options);
+}
+
 function readStoredSession(): StoredSession | null {
   try {
     const raw = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -679,7 +694,7 @@ export default function App() {
     canvas.height = video.videoHeight;
     canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
     try {
-      const res = await fetch('/api/live-camera/submit', {
+      const res = await fetchWithRetry('/api/live-camera/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2637,7 +2652,7 @@ export default function App() {
         orderId: activeWorkspaceOrder.id,
         leg
       };
-      const res = await fetch('/api/payments/confirm-split', {
+      const res = await fetchWithRetry('/api/payments/confirm-split', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -2665,7 +2680,7 @@ export default function App() {
     if (!activeWorkspaceOrder) return;
     setIsVerifyingPayment(true);
     try {
-      const res = await fetch('/api/payments/client-confirm', {
+      const res = await fetchWithRetry('/api/payments/client-confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2725,7 +2740,7 @@ export default function App() {
     }
     setIsSavingGovtDetails(true);
     try {
-      const res = await fetch('/api/payments/govt-details', {
+      const res = await fetchWithRetry('/api/payments/govt-details', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2776,7 +2791,7 @@ export default function App() {
     const wasEditing = Boolean(editingFillerServiceId);
 
     try {
-      const res = await fetch('/api/filler/services', {
+      const res = await fetchWithRetry('/api/filler/services', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2995,7 +3010,7 @@ export default function App() {
         examFormDesc ? `Details/Discription: ${examFormDesc}` : `Online application form request for ${examFormTitle}.`
       ].filter(Boolean).join('\n');
 
-      const res = await fetch('/api/bids/form-filling', {
+      const res = await fetchWithRetry('/api/bids/form-filling', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3056,7 +3071,7 @@ export default function App() {
         ? resolveCatalogFees(matchedCatalogService)
         : { govtFee: 0, serviceFee: fallbackPrice };
 
-      const res = await fetch('/api/vle/orders', {
+      const res = await fetchWithRetry('/api/vle/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3120,7 +3135,7 @@ export default function App() {
     const finalAmount = serviceFee || 150;
 
     try {
-      const res = await fetch('/api/vle/orders', {
+      const res = await fetchWithRetry('/api/vle/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3193,7 +3208,7 @@ export default function App() {
       } catch {}
 
       // 2. Save to this operator's own account only (server-side, per-account pricing)
-      const res = await fetch('/api/vle/pricing', {
+      const res = await fetchWithRetry('/api/vle/pricing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pricingList: listToSave, formFillingList: vleFormFillingList })
@@ -4913,7 +4928,7 @@ export default function App() {
                   setIsClientAuthBusy(true);
                   try {
                     const captchaToken = await getCaptchaToken();
-                    const response = await fetch('/api/auth/send-otp', {
+                    const response = await fetchWithRetry('/api/auth/send-otp', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ channel: 'both', target: clientPhone, emailTarget: clientEmail, role: 'client', name: clientName, captchaToken })
@@ -5101,7 +5116,7 @@ export default function App() {
                   }
                   setIsClientAuthBusy(true);
                   try {
-                    const verifyResponse = await fetch('/api/auth/verify-otp', {
+                    const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ target: clientPhone, code: clientMobileOtpCode })
@@ -5114,7 +5129,7 @@ export default function App() {
                       throw new Error('OTP verification expired. Request a new code.');
                     }
 
-                    const loginResponse = await fetch('/api/auth/login', {
+                    const loginResponse = await fetchWithRetry('/api/auth/login', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
@@ -6294,7 +6309,7 @@ export default function App() {
                             onClick={async () => {
                               try {
                                 const { govtFee, serviceFee } = resolveCatalogFees(item);
-                                const res = await fetch('/api/vle/orders', {
+                                const res = await fetchWithRetry('/api/vle/orders', {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({
@@ -7501,7 +7516,7 @@ export default function App() {
                   setIsVleAuthBusy(true);
                   try {
                     const captchaToken = await getCaptchaToken();
-                    const response = await fetch('/api/auth/send-otp', {
+                    const response = await fetchWithRetry('/api/auth/send-otp', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ channel: 'both', target: vlePhone, emailTarget: vleEmail, role: 'vle', name: vleName, captchaToken })
@@ -7619,7 +7634,7 @@ export default function App() {
                   }
                   setIsVleAuthBusy(true);
                   try {
-                    const verifyResponse = await fetch('/api/auth/verify-otp', {
+                    const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ target: vlePhone, code: vleMobileOtpCode })
@@ -7644,7 +7659,7 @@ export default function App() {
                     if (matched.pricingList && matched.pricingList.length > 0) setCustomPricingList(matched.pricingList);
                   }
                   // Retain login permanently in backend (Zero Data Retention is NOT for logins)
-                    const loginResponse = await fetch('/api/vle/login', {
+                    const loginResponse = await fetchWithRetry('/api/vle/login', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
@@ -7817,7 +7832,7 @@ export default function App() {
                 setVerifyingGovt(true);
                 try {
                   const captchaToken = await getCaptchaToken();
-                  const response = await fetch('/api/auth/send-otp', {
+                  const response = await fetchWithRetry('/api/auth/send-otp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ channel: 'both', target: vlePhone, emailTarget: vleEmail, role: 'vle', name: vleName, captchaToken })
@@ -7977,7 +7992,7 @@ export default function App() {
                 }
                 setVerifyingGovt(true);
                 try {
-                  const verifyResponse = await fetch('/api/auth/verify-otp', {
+                  const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ target: vlePhone, code: vleRegistrationOtpCode })
@@ -7986,7 +8001,7 @@ export default function App() {
                   if (!verifyResponse.ok || !verifyData.verified || !verifyData.verificationToken) {
                     throw new Error(verifyData.error || 'Invalid code. Check your email and try again.');
                   }
-                  const registerResponse = await fetch('/api/vle/register', {
+                  const registerResponse = await fetchWithRetry('/api/vle/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -8601,7 +8616,7 @@ export default function App() {
                     setIsSavingPricing(true);
                     try {
                       localStorage.setItem('fillup_vle_form_pricing', JSON.stringify(vleFormFillingList));
-                      const res = await fetch('/api/vle/pricing', {
+                      const res = await fetchWithRetry('/api/vle/pricing', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ pricingList: customPricingList, formFillingList: vleFormFillingList })
@@ -8812,7 +8827,7 @@ export default function App() {
                   setIsFillerAuthBusy(true);
                   try {
                     const captchaToken = await getCaptchaToken();
-                    const response = await fetch('/api/auth/send-otp', {
+                    const response = await fetchWithRetry('/api/auth/send-otp', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ channel: 'both', target: fillerPhone, emailTarget: fillerEmail, role: 'filler', name: fillerName, captchaToken })
@@ -8985,7 +9000,7 @@ export default function App() {
                   }
                   setIsFillerAuthBusy(true);
                   try {
-                    const verifyResponse = await fetch('/api/auth/verify-otp', {
+                    const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ target: fillerPhone, code: fillerMobileOtpCode })
