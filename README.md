@@ -8,6 +8,22 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/ca8dee86-9bfd-483a-ac82-45598913e37b
 
+## Folder Structure
+
+All application source lives in two folders:
+
+- `backend/` — Express API, Socket.IO, OTP/email delivery, and `server.ts`.
+- `frontend/` — React app, components, styles, Vite config, and its own env files.
+
+Each folder has its own env files, and they are never committed:
+
+| Folder | Local secrets | Template |
+| --- | --- | --- |
+| `backend/` | `backend/.env.local` | `backend/.env.example` |
+| `frontend/` | `frontend/.env.local` | `frontend/.env.example` |
+
+The root `server.ts` is only a small compatibility shim for the Render start command (`npx tsx server.ts`); all server code is inside `backend/`.
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
@@ -16,8 +32,9 @@ Do not open `index.html` directly as a `file://` URL. This app uses React/TypeSc
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key.
-3. To enable real Gmail OTP delivery, configure either Gmail SMTP (`SMTP_USER` + `SMTP_PASS`, a Google App Password) or an HTTPS email API (`BREVO_API_KEY`, `RESEND_API_KEY`, or `SENDGRID_API_KEY`) in `.env.local`; see [.env.example](.env.example). **Render free web services block outbound SMTP ports 25/465/587**, so a free Render deployment must use an HTTPS email API (Brevo is recommended). Test OTP is not supported: the code never returns an OTP in the API response. Do not commit or share provider credentials.
+2. Set the `GEMINI_API_KEY` in [backend/.env.local](backend/.env.local) to your Gemini API key.
+3. To enable real Gmail OTP delivery, configure either Gmail SMTP (`SMTP_USER` + `SMTP_PASS`, a Google App Password) or an HTTPS email API (`BREVO_API_KEY`, `RESEND_API_KEY`, or `SENDGRID_API_KEY`) in `backend/.env.local`; see [backend/.env.example](backend/.env.example). **Render free web services block outbound SMTP ports 25/465/587**, so a free Render deployment must use an HTTPS email API (Brevo is recommended). Test OTP is not supported: the code never returns an OTP in the API response. Do not commit or share provider credentials.
+   The frontend reads its own `VITE_API_URL` from [frontend/.env.local](frontend/.env.local) (see [frontend/.env.example](frontend/.env.example)); it is the backend URL used when the site is opened from a separate frontend URL.
 4. Run the app:
    `npm run dev`
 5. Open `http://localhost:3000` in your browser.

@@ -1,10 +1,16 @@
 node_modules/
 build/
+dist/
 coverage/
 .DS_Store
 *.log
 .env.local
 .env.*.local
-.env.example
 logs/
 uploads/
+.vscode/
+.continue/
+
+.env
+frontend/dist/
+backend/dist/

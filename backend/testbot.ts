@@ -1,4 +1,4 @@
-import {scoreRequest, resolveClientNetwork} from './backend/middleware/botShieldMiddleware.ts';
+import {scoreRequest, resolveClientNetwork} from './middleware/botShieldMiddleware.ts';
 const req: any = {
   method: 'GET',
   path: '/api/auth/retention-policy',

@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ========================================================
 // 🛡️ BOT SHIELD & ATTACK LOGGER
@@ -45,7 +48,7 @@ const MAX_MEMORY_EVENTS = 2000;
 const MAX_DISK_BYTES = 5 * 1024 * 1024;
 const MAX_DISK_FILES = 3;
 
-const LOG_DIR = path.resolve(process.cwd(), 'logs');
+const LOG_DIR = path.resolve(__dirname, '..', 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'security-events.jsonl');
 const BLOCKLIST_FILE = path.join(LOG_DIR, 'blocked-ips.json');
 

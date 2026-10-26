@@ -1,6 +1,12 @@
 import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-dotenv.config({ path: ['.env.local', '.env'] });
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Resolve env files relative to this backend folder so they load correctly
+// whether the process is started from the project root or from backend/.
+dotenv.config({ path: [path.resolve(__dirname, '.env.local'), path.resolve(__dirname, '.env')] });
 
 const PLACEHOLDER_PATTERN = /^(my_|your-|replace-|fillup_|<)/i;
 

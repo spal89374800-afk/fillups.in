@@ -1,6 +1,9 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import multer from 'multer';
 import { vleOrdersStore, fillerOrdersStore } from './storeService.ts';
 import { emitOrderUpdate } from './realtimeService.ts';
@@ -11,7 +14,7 @@ import { emitOrderUpdate } from './realtimeService.ts';
 export const DOCUMENT_RETENTION_MS = 24 * 60 * 60 * 1000;
 export const RETENTION_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
 
-export const UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
+export const UPLOADS_DIR = path.resolve(__dirname, '..', 'uploads');
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const ALLOWED_EXTENSIONS = new Set(['.pdf', '.jpg', '.jpeg', '.png']);
