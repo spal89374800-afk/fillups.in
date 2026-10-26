@@ -143,6 +143,7 @@ export function consumeOtpVerification(target: unknown, token: unknown, role: 'c
 
 authRouter.post('/auth/send-otp', async (req, res) => {
   try {
+  console.log('[send-otp] received', { target: req.body?.target, emailTarget: req.body?.emailTarget, role: req.body?.role });
   const { channel = 'both', target, emailTarget, role = 'client' } = req.body;
 
   if (channel === 'sms') {
