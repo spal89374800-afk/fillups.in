@@ -1,7 +1,9 @@
 import './backend/env.ts';
 import express from 'express';
 import { createServer as createHttpServer } from 'node:http';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'url';
+import fs from 'node:fs';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { Server as SocketIOServer } from 'socket.io';
@@ -14,15 +16,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 async function startServer() {
   const app = createExpressApp();
 
-  // Vite middleware setup for development
-  if (process.env.NODE_ENV !== 'production') {
+  const distPath = path.resolve(__dirname, 'dist');
+  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+
+  // Vite middleware setup for development, or when the production build is missing
+  // (e.g. Render without a build step). This guarantees the frontend is served.
+  if (process.env.NODE_ENV !== 'production' || !hasDist) {
+    if (process.env.NODE_ENV === 'production' && !hasDist) {
+      try {
+        console.log('[startup] dist build missing — running npm run build...');
+        execSync('npm run build', { stdio: 'inherit', cwd: __dirname });
+      } catch (err) {
+        console.error('[startup] build failed:', err);
+      }
+    }
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath, {
       setHeaders: (res, filePath) => {
         const normalized = filePath.replace(/\\/g, '/');
