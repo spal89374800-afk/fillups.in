@@ -137,6 +137,11 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (!open || topSuggestions.length === 0) {
+      if (event.key === 'Enter' && topSuggestions.length > 0) {
+        event.preventDefault();
+        commitValue(topSuggestions[0].value);
+        return;
+      }
       return;
     }
     if (event.key === 'ArrowDown') {
@@ -145,10 +150,13 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       setHighlight(prev => (prev <= 0 ? topSuggestions.length - 1 : prev - 1));
-    } else if (event.key === 'Enter') {
+    } else if (event.key === 'Enter' || event.key === 'Tab') {
       if (highlight >= 0 && highlight < topSuggestions.length) {
         event.preventDefault();
         commitValue(topSuggestions[highlight].value);
+      } else if (topSuggestions.length > 0) {
+        event.preventDefault();
+        commitValue(topSuggestions[0].value);
       }
     } else if (event.key === 'Escape') {
       setOpen(false);

@@ -728,6 +728,7 @@ export default function App() {
   const [clientOtpDeliveryMessage, setClientOtpDeliveryMessage] = useState('');
   const [clientAuthError, setClientAuthError] = useState('');
   const [isClientAuthBusy, setIsClientAuthBusy] = useState(false);
+  const clientOtpAutoVerifyRef = useRef(false);
   const [clientState, setClientState] = useState(() => {
     try {
       return localStorage.getItem('client_state') || '';
@@ -955,6 +956,8 @@ export default function App() {
   const [vleAuthError, setVleAuthError] = useState('');
   const [isVleAuthBusy, setIsVleAuthBusy] = useState(false);
   const [verifyingGovt, setVerifyingGovt] = useState(false);
+  const vleOtpAutoVerifyRef = useRef(false);
+  const vleRegOtpAutoVerifyRef = useRef(false);
 
   // --- FORM FILLER AUTH & STATE ---
   const [isFormFillerLoggedIn, setIsFormFillerLoggedIn] = useState(() => readStoredSession()?.role === 'form_filler');
@@ -5167,12 +5170,28 @@ export default function App() {
                       <div className="h-12 relative rounded-2xl bg-[#090F1D]/90 border border-white/[0.08] focus-within:border-cyan-400/70 focus-within:ring-2 focus-within:ring-cyan-500/20 shadow-[inset_0_2px_4px_rgba(0,0,0,0.7)] transition-all flex items-center">
                         <input
                           type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           maxLength={4}
                           required
                           autoFocus
                           autoComplete="one-time-code"
                           value={clientMobileOtpCode}
-                          onChange={(e) => setClientMobileOtpCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                            setClientMobileOtpCode(val);
+                            if (val.length === 4 && !isClientAuthBusy) {
+                              setTimeout(() => {
+                                const form = (e.target as HTMLInputElement).form;
+                                if (form) {
+                                  const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+                                  if (btn && !btn.disabled) {
+                                    btn.click();
+                                  }
+                                }
+                              }, 50);
+                            }
+                          }}
                           placeholder="• • • •"
                           className="w-full h-full px-3 bg-transparent text-white text-center text-lg font-black tracking-[0.4em] focus:outline-none min-w-0"
                         />
@@ -7697,12 +7716,28 @@ export default function App() {
                     <label className="block text-[10px] uppercase font-bold text-emerald-400">Gmail OTP</label>
                     <input
                       type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       maxLength={4}
                       required
                       autoFocus
                       autoComplete="one-time-code"
                       value={vleMobileOtpCode}
-                      onChange={(e) => setVleMobileOtpCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                        setVleMobileOtpCode(val);
+                        if (val.length === 4 && !isVleAuthBusy) {
+                          setTimeout(() => {
+                            const form = (e.target as HTMLInputElement).form;
+                            if (form) {
+                              const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+                              if (btn && !btn.disabled) {
+                                btn.click();
+                              }
+                            }
+                          }, 50);
+                        }
+                      }}
                       placeholder="• • • •"
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg font-black tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
@@ -8028,11 +8063,26 @@ export default function App() {
                 <input
                   type="text"
                   inputMode="numeric"
+                  pattern="[0-9]*"
                   autoComplete="one-time-code"
                   maxLength={4}
                   required
                   value={vleRegistrationOtpCode}
-                  onChange={(e) => setVleRegistrationOtpCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                    setVleRegistrationOtpCode(val);
+                    if (val.length === 4 && !verifyingGovt) {
+                      setTimeout(() => {
+                        const form = (e.target as HTMLInputElement).form;
+                        if (form) {
+                          const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+                          if (btn && !btn.disabled) {
+                            btn.click();
+                          }
+                        }
+                      }, 50);
+                    }
+                  }}
                   placeholder="4-digit code"
                   className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
