@@ -729,6 +729,10 @@ export default function App() {
   const [clientAuthError, setClientAuthError] = useState('');
   const [isClientAuthBusy, setIsClientAuthBusy] = useState(false);
   const clientOtpAutoVerifyRef = useRef(false);
+  const clientVerifyLockRef = useRef(false);
+  const vleVerifyLockRef = useRef(false);
+  const vleRegisterVerifyLockRef = useRef(false);
+  const fillerVerifyLockRef = useRef(false);
   const [clientState, setClientState] = useState(() => {
     try {
       return localStorage.getItem('client_state') || '';
@@ -5086,7 +5090,8 @@ export default function App() {
               ) : (
                 <form id="client-otp-verify-form" onSubmit={async (e) => {
                   e.preventDefault();
-                  if (isClientAuthBusy) return;
+                  if (isClientAuthBusy || clientVerifyLockRef.current) return;
+                  clientVerifyLockRef.current = true;
                   setClientAuthError('');
                   const missingClientVerifyFields = collectMissingFields([
                     { label: 'Full Name', ok: isNonEmpty(clientName) },
@@ -5159,6 +5164,7 @@ export default function App() {
                     setShowLegalModal(true);
                   } catch (error) {
                     setClientAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
+                    clientVerifyLockRef.current = false;
                   } finally {
                     setIsClientAuthBusy(false);
                   }
@@ -7618,7 +7624,8 @@ export default function App() {
               ) : (
                 <form id="vle-otp-verify-form" onSubmit={async (e) => {
                   e.preventDefault();
-                  if (isVleAuthBusy) return;
+                  if (isVleAuthBusy || vleVerifyLockRef.current) return;
+                  vleVerifyLockRef.current = true;
                   setVleAuthError('');
                   const missingVleVerifyFields = collectMissingFields([
                     { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
@@ -7710,6 +7717,7 @@ export default function App() {
                     setShowLegalModal(true);
                   } catch (error) {
                     setVleAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
+                    vleVerifyLockRef.current = false;
                   } finally {
                     setIsVleAuthBusy(false);
                   }
@@ -7982,7 +7990,8 @@ export default function App() {
             ) : (
               <form id="vle-register-otp-verify-form" onSubmit={async (e) => {
                 e.preventDefault();
-                if (verifyingGovt) return;
+                if (verifyingGovt || vleRegisterVerifyLockRef.current) return;
+                vleRegisterVerifyLockRef.current = true;
                 setVleAuthError('');
                 const missingVleRegisterVerifyFields = collectMissingFields([
                   { label: 'Operator Name', ok: isNonEmpty(vleName) },
@@ -8055,6 +8064,7 @@ export default function App() {
                   setStep('vle_home');
                 } catch (error) {
                   setVleAuthError(error instanceof Error ? error.message : 'Registration verification failed.');
+                  vleRegisterVerifyLockRef.current = false;
                 } finally {
                   setVerifyingGovt(false);
                 }
@@ -8999,7 +9009,8 @@ export default function App() {
               ) : (
                 <form id="filler-otp-verify-form" onSubmit={async (e) => {
                   e.preventDefault();
-                  if (isFillerAuthBusy) return;
+                  if (isFillerAuthBusy || fillerVerifyLockRef.current) return;
+                  fillerVerifyLockRef.current = true;
                   setFillerAuthError('');
                   const missingFillerVerifyFields = collectMissingFields([
                     { label: 'Expert Name', ok: isNonEmpty(fillerName) },
@@ -9089,6 +9100,7 @@ export default function App() {
                     setShowLegalModal(true);
                   } catch (error) {
                     setFillerAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
+                    fillerVerifyLockRef.current = false;
                   } finally {
                     setIsFillerAuthBusy(false);
                   }
