@@ -5196,7 +5196,7 @@ export default function App() {
                           onChange={(e) => {
                             const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                             setClientMobileOtpCode(val);
-                            if (val.length === 4 && !isClientAuthBusy) {
+                            if (val.length === 4 && !isClientAuthBusy && !clientVerifyLockRef.current) {
                               const form = document.getElementById('client-otp-verify-form') as HTMLFormElement | null;
                               form?.requestSubmit();
                             }
@@ -8081,7 +8081,7 @@ export default function App() {
                   onChange={(e) => {
                     const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                     setVleRegistrationOtpCode(val);
-                    if (val.length === 4 && !verifyingGovt) {
+                    if (val.length === 4 && !verifyingGovt && !vleRegisterVerifyLockRef.current) {
                       const form = document.getElementById('vle-register-otp-verify-form') as HTMLFormElement | null;
                       form?.requestSubmit();
                     }
@@ -9121,7 +9121,7 @@ export default function App() {
                       onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                         setFillerMobileOtpCode(val);
-                        if (val.length === 4 && !isFillerAuthBusy) {
+                        if (val.length === 4 && !isFillerAuthBusy && !fillerVerifyLockRef.current) {
                           const formEl = document.getElementById('filler-otp-verify-form') as HTMLFormElement | null;
                           formEl?.requestSubmit();
                         }
