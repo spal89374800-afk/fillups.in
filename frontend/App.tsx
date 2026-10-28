@@ -5077,6 +5077,7 @@ export default function App() {
               ) : (
                 <form onSubmit={async (e) => {
                   e.preventDefault();
+                  if (isClientAuthBusy) return;
                   setClientAuthError('');
                   const missingClientVerifyFields = collectMissingFields([
                     { label: 'Full Name', ok: isNonEmpty(clientName) },
@@ -5210,6 +5211,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
+                      if (isClientAuthBusy) return;
                       setClientOtpSent(false);
                       setClientMobileOtpCode('');
                       setClientAuthError('');
