@@ -107,7 +107,7 @@ vleRouter.post('/vle/pricing', requireAccount('vle'), (req, res) => {
   });
 });
 
-vleRouter.post('/vle/register', (req, res) => {
+vleRouter.post('/vle/register', async (req, res) => {
   const { name, cscId, district, city, state, phone, email, pricingList, formFillingList } = req.body;
   const normalizedCscId = String(cscId || '').trim().toLowerCase();
   const normalizedPhone = String(phone || '').replace(/\D/g, '').slice(-10);
