@@ -5090,8 +5090,7 @@ export default function App() {
               ) : (
                 <form id="client-otp-verify-form" onSubmit={async (e) => {
                   e.preventDefault();
-                  if (isClientAuthBusy || clientVerifyLockRef.current) return;
-                  clientVerifyLockRef.current = true;
+                  if (isClientAuthBusy) return;
                   setClientAuthError('');
                   if (clientMobileOtpCode.length !== 4) {
                     setClientAuthError('');
@@ -5167,7 +5166,6 @@ export default function App() {
                     setShowLegalModal(true);
                   } catch (error) {
                     setClientAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
-                    clientVerifyLockRef.current = false;
                   } finally {
                     setIsClientAuthBusy(false);
                   }
@@ -5199,7 +5197,7 @@ export default function App() {
                           onChange={(e) => {
                             const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                             setClientMobileOtpCode(val);
-                            if (val.length === 4 && !isClientAuthBusy && !clientVerifyLockRef.current) {
+                            if (val.length === 4 && !isClientAuthBusy) {
                               const form = document.getElementById('client-otp-verify-form') as HTMLFormElement | null;
                               form?.requestSubmit();
                             }
