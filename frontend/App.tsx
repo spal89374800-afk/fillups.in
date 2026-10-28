@@ -9045,7 +9045,7 @@ export default function App() {
                     if (!verifyData.verificationToken) {
                       throw new Error('OTP verification expired. Request a new code.');
                     }
-                    const loginResponse = await fetch(isFillerRegistering ? '/api/filler/register' : '/api/filler/login', {
+                    const loginResponse = await fetchWithRetry(isFillerRegistering ? '/api/filler/register' : '/api/filler/login', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
