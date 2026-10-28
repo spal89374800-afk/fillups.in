@@ -11341,7 +11341,11 @@ export default function App() {
               </p>
               <div className="flex flex-col gap-2">
                 <button
-                  onClick={() => {
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowLegalModal(false);
                     if (pendingRole === 'client') setStep('terms_citizen');
                     else if (pendingRole === 'vle') setStep('terms_janseva');
                     else if (pendingRole === 'form_filler') setStep('terms_formfiller');
@@ -11351,7 +11355,13 @@ export default function App() {
                   View Terms & Conditions
                 </button>
                 <button
-                  onClick={() => setStep('privacy_policy')}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowLegalModal(false);
+                    setStep('privacy_policy');
+                  }}
                   className="w-full px-4 py-2.5 rounded-xl bg-purple-600/10 hover:bg-purple-600/20 border border-purple-400/40 text-purple-300 hover:text-white text-sm font-semibold transition-all"
                 >
                   View Privacy Policy
