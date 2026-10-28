@@ -5094,7 +5094,7 @@ export default function App() {
                   clientVerifyLockRef.current = true;
                   setClientAuthError('');
                   if (clientMobileOtpCode.length !== 4) {
-                    setClientAuthError('Enter the 4-digit verification code sent to your Gmail.');
+                    setClientAuthError('');
                     return;
                   }
                   const missingClientVerifyFields = collectMissingFields([
@@ -7631,7 +7631,7 @@ export default function App() {
                   vleVerifyLockRef.current = true;
                   setVleAuthError('');
                   if (vleMobileOtpCode.length !== 4) {
-                    setVleAuthError('Enter the 4-digit verification code sent to your Gmail.');
+                    setVleAuthError('');
                     return;
                   }
                   const missingVleVerifyFields = collectMissingFields([
@@ -8000,7 +8000,7 @@ export default function App() {
                 vleRegisterVerifyLockRef.current = true;
                 setVleAuthError('');
                 if (vleRegistrationOtpCode.length !== 4) {
-                  setVleAuthError('Enter the 4-digit verification code sent to your Gmail.');
+                  setVleAuthError('');
                   return;
                 }
                 const missingVleRegisterVerifyFields = collectMissingFields([
@@ -9022,7 +9022,7 @@ export default function App() {
                   fillerVerifyLockRef.current = true;
                   setFillerAuthError('');
                   if (fillerMobileOtpCode.length !== 4) {
-                    setFillerAuthError('Enter the 4-digit verification code sent to your Gmail.');
+                    setFillerAuthError('');
                     return;
                   }
                   const missingFillerVerifyFields = collectMissingFields([
