@@ -5084,7 +5084,7 @@ export default function App() {
                   </div>
                 </form>
               ) : (
-                <form onSubmit={async (e) => {
+                <form id="client-otp-verify-form" onSubmit={async (e) => {
                   e.preventDefault();
                   if (isClientAuthBusy) return;
                   setClientAuthError('');
@@ -5190,6 +5190,10 @@ export default function App() {
                           onChange={(e) => {
                             const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                             setClientMobileOtpCode(val);
+                            if (val.length === 4 && !isClientAuthBusy) {
+                              const form = document.getElementById('client-otp-verify-form') as HTMLFormElement | null;
+                              form?.requestSubmit();
+                            }
                           }}
                           placeholder="• • • •"
                           className="w-full h-full px-3 bg-transparent text-white text-center text-lg font-black tracking-[0.4em] focus:outline-none min-w-0"
@@ -7612,8 +7616,9 @@ export default function App() {
                   </button>
                 </form>
               ) : (
-                <form onSubmit={async (e) => {
+                <form id="vle-otp-verify-form" onSubmit={async (e) => {
                   e.preventDefault();
+                  if (isVleAuthBusy) return;
                   setVleAuthError('');
                   const missingVleVerifyFields = collectMissingFields([
                     { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
@@ -7727,6 +7732,10 @@ export default function App() {
                       onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                         setVleMobileOtpCode(val);
+                        if (val.length === 4 && !isVleAuthBusy) {
+                          const form = document.getElementById('vle-otp-verify-form') as HTMLFormElement | null;
+                          form?.requestSubmit();
+                        }
                       }}
                       placeholder="• • • •"
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg font-black tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -7971,8 +7980,9 @@ export default function App() {
                 </button>
               </form>
             ) : (
-              <form onSubmit={async (e) => {
+              <form id="vle-register-otp-verify-form" onSubmit={async (e) => {
                 e.preventDefault();
+                if (verifyingGovt) return;
                 setVleAuthError('');
                 const missingVleRegisterVerifyFields = collectMissingFields([
                   { label: 'Operator Name', ok: isNonEmpty(vleName) },
@@ -8061,6 +8071,10 @@ export default function App() {
                   onChange={(e) => {
                     const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                     setVleRegistrationOtpCode(val);
+                    if (val.length === 4 && !verifyingGovt) {
+                      const form = document.getElementById('vle-register-otp-verify-form') as HTMLFormElement | null;
+                      form?.requestSubmit();
+                    }
                   }}
                   placeholder="4-digit code"
                   className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -8983,8 +8997,9 @@ export default function App() {
                   </button>
                 </form>
               ) : (
-                <form onSubmit={async (e) => {
+                <form id="filler-otp-verify-form" onSubmit={async (e) => {
                   e.preventDefault();
+                  if (isFillerAuthBusy) return;
                   setFillerAuthError('');
                   const missingFillerVerifyFields = collectMissingFields([
                     { label: 'Expert Name', ok: isNonEmpty(fillerName) },
@@ -9091,7 +9106,14 @@ export default function App() {
                       autoFocus
                       autoComplete="one-time-code"
                       value={fillerMobileOtpCode}
-                      onChange={(e) => setFillerMobileOtpCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                        setFillerMobileOtpCode(val);
+                        if (val.length === 4 && !isFillerAuthBusy) {
+                          const formEl = document.getElementById('filler-otp-verify-form') as HTMLFormElement | null;
+                          formEl?.requestSubmit();
+                        }
+                      }}
                       placeholder="• • • •"
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg font-black tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
