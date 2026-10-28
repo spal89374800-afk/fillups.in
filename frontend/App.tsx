@@ -11310,7 +11310,7 @@ export default function App() {
         }} />
       )}
 
-      {showLegalModal && pendingRole && step === 'landing' && (
+      {showLegalModal && pendingRole && (
         <div className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-slate-900 border border-white/[0.1] rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="p-5 border-b border-white/[0.08]">
