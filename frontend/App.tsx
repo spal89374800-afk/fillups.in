@@ -11273,11 +11273,7 @@ export default function App() {
 
       {step === 'terms_citizen' && (
         <TermsCitizen onBack={() => {
-          if (showLegalModal) {
-            setShowLegalModal(true);
-            setStep('landing');
-            return;
-          } else if (pendingRole) {
+          if (showLegalModal || pendingRole) {
             setShowLegalModal(true);
             setStep('landing');
             return;
@@ -11292,11 +11288,7 @@ export default function App() {
       )}
       {step === 'terms_janseva' && (
         <TermsJanSeva onBack={() => {
-          if (showLegalModal) {
-            setShowLegalModal(true);
-            setStep('landing');
-            return;
-          } else if (pendingRole) {
+          if (showLegalModal || pendingRole) {
             setShowLegalModal(true);
             setStep('landing');
             return;
@@ -11311,11 +11303,7 @@ export default function App() {
       )}
       {step === 'terms_formfiller' && (
         <TermsFormFiller onBack={() => {
-          if (showLegalModal) {
-            setShowLegalModal(true);
-            setStep('landing');
-            return;
-          } else if (pendingRole) {
+          if (showLegalModal || pendingRole) {
             setShowLegalModal(true);
             setStep('landing');
             return;
@@ -11330,11 +11318,7 @@ export default function App() {
       )}
       {step === 'privacy_policy' && (
         <PrivacyPolicy onBack={() => {
-          if (showLegalModal) {
-            setShowLegalModal(true);
-            setStep('landing');
-            return;
-          } else if (pendingRole) {
+          if (showLegalModal || pendingRole) {
             setShowLegalModal(true);
             setStep('landing');
             return;
