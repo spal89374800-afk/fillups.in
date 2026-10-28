@@ -212,7 +212,7 @@ vleRouter.get('/vle/orders', requireAccount(), (req, res) => {
   res.json({ success: true, orders });
 });
 
-vleRouter.post('/vle/orders', requireAccount('client'), (req, res) => {
+vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
   const account = getRequestAccount(req)!;
   const {
     serviceName, formTitle, formDetails, formCategory, formRoll, orderType,
