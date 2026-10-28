@@ -7742,10 +7742,6 @@ export default function App() {
                       onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                         setVleMobileOtpCode(val);
-                        if (val.length === 4 && !isVleAuthBusy) {
-                          const form = document.getElementById('vle-otp-verify-form') as HTMLFormElement | null;
-                          form?.requestSubmit();
-                        }
                       }}
                       placeholder="• • • •"
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg font-black tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -9127,10 +9123,6 @@ export default function App() {
                       onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                         setFillerMobileOtpCode(val);
-                        if (val.length === 4 && !isFillerAuthBusy) {
-                          const formEl = document.getElementById('filler-otp-verify-form') as HTMLFormElement | null;
-                          formEl?.requestSubmit();
-                        }
                       }}
                       placeholder="• • • •"
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg font-black tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
