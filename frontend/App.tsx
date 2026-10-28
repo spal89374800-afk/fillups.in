@@ -5180,17 +5180,6 @@ export default function App() {
                           onChange={(e) => {
                             const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                             setClientMobileOtpCode(val);
-                            if (val.length === 4 && !isClientAuthBusy) {
-                              setTimeout(() => {
-                                const form = (e.target as HTMLInputElement).form;
-                                if (form) {
-                                  const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement | null;
-                                  if (btn && !btn.disabled) {
-                                    btn.click();
-                                  }
-                                }
-                              }, 50);
-                            }
                           }}
                           placeholder="• • • •"
                           className="w-full h-full px-3 bg-transparent text-white text-center text-lg font-black tracking-[0.4em] focus:outline-none min-w-0"
@@ -7726,17 +7715,6 @@ export default function App() {
                       onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                         setVleMobileOtpCode(val);
-                        if (val.length === 4 && !isVleAuthBusy) {
-                          setTimeout(() => {
-                            const form = (e.target as HTMLInputElement).form;
-                            if (form) {
-                              const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement | null;
-                              if (btn && !btn.disabled) {
-                                btn.click();
-                              }
-                            }
-                          }, 50);
-                        }
                       }}
                       placeholder="• • • •"
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg font-black tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -8071,17 +8049,6 @@ export default function App() {
                   onChange={(e) => {
                     const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                     setVleRegistrationOtpCode(val);
-                    if (val.length === 4 && !verifyingGovt) {
-                      setTimeout(() => {
-                        const form = (e.target as HTMLInputElement).form;
-                        if (form) {
-                          const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement | null;
-                          if (btn && !btn.disabled) {
-                            btn.click();
-                          }
-                        }
-                      }, 50);
-                    }
                   }}
                   placeholder="4-digit code"
                   className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-blue-500"
