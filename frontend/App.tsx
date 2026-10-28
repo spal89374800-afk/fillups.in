@@ -11276,6 +11276,7 @@ export default function App() {
           if (showLegalModal) {
             setShowLegalModal(true);
             setStep('landing');
+            return;
           } else {
             const session = readStoredSession();
             if (session?.role === 'client') setStep('client_portal');
@@ -11290,6 +11291,7 @@ export default function App() {
           if (showLegalModal) {
             setShowLegalModal(true);
             setStep('landing');
+            return;
           } else {
             const session = readStoredSession();
             if (session?.role === 'client') setStep('client_portal');
@@ -11304,6 +11306,7 @@ export default function App() {
           if (showLegalModal) {
             setShowLegalModal(true);
             setStep('landing');
+            return;
           } else {
             const session = readStoredSession();
             if (session?.role === 'client') setStep('client_portal');
@@ -11318,6 +11321,7 @@ export default function App() {
           if (showLegalModal) {
             setShowLegalModal(true);
             setStep('landing');
+            return;
           } else {
             const session = readStoredSession();
             if (session?.role === 'client') setStep('client_portal');
