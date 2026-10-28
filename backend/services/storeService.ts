@@ -1,5 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { AdminPaymentLedgerEntry, AdminPaymentLedgerStatus, VleOperator, VleOrder, FillerOrder, ServiceScope } from '../types/index.ts';
+import {
+  UserAccountModel,
+  VleOperatorModel,
+  FillerExpertModel,
+  VleOrderModel,
+  FillerOrderModel,
+  FillerServiceModel,
+  GlobalPricingModel,
+  AdminPaymentLedgerModel,
+  PayoutProfileModel
+} from '../models/index.ts';
+import { isMongoConnected } from '../config/db.ts';
 
 export interface LiveCameraSession {
   token: string;
@@ -79,6 +91,7 @@ export function saveOrUpdateUserAccount(account: Partial<UserAccount> & { role: 
       lastLoginAt: now
     };
     userAccountsStore.unshift(newAcc);
+    persistToMongo('userAccount', newAcc).catch(() => {});
     return newAcc;
   }
 }
@@ -174,6 +187,7 @@ export function addOrUpdateFillerService(item: Partial<FillerServiceItem> & { do
   } else {
     fillerServicesStore.unshift(newItem);
   }
+  try { persistToMongo('fillerService', newItem).catch(() => {}); } catch {}
   return newItem;
 }
 
@@ -181,6 +195,7 @@ export let globalPricingStore: { id: string; docName: string; price: string; ico
 
 export function updateGlobalPricing(pricing: { id: string; docName: string; price: string; icon?: string; dept?: string }[]) {
   globalPricingStore = [...pricing];
+  try { pricing.forEach(p => persistToMongo('globalPricing', p).catch(() => {})); } catch {}
   if (vleListStore.length > 0) {
     vleListStore[0].pricingList = [...pricing];
   }
@@ -193,6 +208,71 @@ export let vleOrdersStore: VleOrder[] = [];
 export let fillerOrdersStore: FillerOrder[] = [];
 
 export let adminPaymentLedgerStore: AdminPaymentLedgerEntry[] = [];
+
+export async function hydrateFromMongo() {
+  if (!isMongoConnected()) return;
+  try {
+    const [vles, fExperts, vOrders, fOrders, fServices, gPricing, ledger, accounts] = await Promise.all([
+      VleOperatorModel.find({}).lean(),
+      FillerExpertModel.find({}).lean(),
+      VleOrderModel.find({}).sort({ createdAt: -1 }).lean(),
+      FillerOrderModel.find({}).sort({ createdAt: -1 }).lean(),
+      FillerServiceModel.find({}).lean(),
+      GlobalPricingModel.find({}).lean(),
+      AdminPaymentLedgerModel.find({}).sort({ createdAt: -1 }).lean(),
+      UserAccountModel.find({}).lean()
+    ]);
+
+    if (vles.length) vleListStore = vles as any;
+    if (fExperts.length) fillerExpertsStore = fExperts as any;
+    if (vOrders.length) vleOrdersStore = vOrders as any;
+    if (fOrders.length) fillerOrdersStore = fOrders as any;
+    if (fServices.length) fillerServicesStore = fServices as any;
+    if (gPricing.length) globalPricingStore = gPricing as any;
+    if (ledger.length) adminPaymentLedgerStore = ledger as any;
+    if (accounts.length) userAccountsStore = accounts as any;
+
+    console.log('[MongoDB] Data hydrated into in-memory stores');
+  } catch (e) {
+    console.error('[MongoDB] Hydrate failed', e);
+  }
+}
+
+export async function persistToMongo(collection: string, doc: any) {
+  if (!isMongoConnected()) return;
+  try {
+    switch (collection) {
+      case 'userAccount':
+        await UserAccountModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        break;
+      case 'vleOperator':
+        await VleOperatorModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        break;
+      case 'fillerExpert':
+        await FillerExpertModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        break;
+      case 'vleOrder':
+        await VleOrderModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        break;
+      case 'fillerOrder':
+        await FillerOrderModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        break;
+      case 'fillerService':
+        await FillerServiceModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        break;
+      case 'globalPricing':
+        await GlobalPricingModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        break;
+      case 'ledger':
+        await AdminPaymentLedgerModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        break;
+      default:
+        break;
+    }
+  } catch (e) {
+    console.error('[MongoDB] Persist failed', e);
+  }
+}
 
 export function recordAdminPaymentLedger(entry: Omit<AdminPaymentLedgerEntry, 'id' | 'dateTime' | 'status' | 'source' | 'qrNote'> & Partial<Pick<AdminPaymentLedgerEntry, 'id' | 'dateTime' | 'status' | 'source' | 'qrNote'>>): AdminPaymentLedgerEntry {
   const existing = adminPaymentLedgerStore.find(item => item.orderId === entry.orderId);
@@ -215,6 +295,7 @@ export function recordAdminPaymentLedger(entry: Omit<AdminPaymentLedgerEntry, 'i
     updatedAt: now
   };
   adminPaymentLedgerStore.unshift(record);
+  try { persistToMongo('ledger', record).catch(() => {}); } catch {}
   return record;
 }
 
@@ -613,7 +694,9 @@ export function createBroadcastFormBid(data: {
 
   // Unshift the exact same reference to BOTH stores so both dashboards receive and reflect atomic state changes
   vleOrdersStore.unshift(newBid);
+  try { persistToMongo('vleOrder', newBid).catch(() => {}); } catch {}
   fillerOrdersStore.unshift(newBid);
+  try { persistToMongo('fillerOrder', newBid).catch(() => {}); } catch {}
 
   console.log(`[IN-APP BROADCAST BID] "${newBid.formTitle}" added to local Jan Seva and Form Filler order queues.`);
 

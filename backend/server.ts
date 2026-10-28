@@ -9,6 +9,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { createExpressApp } from './app.ts';
 import { getIceServers, setRealtimeServer } from './services/realtimeService.ts';
 import { startDocumentRetentionScheduler } from './services/documentRetentionService.ts';
+import { connectDB } from './config/db.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -21,6 +22,13 @@ const viteAvailable =
   fs.existsSync(path.join(frontendDir, 'node_modules', 'vite', 'package.json'));
 
 async function startServer() {
+  await connectDB();
+  try {
+    const { hydrateFromMongo } = await import('./services/storeService.ts');
+    await hydrateFromMongo();
+  } catch (e) {
+    console.warn('[startup] hydrate failed', e);
+  }
   const app = createExpressApp();
 
   // The build is written to the repository root `dist/` and mirrored to

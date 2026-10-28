@@ -194,6 +194,10 @@ vleRouter.post('/vle/register', (req, res) => {
   } else {
     vleListStore.unshift(updatedVle);
   }
+  try {
+    const { persistToMongo } = await import('../services/storeService.ts');
+    await persistToMongo('vleOperator', updatedVle);
+  } catch {}
   saveOperatorPricing(account, ownPricing);
   saveOperatorFormFilling(account, formFillingList || []);
 
@@ -299,6 +303,10 @@ vleRouter.post('/vle/orders', requireAccount('client'), (req, res) => {
   };
 
   vleOrdersStore.unshift(newOrder);
+  try {
+    const { persistToMongo } = await import('../services/storeService.ts');
+    await persistToMongo('vleOrder', newOrder);
+  } catch {}
 
   const scopeLabel = serviceScope === 'district' ? 'your district' : 'all India';
   const operatorTargetNotice = targetOperatorName
