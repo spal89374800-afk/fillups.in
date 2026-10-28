@@ -11276,6 +11276,9 @@ export default function App() {
           if (showLegalModal && pendingRole) {
             setShowLegalModal(true);
             setStep('landing');
+          } else if (showLegalModal) {
+            setShowLegalModal(true);
+            setStep('landing');
           } else {
             const session = readStoredSession();
             if (session?.role === 'client') setStep('client_portal');
@@ -11287,7 +11290,7 @@ export default function App() {
       )}
       {step === 'terms_janseva' && (
         <TermsJanSeva onBack={() => {
-          if (showLegalModal && pendingRole) {
+          if (showLegalModal) {
             setShowLegalModal(true);
             setStep('landing');
           } else {
@@ -11301,7 +11304,7 @@ export default function App() {
       )}
       {step === 'terms_formfiller' && (
         <TermsFormFiller onBack={() => {
-          if (showLegalModal && pendingRole) {
+          if (showLegalModal) {
             setShowLegalModal(true);
             setStep('landing');
           } else {
@@ -11315,7 +11318,7 @@ export default function App() {
       )}
       {step === 'privacy_policy' && (
         <PrivacyPolicy onBack={() => {
-          if (showLegalModal && pendingRole) {
+          if (showLegalModal) {
             setShowLegalModal(true);
             setStep('landing');
           } else {
