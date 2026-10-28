@@ -5093,6 +5093,10 @@ export default function App() {
                   if (isClientAuthBusy || clientVerifyLockRef.current) return;
                   clientVerifyLockRef.current = true;
                   setClientAuthError('');
+                  if (clientMobileOtpCode.length !== 4) {
+                    setClientAuthError('Enter the 4-digit verification code sent to your Gmail.');
+                    return;
+                  }
                   const missingClientVerifyFields = collectMissingFields([
                     { label: 'Full Name', ok: isNonEmpty(clientName) },
                     { label: '10-Digit Mobile Number', ok: isValidMobile(clientPhone) },
@@ -5100,7 +5104,6 @@ export default function App() {
                     { label: 'State / UT', ok: isNonEmpty(clientState) },
                     { label: 'District', ok: isNonEmpty(clientDistrictFilter) },
                     { label: 'City / Tehsil', ok: isNonEmpty(clientCityFilter) },
-                    { label: '4-Digit Verification Code', ok: clientMobileOtpCode.length === 4 },
                   ]);
                   if (missingClientVerifyFields.length > 0) {
                     setClientAuthError(requiredFieldsMessage(missingClientVerifyFields));
@@ -7627,12 +7630,15 @@ export default function App() {
                   if (isVleAuthBusy || vleVerifyLockRef.current) return;
                   vleVerifyLockRef.current = true;
                   setVleAuthError('');
+                  if (vleMobileOtpCode.length !== 4) {
+                    setVleAuthError('Enter the 4-digit verification code sent to your Gmail.');
+                    return;
+                  }
                   const missingVleVerifyFields = collectMissingFields([
                     { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
                     { label: 'Operator Name', ok: isNonEmpty(vleName) },
                     { label: '10-Digit Mobile Number', ok: isValidMobile(vlePhone) },
                     { label: 'Account Gmail', ok: isValidEmail(vleEmail) },
-                    { label: '4-Digit Verification Code', ok: vleMobileOtpCode.length === 4 },
                   ]);
                   if (missingVleVerifyFields.length > 0) {
                     setVleAuthError(requiredFieldsMessage(missingVleVerifyFields));
@@ -7993,6 +7999,10 @@ export default function App() {
                 if (verifyingGovt || vleRegisterVerifyLockRef.current) return;
                 vleRegisterVerifyLockRef.current = true;
                 setVleAuthError('');
+                if (vleRegistrationOtpCode.length !== 4) {
+                  setVleAuthError('Enter the 4-digit verification code sent to your Gmail.');
+                  return;
+                }
                 const missingVleRegisterVerifyFields = collectMissingFields([
                   { label: 'Operator Name', ok: isNonEmpty(vleName) },
                   { label: 'Jan Seva Kendra / Center Name', ok: isNonEmpty(vleCenterName) },
@@ -8002,7 +8012,6 @@ export default function App() {
                   { label: 'City / Tehsil', ok: isNonEmpty(vleCity) },
                   { label: '10-Digit Mobile Number', ok: isValidMobile(vlePhone) },
                   { label: 'Gmail ID', ok: isValidEmail(vleEmail) },
-                  { label: '4-Digit Verification Code', ok: vleRegistrationOtpCode.length === 4 },
                 ]);
                 if (missingVleRegisterVerifyFields.length > 0) {
                   setVleAuthError(requiredFieldsMessage(missingVleRegisterVerifyFields));
@@ -9012,11 +9021,14 @@ export default function App() {
                   if (isFillerAuthBusy || fillerVerifyLockRef.current) return;
                   fillerVerifyLockRef.current = true;
                   setFillerAuthError('');
+                  if (fillerMobileOtpCode.length !== 4) {
+                    setFillerAuthError('Enter the 4-digit verification code sent to your Gmail.');
+                    return;
+                  }
                   const missingFillerVerifyFields = collectMissingFields([
                     { label: 'Expert Name', ok: isNonEmpty(fillerName) },
                     { label: '10-Digit Mobile Number', ok: isValidMobile(fillerPhone) },
                     { label: 'Gmail ID', ok: isValidEmail(fillerEmail) },
-                    { label: '4-Digit Verification Code', ok: fillerMobileOtpCode.length === 4 },
                     ...(isFillerRegistering ? [
                       { label: 'State / UT', ok: isNonEmpty(fillerState) },
                       { label: 'District', ok: isNonEmpty(fillerDistrict) },
