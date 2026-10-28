@@ -11253,7 +11253,8 @@ export default function App() {
 
       {step === 'terms_citizen' && (
         <TermsCitizen onBack={() => {
-          if (showLegalModal && pendingRole === 'client') {
+          if (showLegalModal) {
+            // Go back to legal modal
             setStep('landing');
           } else {
             const session = readStoredSession();
@@ -11266,7 +11267,7 @@ export default function App() {
       )}
       {step === 'terms_janseva' && (
         <TermsJanSeva onBack={() => {
-          if (showLegalModal && pendingRole === 'vle') {
+          if (showLegalModal) {
             setStep('landing');
           } else {
             const session = readStoredSession();
@@ -11279,7 +11280,7 @@ export default function App() {
       )}
       {step === 'terms_formfiller' && (
         <TermsFormFiller onBack={() => {
-          if (showLegalModal && pendingRole === 'form_filler') {
+          if (showLegalModal) {
             setStep('landing');
           } else {
             const session = readStoredSession();
