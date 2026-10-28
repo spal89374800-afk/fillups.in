@@ -9063,12 +9063,39 @@ export default function App() {
                       throw new Error(loginData.error || 'Form Filler login failed. Please try again.');
                     }
                     if (isFillerRegistering) {
+                      setFillerAuthNotice('');
+                      const accountState = loginData.user?.state || fillerState;
+                      if (accountState) {
+                        setFillerState(accountState);
+                        localStorage.setItem('filler_state', accountState);
+                      }
+                      const accountDistrict = loginData.user?.district || fillerDistrict;
+                      if (accountDistrict) {
+                        setFillerDistrict(accountDistrict);
+                        localStorage.setItem('filler_district', accountDistrict);
+                      }
+                      localStorage.setItem('filler_operator_name', fillerName);
+                      localStorage.setItem('filler_phone', fillerPhone);
+                      localStorage.setItem('filler_email', fillerEmail);
+                      writeStoredSession({
+                        role: 'form_filler',
+                        name: fillerName,
+                        phone: fillerPhone,
+                        email: fillerEmail,
+                        state: accountState || fillerState,
+                        district: accountDistrict || fillerDistrict,
+                        city: fillerCity,
+                        token: loginData.token,
+                        loggedInAt: Date.now()
+                      });
+                      setIsFormFillerLoggedIn(true);
+                      setActiveRole('form_filler');
+                      setPendingRole('form_filler');
+                      setLegalAccepted(false);
+                      try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
+                      setShowLegalModal(true);
                       setFillerOtpSent(false);
                       setFillerMobileOtpCode('');
-                      setIsFillerRegistering(false);
-                      localStorage.setItem('filler_state', fillerState);
-                      localStorage.setItem('filler_district', fillerDistrict);
-                      setFillerAuthNotice('Registration successful. Log in with your registered phone and Gmail.');
                       return;
                     }
                     setFillerAuthNotice('');
