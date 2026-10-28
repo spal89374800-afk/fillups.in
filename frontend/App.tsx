@@ -7625,8 +7625,7 @@ export default function App() {
               ) : (
                 <form id="vle-otp-verify-form" onSubmit={async (e) => {
                   e.preventDefault();
-                  if (isVleAuthBusy || vleVerifyLockRef.current) return;
-                  vleVerifyLockRef.current = true;
+                  if (isVleAuthBusy) return;
                   setVleAuthError('');
                   if (vleMobileOtpCode.length !== 4) {
                     setVleAuthError('');
@@ -7721,7 +7720,6 @@ export default function App() {
                     setShowLegalModal(true);
                   } catch (error) {
                     setVleAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
-                    vleVerifyLockRef.current = false;
                   } finally {
                     setIsVleAuthBusy(false);
                   }
@@ -9016,8 +9014,7 @@ export default function App() {
               ) : (
                 <form id="filler-otp-verify-form" onSubmit={async (e) => {
                   e.preventDefault();
-                  if (isFillerAuthBusy || fillerVerifyLockRef.current) return;
-                  fillerVerifyLockRef.current = true;
+                  if (isFillerAuthBusy) return;
                   setFillerAuthError('');
                   if (fillerMobileOtpCode.length !== 4) {
                     setFillerAuthError('');
@@ -9110,7 +9107,6 @@ export default function App() {
                     setShowLegalModal(true);
                   } catch (error) {
                     setFillerAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
-                    fillerVerifyLockRef.current = false;
                   } finally {
                     setIsFillerAuthBusy(false);
                   }
@@ -9131,7 +9127,7 @@ export default function App() {
                       onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                         setFillerMobileOtpCode(val);
-                        if (val.length === 4 && !isFillerAuthBusy && !fillerVerifyLockRef.current) {
+                        if (val.length === 4 && !isFillerAuthBusy) {
                           const formEl = document.getElementById('filler-otp-verify-form') as HTMLFormElement | null;
                           formEl?.requestSubmit();
                         }
