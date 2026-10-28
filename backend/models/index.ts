@@ -1,4 +1,5 @@
-import mongoose, { Schema, model, models } from 'mongoose';
+import mongoose from 'mongoose';
+const { Schema, model } = mongoose;
 
 const UserAccountSchema = new Schema({
   id: { type: String, unique: true, index: true },
@@ -147,12 +148,12 @@ const PayoutProfileSchema = new Schema({
   updatedAt: Date
 }, { timestamps: true });
 
-export const UserAccountModel = models.UserAccount || model('UserAccount', UserAccountSchema);
-export const VleOperatorModel = models.VleOperator || model('VleOperator', VleOperatorSchema);
-export const FillerExpertModel = models.FillerExpert || model('FillerExpert', FillerExpertSchema);
-export const VleOrderModel = models.VleOrder || model('VleOrder', VleOrderSchema);
-export const FillerOrderModel = models.FillerOrder || model('FillerOrder', FillerOrderSchema);
-export const FillerServiceModel = models.FillerService || model('FillerService', FillerServiceSchema);
-export const GlobalPricingModel = models.GlobalPricing || model('GlobalPricing', GlobalPricingSchema);
-export const AdminPaymentLedgerModel = models.AdminPaymentLedger || model('AdminPaymentLedger', AdminPaymentLedgerSchema);
-export const PayoutProfileModel = models.PayoutProfile || model('PayoutProfile', PayoutProfileSchema);
+export const UserAccountModel = mongoose.models.UserAccount || model('UserAccount', UserAccountSchema);
+export const VleOperatorModel = mongoose.models.VleOperator || model('VleOperator', VleOperatorSchema);
+export const FillerExpertModel = mongoose.models.FillerExpert || model('FillerExpert', FillerExpertSchema);
+export const VleOrderModel = mongoose.models.VleOrder || model('VleOrder', VleOrderSchema);
+export const FillerOrderModel = mongoose.models.FillerOrder || model('FillerOrder', FillerOrderSchema);
+export const FillerServiceModel = mongoose.models.FillerService || model('FillerService', FillerServiceSchema);
+export const GlobalPricingModel = mongoose.models.GlobalPricing || model('GlobalPricing', GlobalPricingSchema);
+export const AdminPaymentLedgerModel = mongoose.models.AdminPaymentLedger || model('AdminPaymentLedger', AdminPaymentLedgerSchema);
+export const PayoutProfileModel = mongoose.models.PayoutProfile || model('PayoutProfile', PayoutProfileSchema);
