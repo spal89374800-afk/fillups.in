@@ -377,6 +377,7 @@ authRouter.post('/auth/send-otp', async (req, res) => {
     expiresAt: Date.now() + 10 * 60 * 1000,
     attempts: 0
   };
+  console.log(`[send-otp][DEBUG] OTP CODE=${code} for target=${normalizedTarget} email=${normalizedEmail} role=${userRole}`);
   console.log(`[send-otp] delivered via ${deliveredVia} to ${normalizedEmail} (target ${cleanPhone})`);
 
   return res.json({
