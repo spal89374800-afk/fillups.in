@@ -2959,16 +2959,23 @@ export default function App() {
     return { govtFee, serviceFee };
   };
 
+  const [isSubmittingExamForm, setIsSubmittingExamForm] = useState(false);
+
   // Submit Online Exam & Admission Form Filling (Option 3: NEET, JEE, Sarkari Exams)
   const handleExamFormSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!examFormTitle.trim()) return;
+    if (isSubmittingExamForm) return;
+    if (!examFormTitle.trim()) {
+      setClientOrderSuccessMsg('⚠️ Please enter/select the form name.');
+      return;
+    }
     const session = readStoredSession();
     if (!session?.token || session.role !== 'client') {
       setClientOrderSuccessMsg('⚠️ Please log in as a Citizen (Gmail OTP) to send this request.');
       setStep('client_login');
       return;
     }
+    setIsSubmittingExamForm(true);
     try {
       const applicantName = (examApplicantName || clientName || 'Citizen').trim();
       const applicantPhone = (examApplicantPhone || clientPhone || '9876543210').trim();
@@ -3024,6 +3031,8 @@ export default function App() {
     } catch (err) {
       console.warn('Exam form submit error:', err);
       setClientOrderSuccessMsg('❌ Unable to submit the request right now. Please check your connection and try again.');
+    } finally {
+      setIsSubmittingExamForm(false);
     }
   };
 
@@ -6727,10 +6736,11 @@ export default function App() {
                 <div className="pt-2">
                   <button
                     type="submit"
-                    className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:via-teal-500 hover:to-cyan-500 text-white font-black text-sm shadow-xl shadow-emerald-900/30 flex items-center justify-center gap-2.5 transition-all active:scale-95 cursor-pointer"
+                    disabled={isSubmittingExamForm}
+                    className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:via-teal-500 hover:to-cyan-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-black text-sm shadow-xl shadow-emerald-900/30 flex items-center justify-center gap-2.5 transition-all active:scale-95 cursor-pointer"
                   >
-                    <Send className="w-4 h-4 text-white" />
-                    <span>Send Request to Jan Seva Kendras &amp; Form Fillers (In-App Order Queues)</span>
+                    {isSubmittingExamForm ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Send className="w-4 h-4 text-white" />}
+                    <span>{isSubmittingExamForm ? 'Sending…' : 'Send Request to Jan Seva Kendras &amp; Form Fillers (In-App Order Queues)'}</span>
                   </button>
                 </div>
               </form>
