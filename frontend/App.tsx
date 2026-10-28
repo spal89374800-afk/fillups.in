@@ -7988,8 +7988,7 @@ export default function App() {
             ) : (
               <form id="vle-register-otp-verify-form" onSubmit={async (e) => {
                 e.preventDefault();
-                if (verifyingGovt || vleRegisterVerifyLockRef.current) return;
-                vleRegisterVerifyLockRef.current = true;
+                if (verifyingGovt) return;
                 setVleAuthError('');
                 if (vleRegistrationOtpCode.length !== 4) {
                   setVleAuthError('');
@@ -8065,7 +8064,6 @@ export default function App() {
                   setStep('vle_home');
                 } catch (error) {
                   setVleAuthError(error instanceof Error ? error.message : 'Registration verification failed.');
-                  vleRegisterVerifyLockRef.current = false;
                 } finally {
                   setVerifyingGovt(false);
                 }
@@ -8082,7 +8080,7 @@ export default function App() {
                   onChange={(e) => {
                     const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                     setVleRegistrationOtpCode(val);
-                    if (val.length === 4 && !verifyingGovt && !vleRegisterVerifyLockRef.current) {
+                    if (val.length === 4 && !verifyingGovt) {
                       const form = document.getElementById('vle-register-otp-verify-form') as HTMLFormElement | null;
                       form?.requestSubmit();
                     }
