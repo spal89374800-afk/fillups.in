@@ -11273,10 +11273,7 @@ export default function App() {
 
       {step === 'terms_citizen' && (
         <TermsCitizen onBack={() => {
-          if (showLegalModal && pendingRole) {
-            setShowLegalModal(true);
-            setStep('landing');
-          } else if (showLegalModal) {
+          if (showLegalModal) {
             setShowLegalModal(true);
             setStep('landing');
           } else {
