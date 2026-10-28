@@ -11277,6 +11277,10 @@ export default function App() {
             setShowLegalModal(true);
             setStep('landing');
             return;
+          } else if (pendingRole) {
+            setShowLegalModal(true);
+            setStep('landing');
+            return;
           } else {
             const session = readStoredSession();
             if (session?.role === 'client') setStep('client_portal');
@@ -11289,6 +11293,10 @@ export default function App() {
       {step === 'terms_janseva' && (
         <TermsJanSeva onBack={() => {
           if (showLegalModal) {
+            setShowLegalModal(true);
+            setStep('landing');
+            return;
+          } else if (pendingRole) {
             setShowLegalModal(true);
             setStep('landing');
             return;
@@ -11307,6 +11315,10 @@ export default function App() {
             setShowLegalModal(true);
             setStep('landing');
             return;
+          } else if (pendingRole) {
+            setShowLegalModal(true);
+            setStep('landing');
+            return;
           } else {
             const session = readStoredSession();
             if (session?.role === 'client') setStep('client_portal');
@@ -11319,6 +11331,10 @@ export default function App() {
       {step === 'privacy_policy' && (
         <PrivacyPolicy onBack={() => {
           if (showLegalModal) {
+            setShowLegalModal(true);
+            setStep('landing');
+            return;
+          } else if (pendingRole) {
             setShowLegalModal(true);
             setStep('landing');
             return;
