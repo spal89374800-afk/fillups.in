@@ -8061,7 +8061,10 @@ export default function App() {
                   });
                   setIsVleLoggedIn(true);
                   setActiveRole('vle');
-                  setStep('vle_home');
+                  setPendingRole('vle');
+                  setLegalAccepted(false);
+                  try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
+                  setShowLegalModal(true);
                 } catch (error) {
                   setVleAuthError(error instanceof Error ? error.message : 'Registration verification failed.');
                 } finally {
