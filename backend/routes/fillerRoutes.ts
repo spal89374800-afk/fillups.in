@@ -171,17 +171,17 @@ fillerRouter.get('/filler/orders', requireAccount('filler'), (req, res) => {
 // Broadcast Form Bid submission (Used by Online Form Filling and Custom Form)
 fillerRouter.post('/bids/form-filling', requireAccount('client'), (req, res) => {
   const account = getRequestAccount(req)!;
-  const { formTitle, formDetails, formCategory, formRoll, amountPaid, govtFee, orderType } = req.body;
+  const { formTitle, formDetails, formCategory, formRoll, clientName, clientPhone, clientEmail, district, city, amountPaid, govtFee, orderType } = req.body;
   const newBid = createBroadcastFormBid({
     formTitle: formTitle || 'Online Application Form',
     formDetails: formDetails || 'Details provided by citizen',
     formCategory: formCategory || 'General Exam / Govt Scheme',
     formRoll: formRoll || '',
-    clientName: account.name || 'Citizen',
-    clientPhone: account.phone || '',
-    clientEmail: account.email || '',
-    district: account.district || '',
-    city: account.city || '',
+    clientName: String(clientName || '').trim() || account.name || 'Citizen',
+    clientPhone: String(clientPhone || '').trim() || account.phone || '',
+    clientEmail: String(clientEmail || '').trim() || account.email || '',
+    district: String(district || '').trim() || account.district || '',
+    city: String(city || '').trim() || account.city || '',
     amountPaid: amountPaid || 150,
     govtFee: govtFee,
     orderType: orderType || 'online_form_filling'
@@ -197,7 +197,7 @@ fillerRouter.post('/bids/form-filling', requireAccount('client'), (req, res) => 
 
 fillerRouter.post('/filler/orders', requireAccount('client'), (req, res) => {
   const account = getRequestAccount(req)!;
-  const { formTitle, formDetails, formCategory, formRoll, amountPaid, govtFee, orderType } = req.body;
+  const { formTitle, formDetails, formCategory, formRoll, clientName, clientPhone, clientEmail, district, city, amountPaid, govtFee, orderType } = req.body;
 
   // Broadcast to BOTH Form Fillers (all India) and Jan Seva Kendra networks
   const newBid = createBroadcastFormBid({
@@ -205,11 +205,11 @@ fillerRouter.post('/filler/orders', requireAccount('client'), (req, res) => {
     formDetails: formDetails || 'No details provided',
     formCategory: formCategory || 'General Form',
     formRoll: formRoll || '',
-    clientName: account.name || 'Citizen',
-    clientPhone: account.phone || '',
-    clientEmail: account.email || '',
-    district: account.district || '',
-    city: account.city || '',
+    clientName: String(clientName || '').trim() || account.name || 'Citizen',
+    clientPhone: String(clientPhone || '').trim() || account.phone || '',
+    clientEmail: String(clientEmail || '').trim() || account.email || '',
+    district: String(district || '').trim() || account.district || '',
+    city: String(city || '').trim() || account.city || '',
     amountPaid: amountPaid || 150,
     govtFee: govtFee,
     orderType: orderType || 'online_form_filling'

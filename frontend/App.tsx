@@ -2992,9 +2992,18 @@ export default function App() {
     }
     setIsSubmittingExamForm(true);
     try {
-      const applicantName = (examApplicantName || clientName || 'Citizen').trim();
-      const applicantPhone = (examApplicantPhone || clientPhone || '9876543210').trim();
-      const applicantEmail = (examApplicantEmail || clientEmail || 'citizen@gmail.com').trim();
+      const applicantName = (examApplicantName || clientName || '').trim();
+      const applicantPhone = (examApplicantPhone || clientPhone || '').replace(/\D/g, '').slice(-10);
+      const applicantEmail = (examApplicantEmail || clientEmail || '').trim();
+      const missingApplicantDetails = collectMissingFields([
+        { label: 'Applicant Name', ok: isNonEmpty(applicantName) },
+        { label: '10-Digit Mobile Number', ok: isValidMobile(applicantPhone) },
+        { label: 'Gmail / Email', ok: isValidEmail(applicantEmail) }
+      ]);
+      if (missingApplicantDetails.length > 0) {
+        setClientOrderSuccessMsg(requiredFieldsMessage(missingApplicantDetails));
+        return;
+      }
       const matchedService = allPublishedForms.find(s => s.docName === examFormTitle);
       const feeAmount = Number(matchedService?.price) || 150;
       const govtFeeAmount = Number(matchedService?.govtFee) || 0;
@@ -3054,14 +3063,34 @@ export default function App() {
   // Submit Jan Seva Kendra Document Making (Option 4: PAN Card, Domicile, Income, Caste)
   const handleJanSevaDocSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!selectedJanSevaDoc.trim() || isSubmittingJanSevaDoc) return;
+    if (isSubmittingJanSevaDoc) return;
+    if (!selectedJanSevaDoc.trim()) {
+      setClientOrderSuccessMsg('⚠️ Please select or type the government document name first.');
+      return;
+    }
     setIsSubmittingJanSevaDoc(true);
     try {
+      const referenceValue = String(janSevaDocAadhaar || '').trim();
+      const referenceDigits = referenceValue.replace(/\D/g, '');
+      const mobileOverride = /^[6-9]\d{9}$/.test(referenceDigits) ? referenceDigits : '';
+      const applicantName = (janSevaDocApplicantName || clientName || '').trim();
+      const applicantPhone = mobileOverride || (clientPhone || '').replace(/\D/g, '').slice(-10);
+      const applicantEmail = (janSevaDocEmail || clientEmail || '').trim();
+      const missingApplicantDetails = collectMissingFields([
+        { label: 'Applicant Name', ok: isNonEmpty(applicantName) },
+        { label: '10-Digit Mobile Number', ok: isValidMobile(applicantPhone) },
+        { label: 'Gmail / Email', ok: isValidEmail(applicantEmail) }
+      ]);
+      if (missingApplicantDetails.length > 0) {
+        setClientOrderSuccessMsg(requiredFieldsMessage(missingApplicantDetails));
+        return;
+      }
       const fullDetails = [
         `Document: ${selectedJanSevaDoc}`,
-        janSevaDocApplicantName ? `Applicant Name: ${janSevaDocApplicantName}` : `Applicant: ${clientName || 'Citizen'}`,
-        janSevaDocAadhaar ? `Aadhaar / Mobile: ${janSevaDocAadhaar}` : '',
-        janSevaDocEmail ? `Email: ${janSevaDocEmail}` : '',
+        `Applicant Name: ${applicantName}`,
+        referenceValue && referenceValue !== applicantPhone ? `Aadhaar / Reference: ${referenceValue}` : '',
+        `Mobile: ${applicantPhone}`,
+        `Email: ${applicantEmail}`,
         janSevaDocUrgent ? 'Priority: Urgent Fast-Track Service' : 'Priority: Regular Service',
         janSevaDocDetails ? `Special Notes: ${janSevaDocDetails}` : ''
       ].filter(Boolean).join('\n');
@@ -3079,9 +3108,9 @@ export default function App() {
           serviceName: selectedJanSevaDoc,
           formDetails: fullDetails,
           orderType: 'vle_service',
-          clientName: janSevaDocApplicantName || clientName || 'Citizen',
-          clientPhone: janSevaDocAadhaar || clientPhone,
-          clientEmail: janSevaDocEmail || clientEmail,
+          clientName: applicantName,
+          clientPhone: applicantPhone,
+          clientEmail: applicantEmail,
           district: clientDistrictFilter || '',
           city: clientCityFilter || '',
           amountPaid: serviceFee || fallbackPrice,
@@ -3127,6 +3156,18 @@ export default function App() {
   // Dispatch direct order to specific operator (Rajesh / Anil) and instantly open communication panel
   const handleDirectApply = async (targetVle: any) => {
     const targetService = searchQuery.trim() || 'Domicile / PAN Card Document';
+    const applicantName = (clientName || '').trim();
+    const applicantPhone = (clientPhone || '').replace(/\D/g, '').slice(-10);
+    const applicantEmail = (clientEmail || '').trim();
+    const missingApplicantDetails = collectMissingFields([
+      { label: 'Full Name', ok: isNonEmpty(applicantName) },
+      { label: '10-Digit Mobile Number', ok: isValidMobile(applicantPhone) },
+      { label: 'Gmail / Email', ok: isValidEmail(applicantEmail) }
+    ]);
+    if (missingApplicantDetails.length > 0) {
+      setClientOrderSuccessMsg(requiredFieldsMessage(missingApplicantDetails));
+      return;
+    }
     const matchingService = targetVle.pricingList?.find((p: any) =>
       targetService.toLowerCase().includes(p.docName.toLowerCase()) || p.docName.toLowerCase().includes(targetService.toLowerCase())
     );
@@ -3141,9 +3182,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           serviceName: `${targetService} (Assigned to ${targetVle.name})`,
-          clientName: clientName || 'Citizen',
-          clientPhone: clientPhone || '9876543210',
-          clientEmail: clientEmail || 'rahul.verma@gmail.com',
+          clientName: applicantName,
+          clientPhone: applicantPhone,
+          clientEmail: applicantEmail,
           district: clientDistrictFilter,
           city: clientCityFilter,
           amountPaid: finalAmount,
@@ -6750,7 +6791,7 @@ export default function App() {
                 <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-300">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                    <span>Applicant: <b className="text-white">{examApplicantName || clientName || 'Citizen'}</b> • Mobile: <b className="text-emerald-300">{examApplicantPhone || clientPhone || '9876543210'}</b></span>
+                    <span>Applicant: <b className="text-white">{examApplicantName || clientName || 'Citizen'}</b> • Mobile: <b className="text-emerald-300">{examApplicantPhone || clientPhone || '—'}</b></span>
                   </div>
                 </div>
 

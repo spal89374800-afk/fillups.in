@@ -224,7 +224,6 @@ export async function hydrateFromMongo() {
     ]);
 
     if (vles.length) vleListStore = vles as any;
-    if (fExperts.length) fillerExpertsStore = fExperts as any;
     if (vOrders.length) vleOrdersStore = vOrders as any;
     if (fOrders.length) fillerOrdersStore = fOrders as any;
     if (fServices.length) fillerServicesStore = fServices as any;
@@ -548,11 +547,12 @@ export function inferOrderScope(order: { serviceScope?: ServiceScope; orderType?
   return order.district ? 'district' : 'national';
 }
 
-export function orderBelongsToClient(order: { clientPhone?: string; clientEmail?: string }, account?: UserAccount): boolean {
+export function orderBelongsToClient(order: { clientId?: string; clientPhone?: string; clientEmail?: string }, account?: UserAccount): boolean {
   if (!account || account.role !== 'client') return false;
+  const idMatch = !!account.id && order.clientId === account.id;
   const phoneMatch = normalizePhone(account.phone).length === 10 && normalizePhone(order.clientPhone) === normalizePhone(account.phone);
   const emailMatch = !!account.email && normalizeEmail(order.clientEmail) === normalizeEmail(account.email);
-  return phoneMatch || emailMatch;
+  return idMatch || phoneMatch || emailMatch;
 }
 
 export function isOrderVisibleToAccount(
@@ -665,8 +665,8 @@ export function createBroadcastFormBid(data: {
     isBroadcastBid: true,
     clientId: 'client-' + Math.floor(100 + Math.random() * 900),
     clientName: data.clientName || 'Citizen',
-    clientPhone: data.clientPhone || '9876543210',
-    clientEmail: data.clientEmail || 'citizen@gmail.com',
+    clientPhone: data.clientPhone || '',
+    clientEmail: data.clientEmail || '',
     district: data.district || '',
     city: data.city || '',
     availableOperatorIds: allVleRecipients.flatMap(operator => [operator.id, operator.cscId]),

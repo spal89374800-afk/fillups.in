@@ -220,11 +220,11 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
     targetOperatorPhone, targetOperatorEmail
   } = req.body;
 
-  const clientName = account.name || req.body.clientName || 'Citizen';
-  const clientPhone = account.phone || req.body.clientPhone || '';
-  const clientEmail = account.email || req.body.clientEmail || '';
-  const requestDistrict = account.district || district || '';
-  const requestCity = account.city || city || '';
+  const clientName = String(req.body.clientName || '').trim() || account.name || 'Citizen';
+  const clientPhone = String(req.body.clientPhone || '').trim() || account.phone || '';
+  const clientEmail = String(req.body.clientEmail || '').trim() || account.email || '';
+  const requestDistrict = String(district || '').trim() || account.district || '';
+  const requestCity = String(city || '').trim() || account.city || '';
 
   const inferredScope: ServiceScope = (orderType === 'online_form_filling' || orderType === 'custom_form' || formTitle)
     ? 'online_form'

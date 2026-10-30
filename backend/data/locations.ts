@@ -96,6 +96,11 @@ export const STATES_LOCATIONS: StateLocation[] = [
     cities: ['Adoor', 'Alappuzha', 'Attingal', 'Chalakudy', 'Changanassery', 'Cherthala', 'Chittur-Thathamangalam', 'Ernakulam', 'Guruvayoor', 'Idukki', 'Kanhangad', 'Kannur', 'Kasaragod', 'Kayamkulam', 'Kochi', 'Kodungallur', 'Kollam', 'Kottayam', 'Koyilandy', 'Kozhikode', 'Kunnamkulam', 'Malappuram', 'Mattannur', 'Mavelikkara', 'Mavoor', 'Muvattupuzha', 'Nedumangad', 'Neyyattinkara', 'Nilambur', 'Ottappalam', 'Palai', 'Palakkad', 'Panamattom', 'Panniyannur', 'Pappinisseri', 'Paravoor', 'Pathanamthitta', 'Peringathur', 'Perinthalmanna', 'Perumbavoor', 'Ponnani', 'Punalur', 'Puthuppally', 'Shoranur', 'Taliparamba', 'Thiruvalla', 'Thiruvananthapuram', 'Thodupuzha', 'Thrissur', 'Tirur', 'Vaikom', 'Varkala', 'Vatakara', 'Wayanad'],
   },
   {
+    state: 'Ladakh',
+    districts: ['Kargil', 'Leh'],
+    cities: ['Kargil', 'Leh'],
+  },
+  {
     state: 'Lakshadweep',
     districts: ['Lakshadweep'],
     cities: ['Lakshadweep'],

@@ -94,7 +94,8 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     const timer = setTimeout(async () => {
       try {
         const stateParam = state ? `&state=${encodeURIComponent(state)}` : '';
-        const res = await fetch(`/api/locations?q=${encodeURIComponent(query)}${stateParam}`);
+        const typeParam = preferType ? `&type=${preferType}` : '';
+        const res = await fetch(`/api/locations?q=${encodeURIComponent(query)}${stateParam}${typeParam}`);
         const data = await parseJsonResponse(res);
         if (cancelled) return;
         const list: LocationSuggestion[] = Array.isArray(data?.suggestions) ? data.suggestions : [];
