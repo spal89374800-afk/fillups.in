@@ -30,6 +30,31 @@ function canUseFallback(path: string): boolean {
   return window.location.origin !== API_FALLBACK_ORIGIN;
 }
 
+/**
+ * True for both same-origin `/api/...` paths and absolute backend API URLs.
+ * Used by the global fetch wrapper to attach the login token in both cases.
+ */
+export function isApiRequestUrl(url: string): boolean {
+  if (!url) return false;
+  return url.startsWith('/api/') || url.startsWith(`${API_FALLBACK_ORIGIN}/api/`);
+}
+
+/**
+ * Detect a response from a static frontend host (HTML / empty / plain-text 404)
+ * instead of the real API. JSON and file responses are never treated as a
+ * static-host response, so local document downloads keep working.
+ */
+export function shouldFallbackToApiOrigin(response: Response): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.location.origin === API_FALLBACK_ORIGIN) return false;
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('application/json')) return false;
+  if (/^(application\/pdf|application\/octet-stream|image\/|audio\/|video\/)/.test(contentType)) {
+    return false;
+  }
+  return true;
+}
+
 export async function parseJsonResponse(response: Response): Promise<any> {
   try {
     const text = await response.text();

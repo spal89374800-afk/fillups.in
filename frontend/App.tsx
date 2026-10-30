@@ -15,7 +15,7 @@ import { LocalizedTree } from './localization';
 import { realtimeSocket } from './realtime';
 import { createBlinkLivenessEngine } from './services/blinkLiveness';
 import { getCaptchaToken } from './services/turnstile';
-import { fetchWithRetry, parseJsonResponse } from './services/apiClient';
+import { API_FALLBACK_ORIGIN, fetchWithRetry, isApiRequestUrl, parseJsonResponse, shouldFallbackToApiOrigin } from './services/apiClient';
 import type { BlinkEngine } from './services/blinkLiveness';
 
 export const getDocRequirements = (item: { id?: string; docName?: string; requirements?: string; title?: string }) => {
@@ -356,23 +356,34 @@ function clearStoredSession() {
 if (typeof window !== 'undefined' && !(window as any).__digisevaFetchPatched) {
   (window as any).__digisevaFetchPatched = true;
   const nativeFetch = window.fetch.bind(window);
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const requestUrl = typeof input === 'string'
       ? input
       : input instanceof URL
         ? input.toString()
         : input.url;
-    if (requestUrl.startsWith('/api/')) {
-      const token = readStoredSession()?.token;
-      if (token) {
-        const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
-        if (!headers.has('Authorization')) {
-          headers.set('Authorization', `Bearer ${token}`);
-        }
-        return nativeFetch(input, { ...init, headers });
-      }
+    if (!isApiRequestUrl(requestUrl)) {
+      return nativeFetch(input, init);
     }
-    return nativeFetch(input, init);
+
+    const token = readStoredSession()?.token;
+    const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
+    if (token && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    // Absolute backend URLs already carry the token — no fallback needed.
+    if (!requestUrl.startsWith('/api/')) {
+      return nativeFetch(input, { ...init, headers });
+    }
+
+    const response = await nativeFetch(input, { ...init, headers });
+    // Static frontend host par `/api/...` wahan nahi hota (HTML/empty response).
+    // Aise case me wahi request backend origin par dobara bhejo.
+    if (shouldFallbackToApiOrigin(response)) {
+      return nativeFetch(`${API_FALLBACK_ORIGIN}${requestUrl}`, { ...init, headers });
+    }
+    return response;
   };
 }
 
