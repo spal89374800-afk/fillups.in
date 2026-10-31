@@ -3008,6 +3008,19 @@ export default function App() {
 
   const [isSubmittingExamForm, setIsSubmittingExamForm] = useState(false);
 
+  // Live backend restarts (Render free tier sleeps/restarts) can invalidate an
+  // old login token. Instead of failing the form request with a vague error,
+  // clear the stale session and take the user back to the OTP login screen.
+  // (Account data is stored in MongoDB, so logging in again restores access.)
+  const recoverFromStaleSession = () => {
+    clearStoredSession();
+    setIsClientLoggedIn(false);
+    setActiveRole('none');
+    setClientAuthError('⚠️ Aapka session expire ho gaya hai (server restart ke baad). Dobara Gmail OTP se login karein — login ke baad form request turant chali jayegi.');
+    setClientOrderSuccessMsg('⚠️ Session expire ho gaya. Dobara login karke request bhejein — aapki details safe hain aur form bhara hua milega.');
+    setStep('client_login');
+  };
+
   // Submit Online Exam & Admission Form Filling (Option 3: NEET, JEE, Sarkari Exams)
   const handleExamFormSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -3080,7 +3093,7 @@ export default function App() {
         if (soundAlertEnabled) playChime();
         refreshCitizenPageAfterSubmit(successNotice);
       } else if (res.status === 401) {
-        setClientOrderSuccessMsg('⚠️ Session expired. Please log in again as a Citizen, then resend the request.');
+        recoverFromStaleSession();
       } else {
         setClientOrderSuccessMsg(`⚠️ ${data.error || 'Request could not be sent. Please try again.'}`);
       }
@@ -3174,6 +3187,8 @@ export default function App() {
           });
         });
         refreshCitizenPageAfterSubmit(successNotice);
+      } else if (res.status === 401) {
+        recoverFromStaleSession();
       } else {
         setClientOrderSuccessMsg(`⚠️ ${data.error || 'Request could not be sent. Please check your district and try again.'}`);
       }
@@ -3236,6 +3251,8 @@ export default function App() {
         showClientActiveOrders();
         if (soundAlertEnabled) playChime();
         refreshCitizenPageAfterSubmit(successNotice);
+      } else if (res.status === 401) {
+        recoverFromStaleSession();
       } else {
         setClientOrderSuccessMsg(data.error || 'This operator is not available in your district.');
       }

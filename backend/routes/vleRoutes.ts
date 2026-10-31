@@ -261,19 +261,28 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
     broadcastBid.routingNote = 'Yeh exam/online form request poore India ke Jan Seva operators aur Form Filler experts ko bheji gayi hai. Online operators ko turant in-app notification, offline ko email.';
 
     const allVle = getAllVleRecipients();
-    const vleResult = await dispatchNewOrderToVle(broadcastBid, allVle, 'national');
-    const fillerResult = await dispatchNewOrderToFillers(broadcastBid);
 
-    broadcastBid.notificationsSent = {
-      phone: false,
-      email: (vleResult.emails + fillerResult.emails) > 0,
-      broadcastToVle: vleResult.inApp > 0,
-      broadcastToFiller: fillerResult.inApp > 0,
-      inApp: vleResult.inApp + fillerResult.inApp,
-      emailCount: vleResult.emails + fillerResult.emails,
-      routing: 'national'
-    };
+    // Persist first so the request can never be lost, then broadcast. In-app
+    // socket events fire immediately; emails finish in the background.
     await persistOrder(broadcastBid);
+
+    void Promise.all([
+      dispatchNewOrderToVle(broadcastBid, allVle, 'national'),
+      dispatchNewOrderToFillers(broadcastBid)
+    ]).then(async ([vleResult, fillerResult]) => {
+      broadcastBid.notificationsSent = {
+        phone: false,
+        email: (vleResult.emails + fillerResult.emails) > 0,
+        broadcastToVle: vleResult.inApp > 0,
+        broadcastToFiller: fillerResult.inApp > 0,
+        inApp: vleResult.inApp + fillerResult.inApp,
+        emailCount: vleResult.emails + fillerResult.emails,
+        routing: 'national'
+      };
+      await persistOrder(broadcastBid);
+    }).catch(error => {
+      console.error('[form-dispatch] notification delivery failed:', error);
+    });
 
     return res.json({
       success: true,
@@ -393,29 +402,29 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
   });
 
   vleOrdersStore.unshift(newOrder);
-
-  const dispatchResult = await dispatchNewOrderToVle(newOrder, eligibleOperators, routing);
-  newOrder.notificationsSent = {
-    phone: false,
-    email: dispatchResult.emails > 0,
-    broadcastToVle: dispatchResult.inApp > 0,
-    broadcastToFiller: false,
-    inApp: dispatchResult.inApp,
-    emailCount: dispatchResult.emails,
-    routing
-  };
   await persistOrder(newOrder);
+
+  // Notify immediately; email delivery continues in the background so the
+  // citizen's request is acknowledged without waiting on SMTP.
+  void dispatchNewOrderToVle(newOrder, eligibleOperators, routing).then(async dispatchResult => {
+    newOrder.notificationsSent = {
+      phone: false,
+      email: dispatchResult.emails > 0,
+      broadcastToVle: dispatchResult.inApp > 0,
+      broadcastToFiller: false,
+      inApp: dispatchResult.inApp,
+      emailCount: dispatchResult.emails,
+      routing
+    };
+    await persistOrder(newOrder);
+  }).catch(error => {
+    console.error('[order-dispatch] notification delivery failed:', error);
+  });
 
   res.json({
     success: true,
     message: `✅ Order dispatched! ${routingNote}`,
     routing,
-    notifications: {
-      inApp: dispatchResult.inApp,
-      email: dispatchResult.emails,
-      online: dispatchResult.onlineIds.length,
-      offline: dispatchResult.offlineIds.length
-    },
     order: newOrder
   });
 });

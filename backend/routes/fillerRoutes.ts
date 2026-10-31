@@ -211,26 +211,33 @@ async function createAndDispatchFormRequest(req: any, res: any, fallbackTitle: s
 
   // Broadcast to BOTH Form Fillers (all India) and Jan Seva Kendra network.
   const allVle = vleListStore.filter(operator => operator.role !== 'filler');
-  const vleResult = await dispatchNewOrderToVle(newBid, allVle, 'national');
-  const fillerResult = await dispatchNewOrderToFillers(newBid);
 
-  newBid.notificationsSent = {
-    phone: false,
-    email: (vleResult.emails + fillerResult.emails) > 0,
-    broadcastToVle: vleResult.inApp > 0,
-    broadcastToFiller: fillerResult.inApp > 0,
-    inApp: vleResult.inApp + fillerResult.inApp,
-    emailCount: vleResult.emails + fillerResult.emails,
-    routing: 'national'
-  };
+  // Persist first so the citizen's request can never be lost, then broadcast.
+  // In-app socket events fire immediately; email delivery continues in the
+  // background so a slow SMTP/API handshake never blocks "Send Request".
   await persistOrder(newBid);
 
-  const totalInApp = vleResult.inApp + fillerResult.inApp;
-  const totalEmail = vleResult.emails + fillerResult.emails;
+  void Promise.all([
+    dispatchNewOrderToVle(newBid, allVle, 'national'),
+    dispatchNewOrderToFillers(newBid)
+  ]).then(async ([vleResult, fillerResult]) => {
+    newBid.notificationsSent = {
+      phone: false,
+      email: (vleResult.emails + fillerResult.emails) > 0,
+      broadcastToVle: vleResult.inApp > 0,
+      broadcastToFiller: fillerResult.inApp > 0,
+      inApp: vleResult.inApp + fillerResult.inApp,
+      emailCount: vleResult.emails + fillerResult.emails,
+      routing: 'national'
+    };
+    await persistOrder(newBid);
+  }).catch(error => {
+    console.error('[form-dispatch] notification delivery failed:', error);
+  });
+
   res.json({
     success: true,
-    message: `✅ Form request for "${newBid.formTitle}" dispatched. ${totalInApp} operator(s) ko in-app notification, ${totalEmail} offline operator(s) ko email bheji gayi.`,
-    notifications: { inApp: totalInApp, email: totalEmail },
+    message: `✅ Form request for "${newBid.formTitle}" dispatched to all Jan Seva operators and Form Filler experts. Online operators get an instant in-app alert; offline operators get an email.`,
     order: newBid
   });
 }

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import fs from 'node:fs';
 import path from 'path';
 import { Server as SocketIOServer } from 'socket.io';
-import { createExpressApp } from './app.ts';
+import { createExpressApp, isAllowedCorsOrigin } from './app.ts';
 import { getIceServers, setRealtimeServer } from './services/realtimeService.ts';
 import { startDocumentRetentionScheduler } from './services/documentRetentionService.ts';
 import { connectDB } from './config/db.ts';
@@ -101,7 +101,14 @@ async function startServer() {
   const httpServer = createHttpServer(app);
   // Voice notes base64 me aate hain — default 1MB buffer bahut chhota hai.
   const socketServer = new SocketIOServer(httpServer, {
-    maxHttpBufferSize: 25 * 1024 * 1024
+    maxHttpBufferSize: 25 * 1024 * 1024,
+    // The citizen site can be served from a separate static host
+    // (e.g. fillups-in-1.onrender.com). Without this, the browser blocks the
+    // Socket.IO handshake and operators never receive new order requests.
+    cors: {
+      origin: (origin, callback) => callback(null, !origin || isAllowedCorsOrigin(origin)),
+      credentials: true
+    }
   });
   getIceServers();
   setRealtimeServer(socketServer);

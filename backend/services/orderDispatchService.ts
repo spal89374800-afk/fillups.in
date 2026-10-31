@@ -109,6 +109,7 @@ export async function dispatchNewOrderToVle(
     emailErrors: []
   };
 
+  const emailJobs: Promise<void>[] = [];
   for (const operator of operators) {
     const { account, email, name } = operatorEmailTargets(operator);
     const ids = [operator.id, operator.cscId].filter(Boolean).map(String);
@@ -121,8 +122,15 @@ export async function dispatchNewOrderToVle(
       result.onlineIds.push(...ids);
     } else {
       result.offlineIds.push(...ids);
-      await maybeEmailOfflineOperator(account, email, name, order, result, 'Jan Seva Operator');
+      // Queue email delivery instead of awaiting it here: all in-app socket
+      // events must fire immediately, otherwise a slow SMTP/API call delays
+      // notifications for the remaining operators (and the citizen's request).
+      emailJobs.push(maybeEmailOfflineOperator(account, email, name, order, result, 'Jan Seva Operator'));
     }
+  }
+
+  if (emailJobs.length) {
+    await Promise.allSettled(emailJobs);
   }
 
   return result;
@@ -140,6 +148,7 @@ export async function dispatchNewOrderToFillers(order: VleOrder | FillerOrder): 
   };
 
   const fillerAccounts = userAccountsStore.filter(account => account.role === 'filler');
+  const emailJobs: Promise<void>[] = [];
   let anyOnline = false;
   for (const account of fillerAccounts) {
     if (isAccountOnline(account)) {
@@ -151,8 +160,11 @@ export async function dispatchNewOrderToFillers(order: VleOrder | FillerOrder): 
       if (key) emitDispatchEvent(`dispatch:filler-id:${key}`, 'dispatch:new-order', { order });
     } else {
       result.offlineIds.push(account.id);
-      await maybeEmailOfflineOperator(account, account.email, account.name, order, result, 'Form Filler Expert');
+      emailJobs.push(maybeEmailOfflineOperator(account, account.email, account.name, order, result, 'Form Filler Expert'));
     }
+  }
+  if (emailJobs.length) {
+    await Promise.allSettled(emailJobs);
   }
   if (anyOnline) {
     emitDispatchEvent('dispatch:filler-global', 'dispatch:new-order', { order });

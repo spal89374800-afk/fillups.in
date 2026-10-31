@@ -11,7 +11,7 @@ const EXTRA_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || process.env.FRONTE
   .map(value => value.trim().replace(/\/+$/, ''))
   .filter(Boolean);
 
-function isAllowedCorsOrigin(origin: string): boolean {
+export function isAllowedCorsOrigin(origin: string): boolean {
   try {
     const parsed = new URL(origin);
     const host = parsed.hostname.toLowerCase();
