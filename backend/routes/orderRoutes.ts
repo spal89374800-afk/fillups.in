@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { findAnyOrder, processDocumentWithZeroRetention, orderBelongsToClient, vleOrdersStore, fillerOrdersStore } from '../services/storeService.ts';
+import { findAnyOrder, processDocumentWithZeroRetention, orderBelongsToClient, vleOrdersStore, fillerOrdersStore, persistOrder } from '../services/storeService.ts';
 import { sendOrderMessage } from '../services/orderMessageService.ts';
 import { emitOrderUpdate } from '../services/realtimeService.ts';
+import { maybeCompleteOrder } from '../services/orderDispatchService.ts';
 import { isRasterImageDataUrl } from '../services/mediaService.ts';
 import { getRequestAccount } from '../middleware/securityMiddleware.ts';
 import { documentUpload, buildStoredDocument, DOCUMENT_RETENTION_MS, UPLOADS_DIR } from '../services/documentRetentionService.ts';
@@ -31,13 +32,14 @@ function accountCanAccessOrder(order: any, account?: UserAccount): boolean {
 }
 
 // Send Live Chat Message in Workspace
-const handleSendMessage = (req: any, res: any) => {
+const handleSendMessage = async (req: any, res: any) => {
   const found = findAnyOrder(req.params.id);
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
   if (!accountCanAccessOrder(found.order, getRequestAccount(req))) {
     return res.status(403).json({ success: false, error: 'You do not have access to this order.' });
   }
   const result = sendOrderMessage(req.params.id, req.body);
+  await persistOrder(found.order);
   res.json(result);
 };
 
@@ -45,7 +47,7 @@ orderRouter.post('/orders/:id/message', handleSendMessage);
 orderRouter.post('/orders/:id/messages', handleSendMessage);
 
 // Upload Photo Proof
-orderRouter.post('/orders/:id/upload-proof', (req, res) => {
+orderRouter.post('/orders/:id/upload-proof', async (req, res) => {
   const { id } = req.params;
   const { photoUrl } = req.body;
   if (!isRasterImageDataUrl(photoUrl)) {
@@ -78,11 +80,12 @@ orderRouter.post('/orders/:id/upload-proof', (req, res) => {
   });
 
   emitOrderUpdate(order);
+  await persistOrder(order);
   res.json({ success: true, message: 'Photo proof submitted successfully!', order });
 });
 
 // Approve Proof by Client (OK Button)
-orderRouter.post('/orders/:id/approve-proof', (req, res) => {
+orderRouter.post('/orders/:id/approve-proof', async (req, res) => {
   const { id } = req.params;
   const found = findAnyOrder(id);
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
@@ -105,12 +108,98 @@ orderRouter.post('/orders/:id/approve-proof', (req, res) => {
   });
 
   emitOrderUpdate(order);
+  await persistOrder(order);
   res.json({ success: true, message: 'Proof approved successfully!', order });
 });
 
-// Upload Client Document to Vault (Strict Zero Data Retention Policy)
-orderRouter.post('/orders/:id/upload-doc', (req, res) => {
+// Upload Final Completed Form PDF (operator only).
+// Order complete tabhi hota hai jab client ka in-app payment confirm ho + yeh PDF upload ho.
+orderRouter.post('/orders/:id/upload-completed-form', async (req, res) => {
   const { id } = req.params;
+  const found = findAnyOrder(id);
+  if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
+  if (!accountIsAssignedOperator(found.order, getRequestAccount(req))) {
+    return res.status(403).json({ success: false, error: 'Only the assigned operator can upload the completed form PDF.' });
+  }
+  if (found.order.status === 'completed') {
+    return res.status(409).json({ success: false, error: 'This order is already completed.' });
+  }
+
+  const pdfDataUrl = typeof req.body?.pdfDataUrl === 'string' ? req.body.pdfDataUrl : '';
+  const rawName = String(req.body?.fileName || 'Completed_Form.pdf').trim().slice(0, 120) || 'Completed_Form.pdf';
+  if (!/^data:application\/pdf;base64,[A-Za-z0-9+/=\s]+$/i.test(pdfDataUrl)) {
+    return res.status(400).json({ success: false, error: 'Upload a valid PDF file (data:application/pdf;base64,...).' });
+  }
+  const base64 = pdfDataUrl.slice(pdfDataUrl.indexOf(',') + 1);
+  if (!base64.replace(/\s+/g, '').startsWith('JVBER')) {
+    return res.status(400).json({ success: false, error: 'The uploaded file is not a real PDF.' });
+  }
+  const approxBytes = Math.floor(base64.replace(/\s+/g, '').length * 0.75);
+  if (approxBytes > 8 * 1024 * 1024) {
+    return res.status(413).json({ success: false, error: 'PDF is too large. Maximum allowed size is 8 MB.' });
+  }
+
+  const order = found.order;
+  let opName = 'Operator';
+  opName = found.type === 'vle'
+    ? ((order as any).acceptedByVleName || 'Operator')
+    : ((order as any).acceptedByFillerName || 'Operator');
+
+  order.completedFormPdfUrl = pdfDataUrl;
+  order.completedFormPdfName = rawName.toLowerCase().endsWith('.pdf') ? rawName : `${rawName}.pdf`;
+  order.completedFormUploadedAt = new Date().toISOString();
+  order.chatMessages = Array.isArray(order.chatMessages) ? order.chatMessages : [];
+  order.chatMessages.push({
+    id: 'm-final-pdf-' + Date.now(),
+    sender: 'operator',
+    senderName: opName,
+    text: '📄 Final completed form PDF uploaded. Payment confirm hone par order complete ho jaayega.',
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    attachment: {
+      name: order.completedFormPdfName,
+      type: 'pdf',
+      url: `/api/orders/${order.id}/completed-form?token=`
+    }
+  });
+
+  const completed = await maybeCompleteOrder(order);
+  if (!completed) {
+    emitOrderUpdate(order);
+    await persistOrder(order);
+  }
+
+  return res.json({
+    success: true,
+    completed,
+    message: completed
+      ? '✅ Payment confirmed + final PDF uploaded. Order completed — aap ab naya bid le sakte hain.'
+      : '📄 Final form PDF uploaded. Client payment confirm hote hi order complete ho jaayega.',
+    order
+  });
+});
+
+// Download completed form PDF (client + assigned operator).
+orderRouter.get('/orders/:id/completed-form', (req, res) => {
+  const found = findAnyOrder(req.params.id);
+  if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
+  if (!accountCanAccessOrder(found.order, getRequestAccount(req))) {
+    return res.status(403).json({ success: false, error: 'You do not have access to this document.' });
+  }
+  const pdfDataUrl = String(found.order.completedFormPdfUrl || '');
+  const match = /^data:application\/pdf;base64,(.+)$/i.exec(pdfDataUrl);
+  if (!match) return res.status(404).json({ success: false, error: 'No completed form PDF uploaded yet.' });
+
+  const bytes = Buffer.from(match[1].replace(/\s+/g, ''), 'base64');
+  const safeName = String(found.order.completedFormPdfName || 'Completed_Form.pdf')
+    .replace(/[^\x20-\x7E]/g, '_')
+    .replace(/["\\]/g, '_');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+  res.send(bytes);
+});
+
+// Upload Client Document to Vault (Strict Zero Data Retention Policy)
+orderRouter.post('/orders/:id/upload-doc', async (req, res) => {  const { id } = req.params;
   const { name, type, url, size } = req.body;
 
   const found = findAnyOrder(id);
@@ -138,6 +227,7 @@ orderRouter.post('/orders/:id/upload-doc', (req, res) => {
   });
 
   emitOrderUpdate(found.order);
+  await persistOrder(found.order);
   res.json({
     success: true,
     message: '🔒 Document transmitted under Zero Data Retention (ZDR). Never stored on server disk.',
@@ -150,7 +240,7 @@ orderRouter.post('/orders/:id/upload-doc', (req, res) => {
 // Batch Upload Documents (Strict Zero Data Retention Policy)
 // Frontend asli files FormData (multipart) me bhejta hai; files uploads/ me
 // save hoti hain aur 24 ghante baad scheduler unhe automatically delete kar deta hai.
-const handleDocumentBatchUpload = (req: any, res: any) => {
+const handleDocumentBatchUpload = async (req: any, res: any) => {
   const discardUploadedFiles = () => {
     (req.files as Express.Multer.File[] | undefined)?.forEach(file => {
       try { fs.unlinkSync(file.path); } catch { /* ignore */ }
@@ -193,6 +283,7 @@ const handleDocumentBatchUpload = (req: any, res: any) => {
       });
     });
     emitOrderUpdate(found.order);
+    await persistOrder(found.order);
     return res.json({
       success: true,
       message: '🔒 Document uploaded. It will be permanently deleted after 24 hours.',
@@ -224,6 +315,7 @@ const handleDocumentBatchUpload = (req: any, res: any) => {
   }
 
   emitOrderUpdate(found.order);
+  await persistOrder(found.order);
   res.json({
     success: true,
     message: '🔒 Documents processed under Zero Data Retention (ZDR) policy.',
@@ -291,7 +383,7 @@ orderRouter.post('/orders/:id/pay', (_req, res) => {
   });
 });
 
-orderRouter.post('/orders/:id/payment-report', (req, res) => {
+orderRouter.post('/orders/:id/payment-report', async (req, res) => {
   const found = findAnyOrder(req.params.id);
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
   const account = getRequestAccount(req);
@@ -322,6 +414,7 @@ orderRouter.post('/orders/:id/payment-report', (req, res) => {
   });
 
   emitOrderUpdate(found.order);
+  await persistOrder(found.order);
   return res.status(202).json({
     success: true,
     paymentStatus: 'reported',
@@ -331,7 +424,7 @@ orderRouter.post('/orders/:id/payment-report', (req, res) => {
 });
 
 // Edit credentials after payment (operator can correct auto-generated values).
-orderRouter.put('/orders/:id/credentials', (req, res) => {
+orderRouter.put('/orders/:id/credentials', async (req, res) => {
   const { id } = req.params;
   const found = findAnyOrder(id);
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
@@ -369,11 +462,12 @@ orderRouter.put('/orders/:id/credentials', (req, res) => {
   });
 
   emitOrderUpdate(found.order);
+  await persistOrder(found.order);
   res.json({ success: true, message: 'Application credentials updated. WhatsApp dispatch will use these values.', order: found.order });
 });
 
 // Dispatch Credentials to WhatsApp
-orderRouter.post('/orders/:id/dispatch-whatsapp', (req, res) => {
+orderRouter.post('/orders/:id/dispatch-whatsapp', async (req, res) => {
   const { id } = req.params;
   const found = findAnyOrder(id);
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
@@ -404,7 +498,7 @@ orderRouter.post('/orders/:id/dispatch-whatsapp', (req, res) => {
     opName = found.order.acceptedByFillerName || 'Operator';
   }
 
-  found.order.status = 'completed';
+  found.order.status = 'paid';
   found.order.chatMessages.push({
     id: 'm-whats-' + Date.now(),
     sender: 'operator',
@@ -413,15 +507,25 @@ orderRouter.post('/orders/:id/dispatch-whatsapp', (req, res) => {
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });
 
+  // Completion ke liye payment + final PDF dono chahiye.
+  const completed = await maybeCompleteOrder(found.order);
+  if (!completed) {
+    emitOrderUpdate(found.order);
+    await persistOrder(found.order);
+  }
+
   res.json({
     success: true,
-    message: `✅ Application credentials are ready. Open the WhatsApp link and tap Send to deliver them to ${found.order.clientPhone}.`,
+    completed,
+    message: completed
+      ? `✅ Order complete! Credentials sent to ${found.order.clientPhone}.`
+      : `✅ Application credentials are ready. Final form PDF upload hone par order complete hoga.`,
     order: found.order
   });
 });
 
 // Rate Operator for Completed Order
-orderRouter.post('/orders/:id/rate', (req, res) => {
+orderRouter.post('/orders/:id/rate', async (req, res) => {
   const { id } = req.params;
   const { rating, review, clientName } = req.body;
 
@@ -444,5 +548,7 @@ orderRouter.post('/orders/:id/rate', (req, res) => {
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });
 
+  emitOrderUpdate(found.order);
+  await persistOrder(found.order);
   res.json({ success: true, message: 'Rating saved successfully!', order: found.order });
 });

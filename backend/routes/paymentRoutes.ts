@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { consumeOtpVerification } from './authRoutes.ts';
-import { findAnyOrder, userAccountsStore, orderBelongsToClient, recordAdminPaymentLedger } from '../services/storeService.ts';
+import { findAnyOrder, userAccountsStore, orderBelongsToClient, recordAdminPaymentLedger, persistOrder } from '../services/storeService.ts';
 import { buildUpiUri, computeFeeBreakdown, getAdminUpi, getGovtUpi } from '../services/pricingService.ts';
 import { getRequestAccount, requireAccount } from '../middleware/securityMiddleware.ts';
 import { isRasterImageDataUrl } from '../services/mediaService.ts';
 import { emitOrderUpdate } from '../services/realtimeService.ts';
+import { maybeCompleteOrder } from '../services/orderDispatchService.ts';
 import { PaymentSplits, SplitStatus } from '../types/index.ts';
 
 type OperatorRole = 'vle' | 'filler';
@@ -259,7 +260,7 @@ paymentRouter.get('/payments/order-intent/:orderId', requireAccount(), (req, res
   });
 });
 
-paymentRouter.post('/payments/confirm-split', requireAccount(), (req, res) => {
+paymentRouter.post('/payments/confirm-split', requireAccount(), async (req, res) => {
   const { orderId, leg, utr } = req.body;
   const requestedLeg = String(leg || '') as SplitLeg;
   if (requestedLeg === 'admin') {
@@ -314,16 +315,19 @@ paymentRouter.post('/payments/confirm-split', requireAccount(), (req, res) => {
 
   // Citizen ke payment panel me turant right-tick dikhna chahiye.
   emitOrderUpdate(found.order);
+  await persistOrder(found.order);
+  const completed = fullyPaid ? await maybeCompleteOrder(found.order) : false;
 
   res.json({
     success: true,
     message: fullyPaid
-      ? '✅ All payment legs confirmed. Order marked as paid.'
+      ? (completed ? '✅ Payment complete + final PDF uploaded — order completed.' : '✅ All payment legs confirmed. Order marked as paid. Ab final form PDF upload karein.')
       : adminAutoConfirmed
         ? '✅ Operator legs confirmed and admin fee auto-verified. Waiting for the remaining citizen tick.'
         : `✅ ${requestedLeg} payment leg confirmed. Waiting for the remaining legs.`,
     adminAutoConfirmed,
     fullyPaid,
+    completed,
     splits,
     order: found.order
   });
@@ -337,7 +341,7 @@ paymentRouter.post('/payments/confirm-split', requireAccount(), (req, res) => {
 // karne ka right aur duty recipient (operator / admin) ke paas hi rehti hai.
 // Isse order khud-ba-khud paid nahi hota; sirf operator ko pata chal jaata
 // hai ki paisa bhej diya gaya hai (UTR ke saath).
-paymentRouter.post('/payments/client-confirm', requireAccount(), (req, res) => {
+paymentRouter.post('/payments/client-confirm', requireAccount(), async (req, res) => {
   const { orderId, leg, utr } = req.body;
   const requestedLeg = String(leg || '') as SplitLeg;
   if (requestedLeg !== 'govt' && requestedLeg !== 'admin' && requestedLeg !== 'operator') {
@@ -403,6 +407,8 @@ paymentRouter.post('/payments/client-confirm', requireAccount(), (req, res) => {
 
   // Operator ko turant pata chale ki citizen ne payment claim kar diya hai.
   emitOrderUpdate(found.order);
+  await persistOrder(found.order);
+  const completed = fullyPaid ? await maybeCompleteOrder(found.order) : false;
 
   return res.json({
     success: true,
@@ -412,12 +418,13 @@ paymentRouter.post('/payments/client-confirm', requireAccount(), (req, res) => {
     clientConfirmed: true,
     adminAutoConfirmed,
     fullyPaid,
+    completed,
     splits,
     order: found.order
   });
 });
 
-paymentRouter.post('/orders/:orderId/fees', requireAccount(), (req, res) => {
+paymentRouter.post('/orders/:orderId/fees', requireAccount(), async (req, res) => {
   const found = findAnyOrder(req.params.orderId);
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
   const account = getRequestAccount(req)!;
@@ -464,6 +471,7 @@ paymentRouter.post('/orders/:orderId/fees', requireAccount(), (req, res) => {
   }
 
   emitOrderUpdate(found.order);
+  await persistOrder(found.order);
   return res.json({
     success: true,
     changed,
@@ -474,7 +482,7 @@ paymentRouter.post('/orders/:orderId/fees', requireAccount(), (req, res) => {
   });
 });
 
-paymentRouter.post('/orders/:orderId/approve-fees', requireAccount(), (req, res) => {
+paymentRouter.post('/orders/:orderId/approve-fees', requireAccount(), async (req, res) => {
   const found = findAnyOrder(req.params.orderId);
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
   const account = getRequestAccount(req)!;
@@ -493,10 +501,11 @@ paymentRouter.post('/orders/:orderId/approve-fees', requireAccount(), (req, res)
   order.feesApprovedByClient = true;
   order.feesApprovedAt = new Date().toISOString();
   emitOrderUpdate(found.order);
+  await persistOrder(found.order);
   return res.json({ success: true, message: '✅ Fees approved. Chat is now unlocked.', order: found.order });
 });
 
-paymentRouter.post('/payments/govt-details', requireAccount(), (req, res) => {
+paymentRouter.post('/payments/govt-details', requireAccount(), async (req, res) => {
   const { orderId, upiId, qrImage, govtFee } = req.body;
   const found = findAnyOrder(String(orderId || ''));
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
@@ -536,6 +545,7 @@ paymentRouter.post('/payments/govt-details', requireAccount(), (req, res) => {
   // Citizen ke open workspace me QR turant dikhna chahiye — isliye realtime
   // event bhejo (bina page refresh ke QR refresh hoga).
   emitOrderUpdate(found.order);
+  await persistOrder(found.order);
 
   res.json({
     success: true,

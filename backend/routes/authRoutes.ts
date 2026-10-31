@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
-import nodemailer from 'nodemailer';
 import { saveOrUpdateUserAccount, userAccountsStore } from '../services/storeService.ts';
 import { readEnvValue } from '../env.ts';
 import { getRequestAccount } from '../middleware/securityMiddleware.ts';
 import { resolveClientIp } from '../middleware/botShieldMiddleware.ts';
 import { isTurnstileEnabled, getTurnstileSiteKey, verifyTurnstileToken } from '../services/turnstileService.ts';
 import { checkOtpSendLimits, checkOtpVerifyLimits, registerOtpSend, registerOtpVerify } from '../services/otpGuardService.ts';
+import { sendTransactionalEmail } from '../services/emailService.ts';
 
 export const authRouter = Router();
 
@@ -180,8 +180,6 @@ authRouter.post('/auth/send-otp', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Enter a valid Gmail/email address.' });
   }
 
-  const smtpUser = readEnvValue('SMTP_USER');
-  const smtpPass = readEnvValue('SMTP_PASS');
   const code = randomInt(1000, 10000).toString();
 
   // 🛡️ CAPTCHA (Cloudflare Turnstile) — bot ko OTP bhejne se rokta hai.
@@ -214,147 +212,19 @@ authRouter.post('/auth/send-otp', async (req, res) => {
   const deliveryErrors: string[] = [];
   let deliveredVia = '';
 
-  // ========================================================
-  // 1) HTTPS EMAIL APIs (work on Render free; SMTP ports are blocked there)
-  // ========================================================
-  // Render free web services block outbound SMTP ports 25/465/587. An HTTPS
-  // provider is the only way to deliver a real OTP from a free instance.
-  // Configure ONE of these in the server environment:
-  //   BREVO_API_KEY    + BREVO_FROM (recommended: free, verify your Gmail as sender)
-  //   RESEND_API_KEY   + RESEND_FROM
-  //   SENDGRID_API_KEY + SENDGRID_FROM
-  const httpsProviders: Array<{ name: string; send: () => Promise<unknown> }> = [];
-
-  const brevoKey = readEnvValue('BREVO_API_KEY');
-  const brevoFrom = readEnvValue('BREVO_FROM') || smtpUser;
-  if (brevoKey && brevoFrom) {
-    httpsProviders.push({
-      name: 'Brevo',
-      send: () => fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        headers: {
-          'api-key': brevoKey,
-          'content-type': 'application/json',
-          accept: 'application/json'
-        },
-        body: JSON.stringify({
-          sender: { name: senderName, email: brevoFrom },
-          to: [{ email: normalizedEmail }],
-          subject: otpSubject,
-          textContent: otpText
-        })
-      }).then(async response => {
-        if (!response.ok) {
-          const body = await response.text().catch(() => '');
-          throw new Error(`Brevo HTTP ${response.status}${body ? `: ${body.slice(0, 240)}` : ''}`);
-        }
-        return response.json().catch(() => ({}));
-      })
-    });
-  }
-
-  const resendKey = readEnvValue('RESEND_API_KEY');
-  if (resendKey) {
-    const resendFrom = readEnvValue('RESEND_FROM') || 'DigiSeva Pro <onboarding@resend.dev>';
-    httpsProviders.push({
-      name: 'Resend',
-      send: () => fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: resendFrom,
-          to: [normalizedEmail],
-          subject: otpSubject,
-          text: otpText
-        })
-      }).then(async response => {
-        if (!response.ok) {
-          const body = await response.text().catch(() => '');
-          throw new Error(`Resend HTTP ${response.status}${body ? `: ${body.slice(0, 240)}` : ''}`);
-        }
-        return response.json().catch(() => ({}));
-      })
-    });
-  }
-
-  const sendgridKey = readEnvValue('SENDGRID_API_KEY');
-  const sendgridFrom = readEnvValue('SENDGRID_FROM') || smtpUser;
-  if (sendgridKey && sendgridFrom) {
-    httpsProviders.push({
-      name: 'SendGrid',
-      send: () => fetch('https://api.sendgrid.com/v3/mail/send', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${sendgridKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          personalizations: [{ to: [{ email: normalizedEmail }] }],
-          from: { email: sendgridFrom, name: senderName },
-          subject: otpSubject,
-          content: [{ type: 'text/plain', value: otpText }]
-        })
-      }).then(async response => {
-        if (!response.ok) {
-          const body = await response.text().catch(() => '');
-          throw new Error(`SendGrid HTTP ${response.status}${body ? `: ${body.slice(0, 240)}` : ''}`);
-        }
-        return { ok: true };
-      })
-    });
-  }
-
-  for (const provider of httpsProviders) {
-    try {
-      await provider.send();
-      deliveredVia = provider.name;
-      break;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      deliveryErrors.push(`${provider.name}: ${message}`);
-      console.error(`[OTP] ${provider.name} delivery failed:`, message);
-    }
-  }
-
-  // ========================================================
-  // 2) SMTP fallback (local dev, or a paid Render instance)
-  // ========================================================
-  if (!deliveredVia && smtpUser && smtpPass) {
-    // 2525 is accepted by some relays (e.g. Brevo) and is not blocked on
-    // Render free. Gmail itself only listens on 465/587, so on a free Render
-    // instance this branch still cannot deliver — an HTTPS provider above is
-    // required for real delivery.
-    const configuredPort = Number(process.env.SMTP_PORT || 465);
-    const portsToTry = [...new Set([configuredPort, 587, 465, 2525])].filter(port => Number.isFinite(port));
-    for (const port of portsToTry) {
-      try {
-        const transporter = nodemailer.createTransport({
-          host: process.env.SMTP_HOST || 'smtp.gmail.com',
-          port,
-          secure: port === 465,
-          auth: { user: smtpUser, pass: smtpPass },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000,
-          socketTimeout: 15000
-        });
-        const mailFrom = readEnvValue('SMTP_FROM') || readEnvValue('BREVO_FROM') || smtpUser;
-        await transporter.sendMail({
-          from: `"${senderName}" <${mailFrom}>`,
-          to: normalizedEmail,
-          subject: otpSubject,
-          text: otpText
-        });
-        deliveredVia = 'Gmail SMTP';
-        break;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        deliveryErrors.push(`SMTP port ${port}: ${message}`);
-        console.error(`[OTP] SMTP port ${port} failed:`, message);
-      }
-    }
+  // Brevo / Resend / SendGrid (HTTPS, Render-safe) → SMTP fallback.
+  // Saare providers ek hi service me handle hote hain (emailService.ts).
+  const delivery = await sendTransactionalEmail({
+    to: normalizedEmail,
+    subject: otpSubject,
+    text: otpText,
+    senderName
+  });
+  if (delivery.ok) {
+    deliveredVia = delivery.via || 'Email';
+  } else if (delivery.error) {
+    deliveryErrors.push(delivery.error);
+    console.error('[OTP] email delivery failed:', delivery.error);
   }
 
   if (!deliveredVia) {

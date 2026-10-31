@@ -17,11 +17,19 @@ import {
   isOrderVisibleToAccount,
   orderBelongsToClient,
   getDocumentScope,
-  serviceVisibleForAccount
+  serviceVisibleForAccount,
+  getBidLimitStatus,
+  recordBidAccepted,
+  persistOrder,
+  matchesAnyOperatorId,
+  normalizeLocation,
+  locationMatches
 } from '../services/storeService.ts';
 import { VleOperator, VleOrder, ServiceScope } from '../types/index.ts';
 import { consumeOtpVerification } from './authRoutes.ts';
 import { getRequestAccount, requireAccount } from '../middleware/securityMiddleware.ts';
+import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } from '../services/orderDispatchService.ts';
+import { emitOrderUpdate, isOperatorOnline } from '../services/realtimeService.ts';
 
 export const vleRouter = Router();
 
@@ -231,6 +239,9 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
     : getDocumentScope(serviceName);
   const serviceScope = normalizeScope(req.body.serviceScope, inferredScope);
 
+  // ======================================================
+  // 📝 EXAM / ONLINE FORM → all-India broadcast (VLE + Form Fillers)
+  // ======================================================
   if (serviceScope === 'online_form') {
     const broadcastBid = createBroadcastFormBid({
       formTitle: formTitle || serviceName || 'Online Application Form',
@@ -247,34 +258,102 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
       orderType: orderType || 'online_form_filling'
     });
     broadcastBid.clientId = account.id;
+    broadcastBid.routingNote = 'Yeh exam/online form request poore India ke Jan Seva operators aur Form Filler experts ko bheji gayi hai. Online operators ko turant in-app notification, offline ko email.';
+
+    const allVle = getAllVleRecipients();
+    const vleResult = await dispatchNewOrderToVle(broadcastBid, allVle, 'national');
+    const fillerResult = await dispatchNewOrderToFillers(broadcastBid);
+
+    broadcastBid.notificationsSent = {
+      phone: false,
+      email: (vleResult.emails + fillerResult.emails) > 0,
+      broadcastToVle: vleResult.inApp > 0,
+      broadcastToFiller: fillerResult.inApp > 0,
+      inApp: vleResult.inApp + fillerResult.inApp,
+      emailCount: vleResult.emails + fillerResult.emails,
+      routing: 'national'
+    };
+    await persistOrder(broadcastBid);
 
     return res.json({
       success: true,
-      message: `✅ Form request is now open to all ${getAllVleRecipients().length} Jan Seva operator(s) and all Form Filler experts.`,
+      message: `✅ Form request is now open to all ${allVle.length} Jan Seva operator(s) and all Form Filler experts. Online: in-app notification, Offline: email.`,
       order: broadcastBid
     });
   }
 
-  const recipientPool = serviceScope === 'district'
-    ? getLocalVleRecipients(requestDistrict, requestCity)
+  // ======================================================
+  // 📄 JAN SEVA DOCUMENT → city-first, then district
+  // ======================================================
+  const districtPool = serviceScope === 'district'
+    ? getLocalVleRecipients(requestDistrict, '')
     : getAllVleRecipients();
 
-  if (serviceScope === 'district' && recipientPool.length === 0) {
+  if (serviceScope === 'district' && districtPool.length === 0) {
     return res.status(409).json({
       success: false,
       error: 'Not found Jan Seva Kendra in your district.'
     });
   }
 
-  let eligibleOperators = recipientPool;
+  const cityPool = serviceScope === 'district' && requestCity
+    ? districtPool.filter(operator => locationMatches(operator.city, requestCity))
+    : [];
+
+  let eligibleOperators: VleOperator[] = [];
+  let routing: 'city' | 'district' | 'target' | 'national' | 'offline_fallback' = 'national';
+  let routingNote = '';
+  let targetOperator: VleOperator | undefined;
+
   if (targetOperatorId) {
-    const targetOperator = recipientPool.find(operator =>
+    // Citizen ne specific operator chuna hai. City pool me na mile to poore
+    // district/India me dekho, taaki chosen operator target ho sake.
+    const searchPool = [
+      ...cityPool,
+      ...districtPool,
+      ...getAllVleRecipients()
+    ];
+    targetOperator = searchPool.find(operator =>
       operator.id === targetOperatorId || operator.cscId === targetOperatorId
     );
     if (!targetOperator) {
       return res.status(403).json({ success: false, error: 'That operator is not eligible for this request scope.' });
     }
     eligibleOperators = [targetOperator];
+    routing = 'target';
+    routingNote = isOperatorOnline(targetOperator)
+      ? `Aapne ${targetOperator.name} ko choose kiya hai. Request sirf unhi ko bheji gayi hai.`
+      : `Aapke chune hue operator ${targetOperator.name} abhi offline hain. Unhe email notification bheji gayi hai — online aate hi wo request dekh payenge.`;
+  } else if (serviceScope === 'district') {
+    const cityOnline = cityPool.filter(operator => isOperatorOnline(operator));
+    const districtOnline = districtPool.filter(operator => isOperatorOnline(operator));
+
+    if (cityOnline.length > 0) {
+      // ✅ City me online operator mil gaya → sirf unhi ko.
+      eligibleOperators = cityOnline;
+      routing = 'city';
+      routingNote = `Aapke city (${requestCity}) ke online Jan Seva operators ko request bheji gayi hai.`;
+    } else if (districtOnline.length > 0) {
+      // ↩️ City me online nahi → turant district ke online operators.
+      eligibleOperators = districtOnline;
+      routing = 'district';
+      routingNote = cityPool.length > 0
+        ? `Aapke city (${requestCity}) me koi operator online nahi hai, isliye request district ke online operators ko bheji gayi hai.`
+        : `Aapke city (${requestCity}) me Jan Seva Kendra available nahi hai, isliye request district ke operators ko bheji gayi hai.`;
+    } else {
+      // 📧 Koi online nahi → district ko email se notify karo.
+      eligibleOperators = districtPool;
+      routing = 'offline_fallback';
+      routingNote = `Abhi district me koi operator online nahi hai. Sabhi district operators ko email notification bheji ja rahi hai.`;
+    }
+  } else {
+    // National scope: online ko in-app, offline ko email.
+    const online = districtPool.filter(operator => isOperatorOnline(operator));
+    eligibleOperators = online.length > 0 ? online : districtPool;
+    routing = online.length > 0 ? 'national' : 'offline_fallback';
+    routingNote = online.length > 0
+      ? 'Yeh national-scope request all-India ke online Jan Seva operators ko bheji gayi hai.'
+      : 'Abhi koi operator online nahi hai. Sabhi eligible operators ko email notification bheji ja rahi hai.';
   }
 
   const newOrder: VleOrder = {
@@ -289,38 +368,59 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
     clientEmail,
     district: requestDistrict,
     city: requestCity,
-    availableOperatorIds: eligibleOperators.flatMap(operator => [operator.id, operator.cscId]),
-    targetOperatorName: targetOperatorName || undefined,
-    targetOperatorPhone: targetOperatorPhone || undefined,
-    targetOperatorEmail: targetOperatorEmail || undefined,
+    availableOperatorIds: eligibleOperators.flatMap(operator => [operator.id, operator.cscId]).filter(Boolean),
+    targetOperatorId: targetOperator ? (targetOperator.cscId || targetOperator.id) : undefined,
+    targetOperatorName: targetOperator ? targetOperator.name : (targetOperatorName || undefined),
+    targetOperatorPhone: targetOperator ? targetOperator.phone : (targetOperatorPhone || undefined),
+    targetOperatorEmail: targetOperator ? targetOperator.email : (targetOperatorEmail || undefined),
+    routingNote,
     status: 'pending',
     amountPaid: amountPaid || 150,
     govtFee: Math.max(0, Number(govtFee) || 0),
     createdAt: new Date().toISOString(),
-    notificationsSent: { phone: false, email: false },
+    notificationsSent: { phone: false, email: false, routing },
     chatMessages: [],
     clientDocuments: []
   };
 
-  vleOrdersStore.unshift(newOrder);
-  try {
-    const { persistToMongo } = await import('../services/storeService.ts');
-    await persistToMongo('vleOrder', newOrder);
-  } catch {}
+  const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  newOrder.chatMessages.push({
+    id: 'sys-routing-' + Date.now(),
+    sender: 'operator',
+    senderName: 'DigiSeva Dispatch',
+    text: `📢 ${routingNote}`,
+    time: timeStr
+  });
 
-  const scopeLabel = serviceScope === 'district' ? 'your district' : 'all India';
-  const operatorTargetNotice = targetOperatorName
-    ? `Request sent to ${targetOperatorName} (${scopeLabel}).`
-    : `Request added to the in-app queue for ${scopeLabel} Jan Seva operators.`;
+  vleOrdersStore.unshift(newOrder);
+
+  const dispatchResult = await dispatchNewOrderToVle(newOrder, eligibleOperators, routing);
+  newOrder.notificationsSent = {
+    phone: false,
+    email: dispatchResult.emails > 0,
+    broadcastToVle: dispatchResult.inApp > 0,
+    broadcastToFiller: false,
+    inApp: dispatchResult.inApp,
+    emailCount: dispatchResult.emails,
+    routing
+  };
+  await persistOrder(newOrder);
 
   res.json({
     success: true,
-    message: `✅ Order dispatched! ${operatorTargetNotice}`,
+    message: `✅ Order dispatched! ${routingNote}`,
+    routing,
+    notifications: {
+      inApp: dispatchResult.inApp,
+      email: dispatchResult.emails,
+      online: dispatchResult.onlineIds.length,
+      offline: dispatchResult.offlineIds.length
+    },
     order: newOrder
   });
 });
 
-vleRouter.post('/vle/orders/:id/accept', requireAccount('vle'), (req, res) => {
+vleRouter.post('/vle/orders/:id/accept', requireAccount('vle'), async (req, res) => {
   const { id } = req.params;
   const account = getRequestAccount(req)!;
 
@@ -368,7 +468,17 @@ vleRouter.post('/vle/orders/:id/accept', requireAccount('vle'), (req, res) => {
     });
   }
   if (!isOrderVisibleToAccount(order, account)) {
-    return res.status(403).json({ success: false, error: 'This request is not available in your district or scope.' });
+    return res.status(403).json({ success: false, error: 'This request is not available in your district, city, or scope.' });
+  }
+  const limit = getBidLimitStatus(account);
+  if (!limit.allowed) {
+    return res.status(403).json({
+      success: false,
+      limitReached: true,
+      error: limit.reason,
+      activeCount: limit.activeCount,
+      dailyCount: limit.dailyCount
+    });
   }
 
   order.status = 'accepted';
@@ -392,9 +502,16 @@ vleRouter.post('/vle/orders/:id/accept', requireAccount('vle'), (req, res) => {
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });
 
+  recordBidAccepted(account);
+  dispatchOrderTaken(order);
+  emitOrderUpdate(order);
+  await persistOrder(order);
+
   res.json({
     success: true,
     message: 'Request accepted successfully! Order assigned to you. Set the government fee and form charge to unlock chat.',
+    activeCount: limit.activeCount + 1,
+    dailyCount: limit.dailyCount + 1,
     order
   });
 });
@@ -407,7 +524,7 @@ function accountOwnsAcceptedOrder(order: any, account: ReturnType<typeof getRequ
   return order.acceptedByVleId === account.cscId || order.acceptedById === account.cscId || order.acceptedById === account.id;
 }
 
-vleRouter.post('/vle/orders/:id/update-pricing', requireAccount('vle'), (req, res) => {
+vleRouter.post('/vle/orders/:id/update-pricing', requireAccount('vle'), async (req, res) => {
   const { id } = req.params;
   const account = getRequestAccount(req)!;
   const { amount } = req.body;
@@ -418,6 +535,7 @@ vleRouter.post('/vle/orders/:id/update-pricing', requireAccount('vle'), (req, re
   }
 
   order.amountPaid = Number(amount) || order.amountPaid;
+  order.chatMessages = Array.isArray(order.chatMessages) ? order.chatMessages : [];
   order.chatMessages.push({
     id: 'm-price-' + Date.now(),
     sender: 'operator',
@@ -426,10 +544,12 @@ vleRouter.post('/vle/orders/:id/update-pricing', requireAccount('vle'), (req, re
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });
 
+  emitOrderUpdate(order);
+  await persistOrder(order);
   res.json({ success: true, message: `Fee updated to ₹${order.amountPaid}`, order });
 });
 
-vleRouter.post('/vle/orders/:id/upload-proof', requireAccount('vle'), (req, res) => {
+vleRouter.post('/vle/orders/:id/upload-proof', requireAccount('vle'), async (req, res) => {
   const { id } = req.params;
   const account = getRequestAccount(req)!;
   const { photoUrl } = req.body;
@@ -444,6 +564,7 @@ vleRouter.post('/vle/orders/:id/upload-proof', requireAccount('vle'), (req, res)
 
   order.previewPhotoProof = photoUrl;
   order.status = 'proof_submitted';
+  order.chatMessages = Array.isArray(order.chatMessages) ? order.chatMessages : [];
   order.chatMessages.push({
     id: 'm-proof-' + Date.now(),
     sender: 'operator',
@@ -457,10 +578,12 @@ vleRouter.post('/vle/orders/:id/upload-proof', requireAccount('vle'), (req, res)
     }
   });
 
+  emitOrderUpdate(order);
+  await persistOrder(order);
   res.json({ success: true, message: 'Photo proof submitted successfully! Client can inspect and pay.', order });
 });
 
-vleRouter.post('/vle/orders/:id/approve-proof', requireAccount('client'), (req, res) => {
+vleRouter.post('/vle/orders/:id/approve-proof', requireAccount('client'), async (req, res) => {
   const { id } = req.params;
   const account = getRequestAccount(req)!;
   const order = vleOrdersStore.find(o => o.id === id);
@@ -470,6 +593,7 @@ vleRouter.post('/vle/orders/:id/approve-proof', requireAccount('client'), (req, 
   }
 
   order.isProofApprovedByClient = true;
+  order.chatMessages = Array.isArray(order.chatMessages) ? order.chatMessages : [];
   order.chatMessages.push({
     id: 'm-apprv-' + Date.now(),
     sender: 'client',
@@ -478,5 +602,7 @@ vleRouter.post('/vle/orders/:id/approve-proof', requireAccount('client'), (req, 
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });
 
+  emitOrderUpdate(order);
+  await persistOrder(order);
   res.json({ success: true, message: 'Draft approved! Please proceed with payment.', order });
 });

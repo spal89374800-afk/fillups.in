@@ -9,10 +9,16 @@ import {
   fillerServicesStore,
   addOrUpdateFillerService,
   isOrderVisibleToAccount,
-  normalizeEmail
+  normalizeEmail,
+  getBidLimitStatus,
+  recordBidAccepted,
+  persistOrder
 } from '../services/storeService.ts';
+import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } from '../services/orderDispatchService.ts';
+import { emitOrderUpdate } from '../services/realtimeService.ts';
 import { consumeOtpVerification } from './authRoutes.ts';
 import { getRequestAccount, requireAccount } from '../middleware/securityMiddleware.ts';
+import { vleListStore } from '../services/storeService.ts';
 
 export const fillerRouter = Router();
 
@@ -168,12 +174,17 @@ fillerRouter.get('/filler/orders', requireAccount('filler'), (req, res) => {
   res.json({ success: true, orders });
 });
 
-// Broadcast Form Bid submission (Used by Online Form Filling and Custom Form)
-fillerRouter.post('/bids/form-filling', requireAccount('client'), (req, res) => {
+/**
+ * Shared handler for both broadcast form endpoints.
+ * Online operator → turant in-app notification.
+ * Offline operator → email (max 3/day per operator, phir online aane tak band).
+ */
+async function createAndDispatchFormRequest(req: any, res: any, fallbackTitle: string) {
   const account = getRequestAccount(req)!;
   const { formTitle, formDetails, formCategory, formRoll, clientName, clientPhone, clientEmail, district, city, amountPaid, govtFee, orderType } = req.body;
+
   const newBid = createBroadcastFormBid({
-    formTitle: formTitle || 'Online Application Form',
+    formTitle: formTitle || fallbackTitle,
     formDetails: formDetails || 'Details provided by citizen',
     formCategory: formCategory || 'General Exam / Govt Scheme',
     formRoll: formRoll || '',
@@ -187,43 +198,53 @@ fillerRouter.post('/bids/form-filling', requireAccount('client'), (req, res) => 
     orderType: orderType || 'online_form_filling'
   });
   newBid.clientId = account.id;
+  newBid.routingNote = 'Yeh form request poore India ke Jan Seva operators aur Form Filler experts ko bheji gayi hai. Online operators ko turant in-app notification milti hai, offline operators ko email.';
 
+  newBid.chatMessages = Array.isArray(newBid.chatMessages) ? newBid.chatMessages : [];
+  newBid.chatMessages.push({
+    id: 'sys-routing-' + Date.now(),
+    sender: 'operator',
+    senderName: 'DigiSeva Dispatch',
+    text: `📢 ${newBid.routingNote}`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  });
+
+  // Broadcast to BOTH Form Fillers (all India) and Jan Seva Kendra network.
+  const allVle = vleListStore.filter(operator => operator.role !== 'filler');
+  const vleResult = await dispatchNewOrderToVle(newBid, allVle, 'national');
+  const fillerResult = await dispatchNewOrderToFillers(newBid);
+
+  newBid.notificationsSent = {
+    phone: false,
+    email: (vleResult.emails + fillerResult.emails) > 0,
+    broadcastToVle: vleResult.inApp > 0,
+    broadcastToFiller: fillerResult.inApp > 0,
+    inApp: vleResult.inApp + fillerResult.inApp,
+    emailCount: vleResult.emails + fillerResult.emails,
+    routing: 'national'
+  };
+  await persistOrder(newBid);
+
+  const totalInApp = vleResult.inApp + fillerResult.inApp;
+  const totalEmail = vleResult.emails + fillerResult.emails;
   res.json({
     success: true,
-    message: `✅ Form request for "${newBid.formTitle}" added to the all-India Jan Seva operator network and the Form Filler order queue.`,
+    message: `✅ Form request for "${newBid.formTitle}" dispatched. ${totalInApp} operator(s) ko in-app notification, ${totalEmail} offline operator(s) ko email bheji gayi.`,
+    notifications: { inApp: totalInApp, email: totalEmail },
     order: newBid
   });
-});
+}
 
-fillerRouter.post('/filler/orders', requireAccount('client'), (req, res) => {
-  const account = getRequestAccount(req)!;
-  const { formTitle, formDetails, formCategory, formRoll, clientName, clientPhone, clientEmail, district, city, amountPaid, govtFee, orderType } = req.body;
+// Broadcast Form Bid submission (Used by Online Form Filling and Custom Form)
+fillerRouter.post('/bids/form-filling', requireAccount('client'), (req, res) =>
+  createAndDispatchFormRequest(req, res, 'Online Application Form')
+);
 
-  // Broadcast to BOTH Form Fillers (all India) and Jan Seva Kendra networks
-  const newBid = createBroadcastFormBid({
-    formTitle: formTitle || 'Custom Form Writing Request',
-    formDetails: formDetails || 'No details provided',
-    formCategory: formCategory || 'General Form',
-    formRoll: formRoll || '',
-    clientName: String(clientName || '').trim() || account.name || 'Citizen',
-    clientPhone: String(clientPhone || '').trim() || account.phone || '',
-    clientEmail: String(clientEmail || '').trim() || account.email || '',
-    district: String(district || '').trim() || account.district || '',
-    city: String(city || '').trim() || account.city || '',
-    amountPaid: amountPaid || 150,
-    govtFee: govtFee,
-    orderType: orderType || 'online_form_filling'
-  });
-  newBid.clientId = account.id;
+fillerRouter.post('/filler/orders', requireAccount('client'), (req, res) =>
+  createAndDispatchFormRequest(req, res, 'Custom Form Writing Request')
+);
 
-  res.json({
-    success: true,
-    message: '✅ Form request added to the all-India Jan Seva Kendra and Form Filler in-app order queues.',
-    order: newBid
-  });
-});
-
-fillerRouter.post('/filler/orders/:id/accept', requireAccount('filler'), (req, res) => {
+fillerRouter.post('/filler/orders/:id/accept', requireAccount('filler'), async (req, res) => {
   const { id } = req.params;
   const account = getRequestAccount(req)!;
 
@@ -247,6 +268,17 @@ fillerRouter.post('/filler/orders/:id/accept', requireAccount('filler'), (req, r
     return res.status(403).json({ success: false, error: 'This form request is not available to your account.' });
   }
 
+  const limit = getBidLimitStatus(account);
+  if (!limit.allowed) {
+    return res.status(403).json({
+      success: false,
+      limitReached: true,
+      error: limit.reason,
+      activeCount: limit.activeCount,
+      dailyCount: limit.dailyCount
+    });
+  }
+
   order.status = 'accepted';
   order.acceptedById = account.id;
   order.acceptedByName = account.name || 'Form Filler Expert';
@@ -268,21 +300,28 @@ fillerRouter.post('/filler/orders/:id/accept', requireAccount('filler'), (req, r
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });
 
+  recordBidAccepted(account);
+  dispatchOrderTaken(order);
+  emitOrderUpdate(order);
+  await persistOrder(order);
+
   res.json({
     success: true,
     message: 'Bid accepted successfully! Order assigned to you. Set the government fee and form charge to unlock chat.',
+    activeCount: limit.activeCount + 1,
+    dailyCount: limit.dailyCount + 1,
     order
   });
 });
 
-fillerRouter.post('/filler/orders/:id/upload-proof', requireAccount('filler'), (req, res) => {
+fillerRouter.post('/filler/orders/:id/upload-proof', requireAccount('filler'), async (req, res) => {
   const { id } = req.params;
   const account = getRequestAccount(req)!;
   const { photoUrl } = req.body;
   if (!isRasterImageDataUrl(photoUrl)) {
     return res.status(400).json({ success: false, error: 'Upload a real JPG, PNG, or WebP photo.' });
   }
-  const order = fillerOrdersStore.find(o => o.id === id);
+  const order: any = fillerOrdersStore.find(o => o.id === id) || vleOrdersStore.find(o => o.id === id);
   if (!order) return res.status(404).json({ success: false, error: 'Order not found.' });
   if (order.acceptedByFillerId !== account.id && order.acceptedById !== account.id) {
     return res.status(403).json({ success: false, error: 'Only the assigned Form Filler can upload proof for this order.' });
@@ -290,6 +329,7 @@ fillerRouter.post('/filler/orders/:id/upload-proof', requireAccount('filler'), (
 
   order.previewPhotoProof = photoUrl;
   order.status = 'proof_submitted';
+  order.chatMessages = Array.isArray(order.chatMessages) ? order.chatMessages : [];
   order.chatMessages.push({
     id: 'm-proof-' + Date.now(),
     sender: 'operator',
@@ -303,5 +343,7 @@ fillerRouter.post('/filler/orders/:id/upload-proof', requireAccount('filler'), (
     }
   });
 
+  emitOrderUpdate(order);
+  await persistOrder(order);
   res.json({ success: true, message: 'Photo proof submitted successfully.', order });
 });

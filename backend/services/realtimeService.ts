@@ -4,6 +4,9 @@ import {
   liveCameraSessionsStore,
   getAccountByToken,
   isOrderVisibleToAccount,
+  findAccountForOperator,
+  markAccountOnline,
+  markAccountOffline,
   type UserAccount
 } from './storeService.ts';
 import { sendOrderMessage } from './orderMessageService.ts';
@@ -11,6 +14,54 @@ import type { ChatMessage } from '../types/index.ts';
 
 let realtimeServer: Server | null = null;
 const joinedOrdersBySocket = new Map<string, Map<string, { role: 'client' | 'operator'; phone: string }>>();
+
+// ============================================================
+// 🟢 OPERATOR PRESENCE (real socket connection, not a manual status field)
+// ============================================================
+const onlineSocketsByAccount = new Map<string, Set<string>>();
+const accountBySocket = new Map<string, UserAccount>();
+
+function presenceKey(account: UserAccount): string {
+  return String(account.id || account.cscId || account.phone || account.email || '').trim().toLowerCase();
+}
+
+function registerOnline(socketId: string, account: UserAccount): void {
+  const key = presenceKey(account);
+  if (!key) return;
+  accountBySocket.set(socketId, account);
+  const sockets = onlineSocketsByAccount.get(key) || new Set<string>();
+  sockets.add(socketId);
+  onlineSocketsByAccount.set(key, sockets);
+  markAccountOnline(account);
+}
+
+function unregisterOnline(socketId: string): void {
+  const account = accountBySocket.get(socketId);
+  if (!account) return;
+  const key = presenceKey(account);
+  const sockets = onlineSocketsByAccount.get(key);
+  sockets?.delete(socketId);
+  if (sockets && sockets.size === 0) {
+    onlineSocketsByAccount.delete(key);
+    markAccountOffline(account);
+  }
+  accountBySocket.delete(socketId);
+}
+
+export function isAccountOnline(account?: UserAccount): boolean {
+  if (!account) return false;
+  const key = presenceKey(account);
+  return Boolean(key && (onlineSocketsByAccount.get(key)?.size || 0) > 0);
+}
+
+export function isOperatorOnline(operator: { id?: string; cscId?: string; phone?: string; email?: string }): boolean {
+  const account = findAccountForOperator(operator as any);
+  return isAccountOnline(account);
+}
+
+export function onlineOperatorCount(): number {
+  return onlineSocketsByAccount.size;
+}
 
 // 📞 In-app voice call sessions (WebRTC signaling relay, one call per order).
 type CallSession = {
@@ -127,8 +178,15 @@ export function setRealtimeServer(server: Server): void {
       acknowledge?.(sendOrderMessage(orderId, payload));
     });
 
-    socket.on('dispatch:join', (payload: { role?: string; district?: string; operatorIds?: string[] }) => {
+    socket.on('dispatch:join', (payload: { role?: string; district?: string; operatorIds?: string[]; token?: string }) => {
       const district = String(payload?.district || '').normalize('NFKC').trim().toLocaleLowerCase('en-IN').replace(/\s+/g, ' ');
+      // 🟢 Real presence: socket connected = online. Email sirf offline operators ko jaayegi.
+      const token = typeof payload?.token === 'string' ? payload.token : '';
+      const account = getAccountByToken(token) ||
+        getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token);
+      if (account && (account.role === 'vle' || account.role === 'filler')) {
+        registerOnline(socket.id, account);
+      }
       if (payload?.role === 'vle') {
         if (district) socket.join(`dispatch:vle-district:${district}`);
         if (Array.isArray(payload.operatorIds)) {
@@ -140,7 +198,13 @@ export function setRealtimeServer(server: Server): void {
             });
         }
       } else if (payload?.role === 'filler') {
-        socket.join(district ? `dispatch:filler-district:${district}` : 'dispatch:filler-global');
+        if (district) socket.join(`dispatch:filler-district:${district}`);
+        socket.join('dispatch:filler-global');
+        if (account) {
+          const normalizedId = String(account.id || account.phone || '')
+            .normalize('NFKC').trim().toLocaleLowerCase('en-IN').replace(/\s+/g, ' ');
+          if (normalizedId) socket.join(`dispatch:filler-id:${normalizedId}`);
+        }
       }
     });
 
@@ -351,6 +415,7 @@ export function setRealtimeServer(server: Server): void {
 
     socket.on('disconnect', () => {
       joinedOrdersBySocket.delete(socket.id);
+      unregisterOnline(socket.id);
       // Active call ka peer turant inform karo taaki wo hang na ho.
       for (const [orderId, session] of [...activeCalls]) {
         if (session.callerSocketId === socket.id || session.acceptedBy === socket.id) {

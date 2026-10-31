@@ -1222,6 +1222,7 @@ export default function App() {
   const [govtFeeInput, setGovtFeeInput] = useState('');
   const [govtQrImageInput, setGovtQrImageInput] = useState('');
   const [isSavingGovtDetails, setIsSavingGovtDetails] = useState(false);
+  const [isUploadingFinalPdf, setIsUploadingFinalPdf] = useState(false);
   const [copiedUpiId, setCopiedUpiId] = useState('');
   const [paymentIntentRefreshKey, setPaymentIntentRefreshKey] = useState(0);
   type SplitStatus = 'pending' | 'confirmed';
@@ -1900,8 +1901,7 @@ export default function App() {
         : [order, ...current]);
     };
     const onOrderUpdated = (order: any) => onOrderMessage({ order });
-    const onDispatchMessage = (result: { order?: any }) => {
-      const order = result.order;
+    const onDispatchMessage = (result: { order?: any }) => {      const order = result.order;
       if (!order?.id) return;
       if (activeRoleRef.current === 'vle') {
         setVleExclusiveOrders((current: any[]) => current.some(item => item.id === order.id)
@@ -1915,6 +1915,32 @@ export default function App() {
         setFillerNotificationMsg(`📩 New client message for ${order.formTitle || order.serviceName || 'an order'}.`);
       }
       if (soundAlertEnabled) playChime();
+    };
+    const onDispatchNewOrder = (result: { order?: any }) => {
+      const order = result?.order;
+      if (!order?.id) return;
+      const label = order.formTitle || order.serviceName || 'Digital Service';
+      const place = order.city || order.district || 'India';
+      if (activeRoleRef.current === 'vle') {
+        setVleExclusiveOrders((current: any[]) => current.some(item => item.id === order.id)
+          ? current.map(item => item.id === order.id ? order : item)
+          : [order, ...current]);
+        setVleNotificationMsg(`🔔 New citizen request: ${label} (${place}). Pehle accept karne wale ko milega.`);
+      } else if (activeRoleRef.current === 'form_filler') {
+        setFillerOrders((current: any[]) => current.some(item => item.id === order.id)
+          ? current.map(item => item.id === order.id ? order : item)
+          : [order, ...current]);
+        setFillerNotificationMsg(`🔔 New form request: ${label} (${place}). Pehle accept karne wale ko milega.`);
+      } else {
+        return;
+      }
+      if (soundAlertEnabled) playChime();
+    };
+    const onDispatchOrderTaken = (result: { orderId?: string }) => {
+      const orderId = result?.orderId;
+      if (!orderId) return;
+      setVleExclusiveOrders((current: any[]) => current.filter(item => item.id !== orderId));
+      setFillerOrders((current: any[]) => current.filter(item => item.id !== orderId));
     };
     const onCameraRequested = (session: any) => {
       if (activeRoleRef.current !== 'client') return;
@@ -2064,12 +2090,14 @@ export default function App() {
         realtimeSocket.emit('dispatch:join', {
           role: 'vle',
           district: vleDistrictRef.current,
-          operatorIds: [vleIdRef.current]
+          operatorIds: [vleIdRef.current],
+          token
         });
       } else if (activeRoleRef.current === 'form_filler') {
         realtimeSocket.emit('dispatch:join', {
           role: 'filler',
-          district: fillerDistrictRef.current
+          district: fillerDistrictRef.current,
+          token
         });
       }
     };
@@ -2080,6 +2108,8 @@ export default function App() {
     realtimeSocket.on('order:message', onOrderMessage);
     realtimeSocket.on('order:updated', onOrderUpdated);
     realtimeSocket.on('dispatch:message', onDispatchMessage);
+    realtimeSocket.on('dispatch:new-order', onDispatchNewOrder);
+    realtimeSocket.on('dispatch:order-taken', onDispatchOrderTaken);
     realtimeSocket.on('live-camera:requested', onCameraRequested);
     realtimeSocket.on('live-camera:ready', onCameraReady);
     realtimeSocket.on('live-camera:blink-verified', onCameraBlinkVerified);
@@ -2103,6 +2133,8 @@ export default function App() {
       realtimeSocket.off('order:message', onOrderMessage);
       realtimeSocket.off('order:updated', onOrderUpdated);
       realtimeSocket.off('dispatch:message', onDispatchMessage);
+      realtimeSocket.off('dispatch:new-order', onDispatchNewOrder);
+      realtimeSocket.off('dispatch:order-taken', onDispatchOrderTaken);
       realtimeSocket.off('live-camera:requested', onCameraRequested);
       realtimeSocket.off('live-camera:ready', onCameraReady);
       realtimeSocket.off('live-camera:blink-verified', onCameraBlinkVerified);
@@ -10599,6 +10631,91 @@ export default function App() {
                     <p className="mt-1 text-[10px] text-slate-500">Approve the photo proof above to unlock payments.</p>
                   </div>
                 )}
+
+                {/* Stage 3.5: Final completed form PDF (completion = payment + this PDF) */}
+                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-2 shadow-md">
+                  <h4 className="flex items-center gap-1.5 text-xs font-bold text-white">
+                    <FileText className="h-4 w-4 text-emerald-400" />
+                    <span>Final Completed Form PDF</span>
+                  </h4>
+                  {activeWorkspaceOrder.completedFormPdfUrl ? (
+                    <div className="space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+                      <p className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-200">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        <span>{activeWorkspaceOrder.completedFormPdfName || 'Completed_Form.pdf'} uploaded</span>
+                      </p>
+                      <a
+                        href={`/api/orders/${activeWorkspaceOrder.id}/completed-form?authToken=${encodeURIComponent(readStoredSession()?.token || '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-2 text-[11px] font-bold text-white hover:bg-emerald-500"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span>Download Completed Form PDF</span>
+                      </a>
+                    </div>
+                  ) : activeRole !== 'client' ? (
+                    <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl py-2.5 text-[11px] font-black text-white ${isUploadingFinalPdf ? 'bg-slate-700' : 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500'}`}>
+                      <FileUp className="h-4 w-4" />
+                      <span>{isUploadingFinalPdf ? 'Uploading PDF…' : '📄 Upload Final Completed Form PDF'}</span>
+                      <input
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        className="hidden"
+                        disabled={isUploadingFinalPdf}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+                            setWorkspaceStatusMsg({ text: 'Please choose a real PDF file.', type: 'error' });
+                            return;
+                          }
+                          if (file.size > 8 * 1024 * 1024) {
+                            setWorkspaceStatusMsg({ text: 'PDF is too large. Maximum 8 MB allowed.', type: 'error' });
+                            return;
+                          }
+                          setIsUploadingFinalPdf(true);
+                          try {
+                            const pdfDataUrl = await new Promise<string>((resolve, reject) => {
+                              const reader = new FileReader();
+                              reader.onload = () => resolve(reader.result as string);
+                              reader.onerror = () => reject(new Error('Could not read the PDF file.'));
+                              reader.readAsDataURL(file);
+                            });
+                            const res = await fetch(`/api/orders/${activeWorkspaceOrder.id}/upload-completed-form`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ pdfDataUrl, fileName: file.name })
+                            });
+                            const data = await parseJsonResponse(res);
+                            if (data.success && data.order) {
+                              setActiveWorkspaceOrder(data.order);
+                              fetchAllData();
+                              setWorkspaceStatusMsg({ text: data.message || 'Final PDF uploaded.', type: 'success' });
+                            } else {
+                              setWorkspaceStatusMsg({ text: data.error || 'Failed to upload final PDF.', type: 'error' });
+                            }
+                          } catch (err) {
+                            setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'Network error uploading PDF.', type: 'error' });
+                          } finally {
+                            setIsUploadingFinalPdf(false);
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <p className="text-[10px] font-medium text-blue-300">
+                      Operator final completed form PDF upload karega. Payment + PDF dono complete hote hi order finish ho jaayega.
+                    </p>
+                  )}
+                  {activeWorkspaceOrder.status === 'completed' && (
+                    <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-center text-[10px] font-bold text-emerald-200">
+                      ✅ Order complete — payment confirmed + final PDF uploaded.
+                    </p>
+                  )}
+                </div>
 
                 {/* Stage 4: WhatsApp Direct Dispatch of Application No & Password */}
                 <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-md">

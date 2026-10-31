@@ -66,6 +66,7 @@ export interface VleOrder {
   district?: string;
   city?: string;
   availableOperatorIds?: string[];
+  targetOperatorId?: string;
   targetOperatorName?: string;
   targetOperatorPhone?: string;
   targetOperatorEmail?: string;
@@ -88,10 +89,22 @@ export interface VleOrder {
   feesApprovedAt?: string;
   serviceScope?: ServiceScope;
   createdAt: string;
-  notificationsSent: { phone: boolean; email: boolean; broadcastToVle?: boolean; broadcastToFiller?: boolean };
+  notificationsSent: {
+    phone: boolean;
+    email: boolean;
+    broadcastToVle?: boolean;
+    broadcastToFiller?: boolean;
+    inApp?: number;
+    emailCount?: number;
+    routing?: string;
+  };
   chatMessages: ChatMessage[];
   clientDocuments: ClientDocument[];
   previewPhotoProof?: string;
+  completedFormPdfUrl?: string;
+  completedFormPdfName?: string;
+  completedFormUploadedAt?: string;
+  routingNote?: string;
   isProofApprovedByClient?: boolean;
   isPaymentDoneInApp?: boolean;
   paymentTxnId?: string;
@@ -102,6 +115,7 @@ export interface VleOrder {
   rating?: number;
   review?: string;
   ratedAt?: string;
+  completedAt?: string;
 }
 
 export interface FillerOrder {
@@ -139,10 +153,22 @@ export interface FillerOrder {
   feesApprovedAt?: string;
   serviceScope?: ServiceScope;
   createdAt: string;
-  notificationsSent: { phone: boolean; email: boolean; broadcastToVle?: boolean; broadcastToFiller?: boolean };
+  notificationsSent: {
+    phone: boolean;
+    email: boolean;
+    broadcastToVle?: boolean;
+    broadcastToFiller?: boolean;
+    inApp?: number;
+    emailCount?: number;
+    routing?: string;
+  };
   chatMessages: ChatMessage[];
   clientDocuments: ClientDocument[];
   previewPhotoProof?: string;
+  completedFormPdfUrl?: string;
+  completedFormPdfName?: string;
+  completedFormUploadedAt?: string;
+  routingNote?: string;
   isProofApprovedByClient?: boolean;
   isPaymentDoneInApp?: boolean;
   paymentTxnId?: string;
@@ -153,6 +179,7 @@ export interface FillerOrder {
   rating?: number;
   review?: string;
   ratedAt?: string;
+  completedAt?: string;
 }
 
 export interface VleOperator {

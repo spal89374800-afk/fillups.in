@@ -15,7 +15,7 @@ const UserAccountSchema = new Schema({
   token: { type: String, index: true },
   createdAt: { type: Date, default: Date.now },
   lastLoginAt: { type: Date, default: Date.now }
-}, { timestamps: true });
+}, { timestamps: true, strict: false });
 
 const VleOperatorSchema = new Schema({
   id: { type: String, unique: true, index: true },
@@ -31,7 +31,7 @@ const VleOperatorSchema = new Schema({
   pricingList: Array,
   status: { type: String, default: 'active' },
   createdAt: { type: Date, default: Date.now }
-}, { timestamps: true });
+}, { timestamps: true, strict: false });
 
 const FillerExpertSchema = new Schema({
   id: { type: String, unique: true, index: true },
@@ -45,7 +45,7 @@ const FillerExpertSchema = new Schema({
   pricingList: Array,
   status: { type: String, default: 'active' },
   createdAt: { type: Date, default: Date.now }
-}, { timestamps: true });
+}, { timestamps: true, strict: false });
 
 const VleOrderSchema = new Schema({
   id: { type: String, unique: true, index: true },
@@ -80,7 +80,7 @@ const VleOrderSchema = new Schema({
   govtFeePaidByClient: Boolean,
   operatorSharePaid: Boolean,
   adminCommissionPaid: Boolean
-}, { timestamps: true });
+}, { timestamps: true, strict: false });
 
 const FillerOrderSchema = new Schema({
   id: { type: String, unique: true, index: true },
@@ -94,7 +94,7 @@ const FillerOrderSchema = new Schema({
   createdAt: { type: Date, default: Date.now },
   documents: Array,
   messages: Array
-}, { timestamps: true });
+}, { timestamps: true, strict: false });
 
 const FillerServiceSchema = new Schema({
   id: { type: String, unique: true, index: true },
@@ -113,7 +113,7 @@ const FillerServiceSchema = new Schema({
   ownerDistrict: String,
   ownerCity: String,
   ownerState: String
-}, { timestamps: true });
+}, { timestamps: true, strict: false });
 
 const GlobalPricingSchema = new Schema({
   id: { type: String, unique: true, index: true },
@@ -121,7 +121,7 @@ const GlobalPricingSchema = new Schema({
   price: String,
   icon: String,
   dept: String
-}, { timestamps: true });
+}, { timestamps: true, strict: false });
 
 const AdminPaymentLedgerSchema = new Schema({
   id: { type: String, unique: true, index: true },
@@ -138,7 +138,7 @@ const AdminPaymentLedgerSchema = new Schema({
   adminUpiId: String,
   note: String,
   updatedAt: String
-}, { timestamps: true });
+}, { timestamps: true, strict: false });
 
 const PayoutProfileSchema = new Schema({
   key: { type: String, unique: true, index: true },
@@ -146,7 +146,7 @@ const PayoutProfileSchema = new Schema({
   accountHolder: String,
   verified: Boolean,
   updatedAt: Date
-}, { timestamps: true });
+}, { timestamps: true, strict: false });
 
 export const UserAccountModel = mongoose.models.UserAccount || model('UserAccount', UserAccountSchema);
 export const VleOperatorModel = mongoose.models.VleOperator || model('VleOperator', VleOperatorSchema);

@@ -49,6 +49,15 @@ export interface UserAccount {
   token?: string;
   createdAt: string;
   lastLoginAt: string;
+  // Bid distribution limits (per operator account)
+  bidDayKey?: string;
+  bidsAcceptedToday?: number;
+  bidCooldownUntil?: string;
+  offlineEmailDayKey?: string;
+  offlineEmailCount?: number;
+  offlineEmailPaused?: boolean;
+  lastSeenOnlineAt?: string;
+  lastSeenOfflineAt?: string;
 }
 
 export let userAccountsStore: UserAccount[] = [];
@@ -73,6 +82,7 @@ export function saveOrUpdateUserAccount(account: Partial<UserAccount> & { role: 
       token: existing.token || ('tok_' + randomUUID()),
       lastLoginAt: now
     };
+    void persistToMongo('userAccount', userAccountsStore[existingIdx]).catch(() => {});
     return userAccountsStore[existingIdx];
   } else {
     const newAcc: UserAccount = {
@@ -223,13 +233,13 @@ export async function hydrateFromMongo() {
       UserAccountModel.find({}).lean()
     ]);
 
-    if (vles.length) vleListStore = vles as any;
-    if (vOrders.length) vleOrdersStore = vOrders as any;
-    if (fOrders.length) fillerOrdersStore = fOrders as any;
-    if (fServices.length) fillerServicesStore = fServices as any;
-    if (gPricing.length) globalPricingStore = gPricing as any;
-    if (ledger.length) adminPaymentLedgerStore = ledger as any;
-    if (accounts.length) userAccountsStore = accounts as any;
+    if (vles.length) vleListStore = vles.map(cleanMongoDoc) as any;
+    if (vOrders.length) vleOrdersStore = vOrders.map(cleanMongoDoc) as any;
+    if (fOrders.length) fillerOrdersStore = fOrders.map(cleanMongoDoc) as any;
+    if (fServices.length) fillerServicesStore = fServices.map(cleanMongoDoc) as any;
+    if (gPricing.length) globalPricingStore = gPricing.map(cleanMongoDoc) as any;
+    if (ledger.length) adminPaymentLedgerStore = ledger.map(cleanMongoDoc) as any;
+    if (accounts.length) userAccountsStore = accounts.map(cleanMongoDoc) as any;
 
     console.log('[MongoDB] Data hydrated into in-memory stores');
   } catch (e) {
@@ -237,33 +247,43 @@ export async function hydrateFromMongo() {
   }
 }
 
+function cleanMongoDoc(doc: any): any {
+  if (!doc || typeof doc !== 'object') return doc;
+  const { _id, __v, ...rest } = doc;
+  return rest;
+}
+
 export async function persistToMongo(collection: string, doc: any) {
   if (!isMongoConnected()) return;
   try {
+    const safeDoc = cleanMongoDoc(doc);
     switch (collection) {
       case 'userAccount':
-        await UserAccountModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        await UserAccountModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
       case 'vleOperator':
-        await VleOperatorModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        await VleOperatorModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
       case 'fillerExpert':
-        await FillerExpertModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        await FillerExpertModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
       case 'vleOrder':
-        await VleOrderModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        await VleOrderModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
       case 'fillerOrder':
-        await FillerOrderModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        await FillerOrderModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
       case 'fillerService':
-        await FillerServiceModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        await FillerServiceModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
       case 'globalPricing':
-        await GlobalPricingModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        await GlobalPricingModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
       case 'ledger':
-        await AdminPaymentLedgerModel.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+        await AdminPaymentLedgerModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
+        break;
+      case 'payoutProfile':
+        await PayoutProfileModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
       default:
         break;
@@ -555,44 +575,275 @@ export function orderBelongsToClient(order: { clientId?: string; clientPhone?: s
   return idMatch || phoneMatch || emailMatch;
 }
 
+// =========================================================================
+// Bid distribution limits (active / daily / cooldown / offline email)
+// =========================================================================
+export const BID_LIMITS = {
+  // One active order at a time: agla bid tabhi jab pehla kaam khatam ho.
+  maxActive: Math.max(1, Number(process.env.OPERATOR_MAX_ACTIVE_BIDS) || 1),
+  // Poore din me maximum accepted bids per operator.
+  maxDaily: Math.max(1, Number(process.env.OPERATOR_MAX_DAILY_BIDS) || 15),
+  // Optional extra cooldown after completion (0 = turant free).
+  cooldownMinutes: Math.max(0, Number(process.env.OPERATOR_BID_COOLDOWN_MINUTES) || 0),
+  // Offline operator ko maximum kitni email, phir online aane tak band.
+  maxOfflineEmails: Math.max(1, Number(process.env.OPERATOR_MAX_OFFLINE_EMAILS) || 3)
+};
+
+export function todayIstKey(date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date);
+}
+
+export function isOperatorAccount(account?: UserAccount): boolean {
+  return !!account && (account.role === 'vle' || account.role === 'filler');
+}
+
+export function accountIdentityKeys(account?: UserAccount): string[] {
+  if (!account) return [];
+  const keys = new Set<string>();
+  const add = (value?: unknown) => {
+    const text = String(value ?? '').trim().toLowerCase();
+    if (text) keys.add(text);
+  };
+  add(account.id);
+  add(account.cscId);
+  add(account.phone);
+  add(normalizePhone(account.phone));
+  add(account.email);
+  add(normalizeEmail(account.email));
+  const operator = findVleOperatorForAccount(account);
+  if (operator) {
+    add(operator.id);
+    add(operator.cscId);
+    add(operator.phone);
+    add(normalizePhone(operator.phone));
+    add(operator.email);
+    add(normalizeEmail(operator.email));
+  }
+  return [...keys];
+}
+
+export function matchesAnyOperatorId(account: UserAccount | undefined, ids: unknown): boolean {
+  if (!account || !Array.isArray(ids) || ids.length === 0) return false;
+  const keys = new Set(accountIdentityKeys(account));
+  return ids.some(id => keys.has(String(id ?? '').trim().toLowerCase()));
+}
+
+export function findAccountForOperator(operator: VleOperator): UserAccount | undefined {
+  const operatorKeys = new Set(
+    [operator.id, operator.cscId, normalizePhone(operator.phone), normalizeEmail(operator.email)]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map(value => value.trim().toLowerCase())
+  );
+  return userAccountsStore.find(account =>
+    (account.role === 'vle' || account.role === 'filler') &&
+    accountIdentityKeys(account).some(key => operatorKeys.has(key))
+  );
+}
+
+export function activeBidCountForAccount(account?: UserAccount): number {
+  if (!account) return 0;
+  const keys = new Set(accountIdentityKeys(account));
+  const isMine = (order: any) =>
+    [order.acceptedByVleId, order.acceptedByFillerId, order.acceptedById]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .some(value => keys.has(value.trim().toLowerCase()));
+  const seen = new Set<string>();
+  let count = 0;
+  for (const order of [...vleOrdersStore, ...fillerOrdersStore]) {
+    if (!order?.id || seen.has(order.id)) continue;
+    seen.add(order.id);
+    if (!isMine(order)) continue;
+    // 'paid' bhi active hai jab tak final PDF upload nahi hua / order complete nahi hua.
+    if (['accepted', 'proof_submitted', 'paid'].includes(String(order.status || ''))) count += 1;
+  }
+  return count;
+}
+
+export function resetBidWindowsIfNeeded(account: UserAccount): void {
+  const key = todayIstKey();
+  if (account.bidDayKey !== key) {
+    account.bidDayKey = key;
+    account.bidsAcceptedToday = 0;
+  }
+  if (account.offlineEmailDayKey !== key) {
+    account.offlineEmailDayKey = key;
+    account.offlineEmailCount = 0;
+  }
+}
+
+export function getBidLimitStatus(account?: UserAccount): {
+  allowed: boolean;
+  reason?: string;
+  activeCount: number;
+  dailyCount: number;
+} {
+  if (!account || !isOperatorAccount(account)) {
+    return { allowed: false, reason: 'Registered operator account required.', activeCount: 0, dailyCount: 0 };
+  }
+  resetBidWindowsIfNeeded(account);
+  if (account.role === 'vle') {
+    const operator = findVleOperatorForAccount(account);
+    if (operator?.bidsSuspended) {
+      return {
+        allowed: false,
+        reason: '🚫 BIDS SUSPENDED: In-app payment bypass ki wajah se aapka bid lena band hai.',
+        activeCount: activeBidCountForAccount(account),
+        dailyCount: Math.max(0, Number(account.bidsAcceptedToday) || 0)
+      };
+    }
+  }
+  const activeCount = activeBidCountForAccount(account);
+  const dailyCount = Math.max(0, Number(account.bidsAcceptedToday) || 0);
+  if (activeCount >= BID_LIMITS.maxActive) {
+    return {
+      allowed: false,
+      reason: `⏳ Aapka ${activeCount} active order chal raha hai. Pehle use complete karein, phir naya bid milega.`,
+      activeCount,
+      dailyCount
+    };
+  }
+  if (dailyCount >= BID_LIMITS.maxDaily) {
+    return {
+      allowed: false,
+      reason: `📅 Aaj ki daily limit poori ho gayi (${dailyCount}/${BID_LIMITS.maxDaily}). Kal 12:00 AM IST ke baad naye bids milenge.`,
+      activeCount,
+      dailyCount
+    };
+  }
+  if (account.bidCooldownUntil) {
+    const until = new Date(account.bidCooldownUntil).getTime();
+    if (Number.isFinite(until) && until > Date.now()) {
+      const minutesLeft = Math.ceil((until - Date.now()) / 60_000);
+      return {
+        allowed: false,
+        reason: `⏳ Cooldown active hai — ${minutesLeft} minute baad naya bid milega.`,
+        activeCount,
+        dailyCount
+      };
+    }
+  }
+  return { allowed: true, activeCount, dailyCount };
+}
+
+export function recordBidAccepted(account?: UserAccount): void {
+  if (!account || !isOperatorAccount(account)) return;
+  resetBidWindowsIfNeeded(account);
+  account.bidsAcceptedToday = Math.max(0, Number(account.bidsAcceptedToday) || 0) + 1;
+  account.bidCooldownUntil = BID_LIMITS.cooldownMinutes > 0
+    ? new Date(Date.now() + BID_LIMITS.cooldownMinutes * 60_000).toISOString()
+    : undefined;
+  void persistToMongo('userAccount', account).catch(() => {});
+}
+
+export function markAccountOnline(account?: UserAccount): void {
+  if (!account || !isOperatorAccount(account)) return;
+  resetBidWindowsIfNeeded(account);
+  account.offlineEmailPaused = false;
+  account.offlineEmailCount = 0;
+  account.lastSeenOnlineAt = new Date().toISOString();
+  void persistToMongo('userAccount', account).catch(() => {});
+}
+
+export function markAccountOffline(account?: UserAccount): void {
+  if (!account || !isOperatorAccount(account)) return;
+  account.lastSeenOfflineAt = new Date().toISOString();
+  void persistToMongo('userAccount', account).catch(() => {});
+}
+
+export function canSendOfflineEmail(account?: UserAccount): boolean {
+  if (!account || !isOperatorAccount(account)) return false;
+  resetBidWindowsIfNeeded(account);
+  if (account.offlineEmailPaused) return false;
+  return (Math.max(0, Number(account.offlineEmailCount) || 0)) < BID_LIMITS.maxOfflineEmails;
+}
+
+export function recordOfflineEmail(account?: UserAccount): void {
+  if (!account || !isOperatorAccount(account)) return;
+  resetBidWindowsIfNeeded(account);
+  account.offlineEmailCount = Math.max(0, Number(account.offlineEmailCount) || 0) + 1;
+  if (account.offlineEmailCount >= BID_LIMITS.maxOfflineEmails) {
+    account.offlineEmailPaused = true;
+  }
+  void persistToMongo('userAccount', account).catch(() => {});
+}
+
+// Broadcast orders live in BOTH stores, so persist to both collections.
+export async function persistOrder(order: any): Promise<void> {
+  if (!order?.id) return;
+  const inVle = vleOrdersStore.some(item => item.id === order.id);
+  const inFiller = fillerOrdersStore.some(item => item.id === order.id);
+  if (inVle) await persistToMongo('vleOrder', order);
+  if (inFiller) await persistToMongo('fillerOrder', order);
+  if (!inVle && !inFiller) {
+    if (order.orderType === 'online_form_filling' || order.orderType === 'custom_form') {
+      await persistToMongo('fillerOrder', order);
+    } else {
+      await persistToMongo('vleOrder', order);
+    }
+  }
+}
+
+export async function persistAccount(account?: UserAccount): Promise<void> {
+  if (!account) return;
+  await persistToMongo('userAccount', account);
+  const operator = findVleOperatorForAccount(account);
+  if (operator) await persistToMongo('vleOperator', operator);
+}
+
 export function isOrderVisibleToAccount(
   order: {
     status?: string;
     clientPhone?: string;
     clientEmail?: string;
     district?: string;
+    city?: string;
     orderType?: string;
     serviceScope?: ServiceScope;
     acceptedById?: string;
     acceptedByVleId?: string;
     acceptedByFillerId?: string;
+    availableOperatorIds?: string[];
+    targetOperatorId?: string;
   },
   account?: UserAccount
 ): boolean {
   if (!account) return false;
   if (account.role === 'client') return orderBelongsToClient(order, account);
 
-  if (account.role === 'vle') {
-    const acceptedByMe =
-      (order.acceptedByVleId && order.acceptedByVleId === account.cscId) ||
-      (order.acceptedById && (order.acceptedById === account.cscId || order.acceptedById === account.id));
-    if (acceptedByMe) return true;
-  }
-
-  if (account.role === 'filler') {
-    const acceptedByMe =
-      (order.acceptedByFillerId && (order.acceptedByFillerId === account.id || order.acceptedByFillerId === account.cscId)) ||
-      (order.acceptedById && order.acceptedById === account.id);
-    if (acceptedByMe) return true;
-  }
+  // Jo operator already assigned hai, usko apna order hamesha dikhega.
+  const acceptedByMe =
+    (account.role === 'vle'
+      ? (!!order.acceptedByVleId && order.acceptedByVleId === account.cscId) ||
+        (!!order.acceptedById && (order.acceptedById === account.cscId || order.acceptedById === account.id))
+      : (!!order.acceptedByFillerId && (order.acceptedByFillerId === account.id || order.acceptedByFillerId === account.cscId)) ||
+        (!!order.acceptedById && order.acceptedById === account.id));
+  if (acceptedByMe) return true;
 
   if (order.status !== 'pending') return false;
+
+  // 🎯 Target lock: citizen ne specific operator chuna hai to sirf usi ko dikhega.
+  if (order.targetOperatorId && !matchesAnyOperatorId(account, [order.targetOperatorId])) {
+    return false;
+  }
+
+  // ⏳ Active order / daily limit / cooldown — naya bid nahi.
+  if (!getBidLimitStatus(account).allowed) return false;
 
   const scope = inferOrderScope(order);
   if (account.role === 'vle') {
     if (scope === 'district') {
       const district = normalizeLocation(order.district);
-      return !!district && normalizeLocation(account.district) === district;
+      if (!district || normalizeLocation(account.district) !== district) return false;
+      // 🏙️ City-first eligible list: sirf list me shamil operators.
+      if (Array.isArray(order.availableOperatorIds) && order.availableOperatorIds.length > 0) {
+        return matchesAnyOperatorId(account, order.availableOperatorIds);
+      }
+      return true;
     }
     return scope === 'national' || scope === 'online_form';
   }
