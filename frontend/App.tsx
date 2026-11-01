@@ -10399,7 +10399,15 @@ export default function App() {
                 )}
                 
                 {/* Chat Messages Log */}
-                <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-1">
+                <div
+                  className="flex-1 min-h-0 p-4 overflow-y-auto space-y-1"
+                  onClick={() => {
+                    // Chat area par tap karne se keyboard band ho aur view
+                    // normal ho jaye (zoom/scroll wapas apni jagah).
+                    const active = document.activeElement as HTMLElement | null;
+                    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) active.blur();
+                  }}
+                >
                   {(() => {
                     const msgs = activeWorkspaceOrder.chatMessages || [];
                     const groups: any[] = [];
