@@ -1238,20 +1238,55 @@ export default function App() {
   const [paymentIntentError, setPaymentIntentError] = useState('');
   const [qrZoomImage, setQrZoomImage] = useState('');
 
+  // Chat is sent over the live socket when possible, but the REST endpoint is
+  // the source of truth. This keeps messaging working when the socket is still
+  // waking up (Render cold start), disconnected, or the room join failed.
+  const sendMessageOverRest = async (orderId: string, payload: Record<string, unknown>) => {
+    const res = await fetchWithRetry(`/api/orders/${encodeURIComponent(orderId)}/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await parseJsonResponse(res).catch(() => ({} as any));
+    if (!res.ok || !data?.success) {
+      throw new Error(data?.error || 'The message could not be sent. Please try again.');
+    }
+    return data;
+  };
+
   const sendRealtimeMessage = (orderId: string, payload: Record<string, unknown>) =>
     new Promise<any>((resolve, reject) => {
+      const fallbackToRest = async (socketError?: unknown) => {
+        if (socketError) console.warn('Live chat socket unavailable, using REST fallback:', socketError);
+        try {
+          resolve(await sendMessageOverRest(orderId, payload));
+        } catch (err) {
+          reject(err);
+        }
+      };
+
       if (!realtimeSocket.connected) {
-        reject(new Error('Live connection is offline. Reconnect and try sending again.'));
+        // Try to recover the socket for future messages, but don't block this
+        // send on it — the REST call below delivers the message right away.
+        realtimeSocket.connect();
+        void fallbackToRest();
         return;
       }
+
+      let settled = false;
       realtimeSocket.timeout(10000).emit(
         'order:send-message',
         { ...payload, orderId },
         (error: Error | null, result: any) => {
+          if (settled) return;
+          settled = true;
           if (error) {
-            reject(new Error('The message could not reach the live server. Please try again.'));
+            void fallbackToRest(error);
           } else if (!result?.success) {
-            reject(new Error(result?.error || 'The message could not be sent.'));
+            // Socket room join can fail even on a healthy connection (for
+            // example an operator session that just refreshed). REST checks
+            // the account/order access itself, so use it as the safety net.
+            void fallbackToRest(result?.error);
           } else {
             resolve(result);
           }
