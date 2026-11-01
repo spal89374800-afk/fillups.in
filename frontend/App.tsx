@@ -1388,6 +1388,7 @@ export default function App() {
   // ================= ☎️ In-App WebRTC Audio Call (no phone numbers shown) =================
   // Sab call logic refs par chalta hai taaki purane socket-effect closures stale na ho.
   const callOrderRef = useRef<string | null>(null);
+  const callStartingRef = useRef(false);
   const callRoleRef = useRef<'caller' | 'callee' | null>(null);
   const callPcRef = useRef<RTCPeerConnection | null>(null);
   const callLocalStreamRef = useRef<MediaStream | null>(null);
@@ -1591,14 +1592,16 @@ export default function App() {
     } else if (order && order.id !== activeWorkspaceOrderRef.current.id) {
       setActiveWorkspaceOrder(order);
     }
-    if (callOrderRef.current) {
+    if (callStartingRef.current || callOrderRef.current) {
       setWorkspaceStatusMsg({ text: 'Ek call pehle se chal rahi hai.', type: 'info' });
       return;
     }
+    callStartingRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       callLocalStreamRef.current = stream;
     } catch {
+      callStartingRef.current = false;
       setWorkspaceStatusMsg({ text: 'Call ke liye microphone permission chahiye.', type: 'error' });
       return;
     }
@@ -1607,6 +1610,7 @@ export default function App() {
     setWorkspaceStatusMsg({ text: '📞 Live server se connect ho raha hai…', type: 'info' });
     const connected = await waitForRealtimeConnection(15000);
     if (!connected) {
+      callStartingRef.current = false;
       teardownCallMedia();
       setWorkspaceStatusMsg({ text: 'Live server se connection nahi bana. Internet check karke 10-15 second baad dobara call karein.', type: 'error' });
       return;
@@ -1615,11 +1619,13 @@ export default function App() {
     // 2) Ensure this order room is joined before sending the invite.
     const joinResult = await joinCallOrderRoom(target.id);
     if (!joinResult.success) {
+      callStartingRef.current = false;
       teardownCallMedia();
       setWorkspaceStatusMsg({ text: `Call room join nahi hua: ${joinResult.error || 'unknown error'}. Page refresh karke dobara try karein.`, type: 'error' });
       return;
     }
 
+    callStartingRef.current = false;
     callOrderRef.current = target.id;
     callRoleRef.current = 'caller';
     setCallPeerLabel((activeRoleRef.current === 'client' || activeRoleRef.current === 'vle' || activeRoleRef.current === 'form_filler') ? (target.acceptedByVleName || target.acceptedByFillerName || target.clientName || 'Operator') : (target.clientName || 'Citizen'));
