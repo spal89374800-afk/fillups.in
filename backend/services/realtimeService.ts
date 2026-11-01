@@ -69,6 +69,7 @@ type CallSession = {
   callerSocketId: string;
   candidates: string[];
   acceptedBy?: string;
+  ringTimeout?: ReturnType<typeof setTimeout>;
 };
 const activeCalls = new Map<string, CallSession>();
 
@@ -311,7 +312,7 @@ export function setRealtimeServer(server: Server): void {
     // ============================================================
     // 📞 IN-APP VOICE CALL (WebRTC signaling relay through order room)
     // ============================================================
-    socket.on('call:invite', (payload: { orderId?: string }, acknowledge?: (result: object) => void) => {
+    socket.on('call:invite', (payload: { orderId?: string; peerLabel?: string }, acknowledge?: (result: object) => void) => {
       const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
       if (!orderId || !joinedOrders.has(orderId)) {
         acknowledge?.({ success: false, error: 'Join the order before starting a call.' });
@@ -328,9 +329,27 @@ export function setRealtimeServer(server: Server): void {
         acknowledge?.({ success: false, error: 'The other party is not online right now.' });
         return;
       }
-      activeCalls.set(orderId, { orderId, callerSocketId: socket.id, candidates: others });
+      const session: CallSession = { orderId, callerSocketId: socket.id, candidates: others };
+      // Agar 40s tak koi answer na kare to ring khud band ho jaye — warna
+      // caller timeout ke baad bhi callee ke phone par ring baji rehti hai.
+      session.ringTimeout = setTimeout(() => {
+        const current = activeCalls.get(orderId);
+        if (!current || current !== session || current.acceptedBy) return;
+        activeCalls.delete(orderId);
+        server.sockets.sockets.get(current.callerSocketId)?.emit('call:ended', { orderId, reason: 'no-answer' });
+        current.candidates.forEach(id => {
+          server.sockets.sockets.get(id)?.emit('call:ended', { orderId, reason: 'no-answer' });
+        });
+      }, 40000);
+      (session.ringTimeout as { unref?: () => void }).unref?.();
+      activeCalls.set(orderId, session);
+      const peerLabel = typeof payload?.peerLabel === 'string' ? payload.peerLabel.trim().slice(0, 80) : '';
       others.forEach(id => {
-        server.sockets.sockets.get(id)?.emit('call:incoming', { orderId, fromSocketId: socket.id });
+        server.sockets.sockets.get(id)?.emit('call:incoming', {
+          orderId,
+          fromSocketId: socket.id,
+          ...(peerLabel ? { peerLabel } : {})
+        });
       });
       acknowledge?.({ success: true });
     });
@@ -343,6 +362,8 @@ export function setRealtimeServer(server: Server): void {
         return;
       }
       session.acceptedBy = socket.id;
+      if (session.ringTimeout) clearTimeout(session.ringTimeout);
+      session.ringTimeout = undefined;
       session.candidates
         .filter(id => id !== socket.id)
         .forEach(id => server.sockets.sockets.get(id)?.emit('call:busy', { orderId }));
@@ -359,6 +380,7 @@ export function setRealtimeServer(server: Server): void {
       if (!session || session.acceptedBy === socket.id) return;
       session.candidates = session.candidates.filter(id => id !== socket.id);
       if (session.candidates.length === 0) {
+        if (session.ringTimeout) clearTimeout(session.ringTimeout);
         activeCalls.delete(orderId);
         server.sockets.sockets.get(session.callerSocketId)?.emit('call:ended', { orderId, reason: 'rejected' });
       }
@@ -368,6 +390,7 @@ export function setRealtimeServer(server: Server): void {
       const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
       const session = orderId ? activeCalls.get(orderId) : undefined;
       if (!session) return;
+      if (session.ringTimeout) clearTimeout(session.ringTimeout);
       activeCalls.delete(orderId);
       // Accepted peer ho to usko batao; warna saare ringing candidates ko inform karo
       // (caller ne ring ke dauraan call cancel ki).
@@ -419,6 +442,7 @@ export function setRealtimeServer(server: Server): void {
       // Active call ka peer turant inform karo taaki wo hang na ho.
       for (const [orderId, session] of [...activeCalls]) {
         if (session.callerSocketId === socket.id || session.acceptedBy === socket.id) {
+          if (session.ringTimeout) clearTimeout(session.ringTimeout);
           activeCalls.delete(orderId);
           const peerId = session.acceptedBy || undefined;
           if (peerId && peerId !== socket.id) {

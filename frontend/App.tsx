@@ -1265,6 +1265,7 @@ export default function App() {
     chatLogEndRef.current?.scrollIntoView({ block: 'end' });
   }, [activeWorkspaceOrder?.id, activeWorkspaceOrder?.chatMessages?.length]);
   const [callingState, setCallingState] = useState<'idle' | 'calling' | 'incoming' | 'connected'>('idle');
+  const [activeCallOrderId, setActiveCallOrderId] = useState<string | null>(null);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [isCallMuted, setIsCallMuted] = useState(false);
@@ -1397,24 +1398,44 @@ export default function App() {
   const callAudioRef = useRef<HTMLAudioElement | null>(null);
   const callRingtoneCtxRef = useRef<AudioContext | null>(null);
   const callRingtoneTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callVibrateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callIncomingOrderRef = useRef<any | null>(null);
+  const ordersLookupRef = useRef<any[]>([]);
 
   const stopCallRingtone = () => {
     if (callRingtoneTimerRef.current) {
       clearInterval(callRingtoneTimerRef.current);
       callRingtoneTimerRef.current = null;
     }
+    if (callVibrateTimerRef.current) {
+      clearInterval(callVibrateTimerRef.current);
+      callVibrateTimerRef.current = null;
+    }
+    try { navigator.vibrate?.(0); } catch {}
     if (callRingtoneCtxRef.current) {
       try { void callRingtoneCtxRef.current.close(); } catch {}
       callRingtoneCtxRef.current = null;
     }
   };
 
-  const startCallRingtone = () => {
+  const startCallRingtone = (vibrate = false) => {
     stopCallRingtone();
+    if (vibrate) {
+      try {
+        navigator.vibrate?.([500, 250, 500, 250, 500]);
+        callVibrateTimerRef.current = setInterval(() => {
+          try { navigator.vibrate?.([500, 250, 500, 250, 500]); } catch {}
+        }, 2200);
+      } catch {}
+    }
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx: AudioContext = new AudioCtx();
+      // Mobile browsers may start the context suspended until a gesture. A
+      // ringtone coming from a socket has no gesture, so resume explicitly and
+      // rely on the visible overlay + vibration as the fallback.
+      try { void ctx.resume(); } catch {}
       callRingtoneCtxRef.current = ctx;
       const beep = () => {
         if (!callRingtoneCtxRef.current) return;
@@ -1448,9 +1469,11 @@ export default function App() {
   const resetCall = () => {
     callOrderRef.current = null;
     callRoleRef.current = null;
+    callIncomingOrderRef.current = null;
     teardownCallMedia();
     setIsCallMuted(false);
     setCallPeerLabel('');
+    setActiveCallOrderId(null);
     setCallingState('idle');
     setCallDuration(0);
   };
@@ -1627,8 +1650,11 @@ export default function App() {
 
     callStartingRef.current = false;
     callOrderRef.current = target.id;
+    setActiveCallOrderId(target.id);
     callRoleRef.current = 'caller';
-    setCallPeerLabel((activeRoleRef.current === 'client' || activeRoleRef.current === 'vle' || activeRoleRef.current === 'form_filler') ? (target.acceptedByVleName || target.acceptedByFillerName || target.clientName || 'Operator') : (target.clientName || 'Citizen'));
+    setCallPeerLabel(activeRoleRef.current === 'client'
+      ? (target.acceptedByVleName || target.acceptedByFillerName || 'Jan Seva Operator')
+      : (target.clientName || 'Citizen'));
     setCallingState('calling');
     setCallDuration(0);
     startCallRingtone();
@@ -1639,31 +1665,37 @@ export default function App() {
       if (inviteSettled) return;
       inviteSettled = true;
       setWorkspaceStatusMsg({ text: 'Call invite ka jawab nahi aaya. Dusri taraf app band/offline ho sakti hai — dobara try karein.', type: 'error' });
-      resetCall();
+      endVoiceCall();
     }, 25000);
 
+    const callerLabel = activeRoleRef.current === 'client'
+      ? (clientName || 'Citizen')
+      : activeRoleRef.current === 'form_filler'
+        ? (fillerName || 'Form Filler')
+        : (vleName || 'Jan Seva Operator');
     realtimeSocket.timeout(25000).emit(
       'call:invite',
-      { orderId: target.id },
+      { orderId: target.id, peerLabel: callerLabel },
       (timeoutError: unknown, result?: { success?: boolean; error?: string }) => {
         if (inviteSettled) return;
         inviteSettled = true;
         clearTimeout(inviteTimer);
         if (timeoutError) {
           setWorkspaceStatusMsg({ text: 'Call invite timeout ho gaya. Internet check karke dobara try karein.', type: 'error' });
-          resetCall();
+          endVoiceCall();
           return;
         }
         if (!result?.success) {
           setWorkspaceStatusMsg({ text: result?.error || 'Call nahi lag saki (dusri taraf wala online/order room me nahi hai).', type: 'error' });
-          resetCall();
+          endVoiceCall();
         }
       }
     );
   };
 
   const acceptVoiceCall = async () => {
-    const orderId = callOrderRef.current || activeWorkspaceOrderRef.current?.id;
+    const incomingOrder = callIncomingOrderRef.current;
+    const orderId = callOrderRef.current || incomingOrder?.id || activeWorkspaceOrderRef.current?.id;
     if (!orderId) { resetCall(); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1675,11 +1707,36 @@ export default function App() {
       return;
     }
     callOrderRef.current = orderId;
+    setActiveCallOrderId(orderId);
     callRoleRef.current = 'callee';
+    // Accept karte hi sahi order ka workspace kholo — chahe user kisi aur
+    // workspace me ho ya workspace minimize ho.
+    const orderToOpen = (incomingOrder?.id === orderId ? incomingOrder : null)
+      || ordersLookupRef.current.find(item => item?.id === orderId)
+      || null;
+    if (orderToOpen) {
+      setIsWorkspaceMinimized(false);
+      setActiveWorkspaceOrder((current: any) => current?.id === orderToOpen.id ? current : orderToOpen);
+    }
+    callIncomingOrderRef.current = null;
     stopCallRingtone();
     setCallingState('connected');
     setCallDuration(0);
-    realtimeSocket.emit('call:accept', { orderId });
+    // Ack se pata chalta hai ki caller abhi bhi connected hai. Agar caller ne
+    // ring ke dauraan call cancel kar di, to humein "connected" mat dikhao.
+    let acceptSettled = false;
+    realtimeSocket.timeout(12000).emit(
+      'call:accept',
+      { orderId },
+      (timeoutError: unknown, result?: { success?: boolean; error?: string }) => {
+        if (acceptSettled) return;
+        acceptSettled = true;
+        if (timeoutError || !result?.success) {
+          setWorkspaceStatusMsg({ text: result?.error || 'Call accept nahi hua — caller ne call band kar di. Dobara call karein.', type: 'error' });
+          resetCall();
+        }
+      }
+    );
   };
 
   const rejectVoiceCall = () => {
@@ -2243,6 +2300,8 @@ export default function App() {
     seenClientOrderIds.add(o.id);
     return true;
   });
+  // Incoming call accept karte waqt sahi order kholne ke liye latest list.
+  ordersLookupRef.current = [...vleExclusiveOrders, ...fillerOrders, ...clientActiveOrders];
 
   useEffect(() => {
     let pendingOrderId = '';
@@ -2431,21 +2490,33 @@ export default function App() {
         realtimeSocket.emit('call:reject', { orderId: event.orderId });
         return;
       }
+      const incomingOrder = ordersLookupRef.current.find(item => item?.id === event.orderId) || null;
       callOrderRef.current = event.orderId;
+      setActiveCallOrderId(event.orderId);
       callRoleRef.current = 'callee';
       callTargetSocketIdRef.current = event.fromSocketId;
-      setCallPeerLabel(event.peerLabel || (activeRoleRef.current === 'client' ? 'Jan Seva Operator' : 'Citizen'));
+      callIncomingOrderRef.current = incomingOrder;
+      const orderPeerLabel = activeRoleRef.current === 'client'
+        ? (incomingOrder?.acceptedByVleName || incomingOrder?.acceptedByFillerName || incomingOrder?.acceptedByName)
+        : (incomingOrder?.clientName);
+      setCallPeerLabel(event.peerLabel || orderPeerLabel || (activeRoleRef.current === 'client' ? 'Jan Seva Operator' : 'Citizen'));
       setCallingState('incoming');
-      startCallRingtone();
+      startCallRingtone(true);
     };
-    const onCallAccepted = () => {
+    const onCallAccepted = (event?: { orderId?: string; peerSocketId?: string }) => {
+      // Caller ne timeout/cancel kar diya ho to stale accept ignore karo.
+      if (!callOrderRef.current) return;
+      if (event?.orderId && event.orderId !== callOrderRef.current) return;
       stopCallRingtone();
+      if (event?.peerSocketId) callTargetSocketIdRef.current = event.peerSocketId;
       setCallingState('connected');
       setCallDuration(0);
       // Caller ne offer bhej diya hoga; peer banao aur ICE wait karo.
       if (callOrderRef.current && !callPcRef.current) {
         createCallPeer(callOrderRef.current, true);
       }
+      // Mobile autoplay policy: gesture ke baad hi audio sink bajta hai.
+      if (callAudioRef.current) void callAudioRef.current.play().catch(() => {});
     };
     const onCallBusy = () => {
       setWorkspaceStatusMsg({ text: '📵 Sirf ek call ek time par — dusri taraf already busy hai.', type: 'info' });
@@ -10548,9 +10619,20 @@ export default function App() {
                           type="text"
                           value={chatInputText}
                           onChange={(e) => setChatInputText(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSendMessage(); } }}
+                          onFocus={(e) => {
+                            const inputEl = e.currentTarget;
+                            // Keyboard khulne ke baad input ko visible area me rakho
+                            // taaki workspace header / minimize / fullscreen upar na chhupen.
+                            setTimeout(() => {
+                              try { inputEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+                            }, 300);
+                          }}
+                          enterKeyHint="send"
+                          inputMode="text"
+                          autoComplete="off"
                           placeholder={activeRole === 'client' ? "Type message, record voice, or attach docs..." : "Type reply or record voice note..."}
-                          className="flex-1 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="flex-1 min-w-0 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-base sm:text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
 
                         <button
@@ -11309,9 +11391,15 @@ export default function App() {
           </div>
         )}
 
-      {/* 📞 Hidden audio sink + GLOBAL call overlay (workspace band/minimized ho tab bhi call chale) */}
+      {/* 📞 Hidden audio sink + GLOBAL call overlay (workspace band/minimized ho tab bhi call chale).
+          Incoming call hamesha dikhta hai — chahe koi bhi workspace khula ho. */}
       <audio ref={callAudioRef} autoPlay playsInline className="hidden" />
-      {callingState !== 'idle' && (!activeWorkspaceOrder || isWorkspaceMinimized) && (
+      {callingState !== 'idle' && (
+        callingState === 'incoming'
+        || !activeWorkspaceOrder
+        || isWorkspaceMinimized
+        || (activeCallOrderId !== null && activeWorkspaceOrder.id !== activeCallOrderId)
+      ) && (
         <div className="fixed inset-0 z-[70] bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center px-6 text-center">
           <div className="relative mb-6">
             <div className={`absolute inset-0 rounded-full ${callingState === 'connected' ? 'bg-emerald-500/30' : 'bg-amber-500/30'} animate-ping`} />
@@ -11322,9 +11410,14 @@ export default function App() {
             </div>
           </div>
           <h2 className="text-xl font-black text-white mb-1">{callPeerLabel || 'Connected user'}</h2>
+          {callingState === 'incoming' && (callIncomingOrderRef.current?.serviceName || callIncomingOrderRef.current?.formTitle) && (
+            <p className="text-xs font-bold text-emerald-300 mb-1 max-w-xs truncate">
+              {callIncomingOrderRef.current?.serviceName || callIncomingOrderRef.current?.formTitle}
+            </p>
+          )}
           <p className="text-sm text-slate-400 mb-8">
             {callingState === 'connected' ? `In call • ${Math.floor(callDuration / 60)}:${(callDuration % 60).toString().padStart(2, '0')}` :
-             callingState === 'incoming' ? 'Incoming voice call…' : 'Calling…'}
+             callingState === 'incoming' ? '📞 Incoming voice call… Answer dabate hi call connect hogi' : 'Calling…'}
           </p>
           <div className="flex items-center gap-4">
             {callingState === 'incoming' ? (
