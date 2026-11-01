@@ -24,7 +24,8 @@ const viteAvailable =
 async function startServer() {
   await connectDB();
   try {
-    const { hydrateFromMongo } = await import('./services/storeService.ts');
+    const { hydrateFromMongo, flushPendingMongoWrites } = await import('./services/storeService.ts');
+    await flushPendingMongoWrites();
     await hydrateFromMongo();
   } catch (e) {
     console.warn('[startup] hydrate failed', e);

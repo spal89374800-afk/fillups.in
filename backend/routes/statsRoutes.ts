@@ -7,14 +7,30 @@ import {
   getOperatorFormFilling,
   getPublicOperatorCatalog,
   isOrderVisibleToAccount,
+  pendingMongoWriteCount,
   serviceVisibleForAccount,
   userAccountsStore,
   vleListStore,
   vleOrdersStore
 } from '../services/storeService.ts';
 import { getRequestAccount } from '../middleware/securityMiddleware.ts';
+import { getMongoStatus } from '../config/db.ts';
 
 export const statsRouter = Router();
+
+// Public, read-only database health. Helps confirm whether the deployed
+// backend is actually connected to MongoDB Atlas or running in memory.
+statsRouter.get('/health', (_req, res) => {
+  const database = getMongoStatus();
+  res.status(database.connected ? 200 : 503).json({
+    success: database.connected,
+    database: {
+      ...database,
+      mode: database.connected ? 'mongodb' : (database.configured ? 'in-memory (connection failed)' : 'in-memory (MONGODB_URI missing)'),
+      pendingWrites: pendingMongoWriteCount()
+    }
+  });
+});
 
 function getPlatformStats() {
   const completedOrders = new Map(

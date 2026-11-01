@@ -11,7 +11,7 @@ import {
   AdminPaymentLedgerModel,
   PayoutProfileModel
 } from '../models/index.ts';
-import { isMongoConnected } from '../config/db.ts';
+import { isMongoConnected, onMongoReady } from '../config/db.ts';
 
 export interface LiveCameraSession {
   token: string;
@@ -61,6 +61,27 @@ export interface UserAccount {
 }
 
 export let userAccountsStore: UserAccount[] = [];
+
+// ========================================================
+// 💾 MONGO WRITE QUEUE (no silent data loss on cold start)
+// ========================================================
+// Render can take a few seconds before Atlas accepts the first connection.
+// Writes made during that window used to be dropped because
+// `persistToMongo` returned early. Keep them in memory and flush as soon as
+// the connection is ready (or recovered after a network drop).
+type PendingMongoWrite = { collection: string; doc: any };
+const pendingMongoWrites = new Map<string, PendingMongoWrite>();
+const MAX_PENDING_MONGO_WRITES = 5000;
+let warnedAboutMongoQueue = false;
+
+function mongoWriteKey(collection: string, doc: any): string {
+  const id = String(doc?.id ?? doc?.key ?? '').trim();
+  return id ? `${collection}:${id}` : `${collection}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function pendingMongoWriteCount(): number {
+  return pendingMongoWrites.size;
+}
 
 export function saveOrUpdateUserAccount(account: Partial<UserAccount> & { role: 'client' | 'vle' | 'filler' | 'expert' }): UserAccount {
   const existingIdx = userAccountsStore.findIndex(u =>
@@ -222,15 +243,15 @@ export let adminPaymentLedgerStore: AdminPaymentLedgerEntry[] = [];
 export async function hydrateFromMongo() {
   if (!isMongoConnected()) return;
   try {
-    const [vles, fExperts, vOrders, fOrders, fServices, gPricing, ledger, accounts] = await Promise.all([
-      VleOperatorModel.find({}).lean(),
-      FillerExpertModel.find({}).lean(),
-      VleOrderModel.find({}).sort({ createdAt: -1 }).lean(),
-      FillerOrderModel.find({}).sort({ createdAt: -1 }).lean(),
-      FillerServiceModel.find({}).lean(),
-      GlobalPricingModel.find({}).lean(),
-      AdminPaymentLedgerModel.find({}).sort({ createdAt: -1 }).lean(),
-      UserAccountModel.find({}).lean()
+    const [vles, fExperts, vOrders, fOrders, fServices, gPricing, ledger, accounts] = await Promise.all<any>([
+      (VleOperatorModel as any).find({}).lean().exec(),
+      (FillerExpertModel as any).find({}).lean().exec(),
+      (VleOrderModel as any).find({}).sort({ createdAt: -1 }).lean().exec(),
+      (FillerOrderModel as any).find({}).sort({ createdAt: -1 }).lean().exec(),
+      (FillerServiceModel as any).find({}).lean().exec(),
+      (GlobalPricingModel as any).find({}).lean().exec(),
+      (AdminPaymentLedgerModel as any).find({}).sort({ createdAt: -1 }).lean().exec(),
+      (UserAccountModel as any).find({}).lean().exec()
     ]);
 
     if (vles.length) vleListStore = vles.map(cleanMongoDoc) as any;
@@ -254,9 +275,23 @@ function cleanMongoDoc(doc: any): any {
 }
 
 export async function persistToMongo(collection: string, doc: any) {
-  if (!isMongoConnected()) return;
+  const safeDoc = cleanMongoDoc(doc);
+  const writeKey = mongoWriteKey(collection, safeDoc);
+
+  if (!isMongoConnected()) {
+    if (pendingMongoWrites.size >= MAX_PENDING_MONGO_WRITES) {
+      const oldestKey = pendingMongoWrites.keys().next().value;
+      if (oldestKey) pendingMongoWrites.delete(oldestKey);
+    }
+    pendingMongoWrites.set(writeKey, { collection, doc: safeDoc });
+    if (!warnedAboutMongoQueue) {
+      warnedAboutMongoQueue = true;
+      console.warn(`[MongoDB] Not connected — queued "${collection}" write. It will be saved automatically after reconnect.`);
+    }
+    return;
+  }
+
   try {
-    const safeDoc = cleanMongoDoc(doc);
     switch (collection) {
       case 'userAccount':
         await UserAccountModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
@@ -288,10 +323,30 @@ export async function persistToMongo(collection: string, doc: any) {
       default:
         break;
     }
+    pendingMongoWrites.delete(writeKey);
+    warnedAboutMongoQueue = false;
   } catch (e) {
-    console.error('[MongoDB] Persist failed', e);
+    pendingMongoWrites.set(writeKey, { collection, doc: safeDoc });
+    console.error('[MongoDB] Persist failed — write queued for retry:', e);
   }
 }
+
+export async function flushPendingMongoWrites(): Promise<void> {
+  if (!isMongoConnected() || pendingMongoWrites.size === 0) return;
+  const queued = [...pendingMongoWrites.values()];
+  console.log(`[MongoDB] Flushing ${queued.length} queued write(s)...`);
+  for (const entry of queued) {
+    await persistToMongo(entry.collection, entry.doc);
+  }
+}
+
+// Flush anything written while disconnected first, then hydrate the rest of the
+// Atlas data. Hydrating first would overwrite new in-memory records that are
+// still waiting in the queue.
+onMongoReady(async () => {
+  await flushPendingMongoWrites();
+  await hydrateFromMongo();
+});
 
 export function recordAdminPaymentLedger(entry: Omit<AdminPaymentLedgerEntry, 'id' | 'dateTime' | 'status' | 'source' | 'qrNote'> & Partial<Pick<AdminPaymentLedgerEntry, 'id' | 'dateTime' | 'status' | 'source' | 'qrNote'>>): AdminPaymentLedgerEntry {
   const existing = adminPaymentLedgerStore.find(item => item.orderId === entry.orderId);
