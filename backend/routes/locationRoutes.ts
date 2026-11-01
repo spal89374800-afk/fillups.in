@@ -87,6 +87,14 @@ function districtStateMap(): Map<string, string> {
 
 const DISTRICT_STATE = districtStateMap();
 
+// State / UT names are never a valid district or city. Registered operator
+// records occasionally contain the state name in the district/city field, so
+// keep those values out of the suggestion list.
+const STATE_NAME_KEYS = new Set(STATES_LOCATIONS.map(entry => normalizeText(entry.state)));
+for (const group of STATE_ALIAS_GROUPS) {
+  for (const entry of group) STATE_NAME_KEYS.add(normalizeText(entry));
+}
+
 function levenshteinWithinOne(a: string, b: string): boolean {
   if (Math.abs(a.length - b.length) > 1) return false;
   let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
@@ -165,6 +173,8 @@ function collectSuggestions(
   const addCandidate = (value: string, type: 'district' | 'city', state?: string) => {
     const clean = String(value || '').trim();
     if (!clean) return;
+    // A state name must never be offered as a district or city.
+    if (STATE_NAME_KEYS.has(normalizeText(clean))) return;
     if (typeFilter && type !== typeFilter) return;
     const dedupeKey = `${type}:${clean.toLowerCase()}`;
     if (seen.has(dedupeKey)) return;

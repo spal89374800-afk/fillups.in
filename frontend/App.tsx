@@ -327,6 +327,21 @@ const INDIAN_STATES = [
   'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
 ];
 
+// A state / UT name is not a district or city. Older saved sessions sometimes
+// had the state name stored in the district/city field; ignore those values.
+const sameAsStateValue = (value?: string | null, state?: string | null) =>
+  Boolean(value && state && value.trim().toLowerCase() === state.trim().toLowerCase());
+
+const readStoredDistrict = (districtKey: string, stateKey: string) => {
+  try {
+    const district = localStorage.getItem(districtKey) || '';
+    const state = localStorage.getItem(stateKey) || '';
+    return sameAsStateValue(district, state) ? '' : district;
+  } catch {
+    return '';
+  }
+};
+
 function readStoredSession(): StoredSession | null {
   try {
     const raw = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -948,13 +963,7 @@ export default function App() {
       return '';
     }
   });
-  const [vleDistrict, setVleDistrict] = useState(() => {
-    try {
-      return localStorage.getItem('vle_district') || '';
-    } catch {
-      return '';
-    }
-  });
+  const [vleDistrict, setVleDistrict] = useState(() => readStoredDistrict('vle_district', 'vle_state'));
   const [vleCity, setVleCity] = useState('');
   const [vlePhone, setVlePhone] = useState('');
   const [vleEmail, setVleEmail] = useState(() => {
@@ -985,13 +994,7 @@ export default function App() {
       return '';
     }
   });
-  const [fillerDistrict, setFillerDistrict] = useState(() => {
-    try {
-      return localStorage.getItem('filler_district') || '';
-    } catch {
-      return '';
-    }
-  });
+  const [fillerDistrict, setFillerDistrict] = useState(() => readStoredDistrict('filler_district', 'filler_state'));
   const [fillerCity, setFillerCity] = useState('');
   const [fillerPhone, setFillerPhone] = useState('');
   const [fillerEmail, setFillerEmail] = useState(() => {
@@ -1021,8 +1024,8 @@ export default function App() {
       if (session.phone) setClientPhone(session.phone);
       if (session.email) setClientEmail(session.email);
       if (session.state) setClientState(session.state);
-      if (session.district) setClientDistrictFilter(session.district);
-      if (session.city) setClientCityFilter(session.city);
+      if (session.district && !sameAsStateValue(session.district, session.state)) setClientDistrictFilter(session.district);
+      if (session.city && !sameAsStateValue(session.city, session.state)) setClientCityFilter(session.city);
       if (session.name) setExamApplicantName(session.name);
       if (session.phone) setExamApplicantPhone(session.phone);
       if (session.email) setExamApplicantEmail(session.email);
@@ -1034,16 +1037,16 @@ export default function App() {
       if (session.phone) setVlePhone(session.phone);
       if (session.email) setVleEmail(session.email);
       if (session.state) setVleState(session.state);
-      if (session.district) setVleDistrict(session.district);
-      if (session.city) setVleCity(session.city);
+      if (session.district && !sameAsStateValue(session.district, session.state)) setVleDistrict(session.district);
+      if (session.city && !sameAsStateValue(session.city, session.state)) setVleCity(session.city);
       if (session.cscId) setVleId(session.cscId);
     } else if (session.role === 'form_filler') {
       if (session.name) setFillerName(session.name);
       if (session.phone) setFillerPhone(session.phone);
       if (session.email) setFillerEmail(session.email);
       if (session.state) setFillerState(session.state);
-      if (session.district) setFillerDistrict(session.district);
-      if (session.city) setFillerCity(session.city);
+      if (session.district && !sameAsStateValue(session.district, session.state)) setFillerDistrict(session.district);
+      if (session.city && !sameAsStateValue(session.city, session.state)) setFillerCity(session.city);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -7800,7 +7803,8 @@ export default function App() {
                       setVleState(accountState);
                       localStorage.setItem('vle_state', accountState);
                     }
-                    const accountDistrict = loginData.user?.district || matched?.district || vleDistrict;
+                    const rawAccountDistrict = loginData.user?.district || matched?.district || vleDistrict;
+                    const accountDistrict = sameAsStateValue(rawAccountDistrict, accountState || vleState) ? '' : rawAccountDistrict;
                     if (accountDistrict) {
                       setVleDistrict(accountDistrict);
                       localStorage.setItem('vle_district', accountDistrict);
@@ -9174,7 +9178,8 @@ export default function App() {
                         setFillerState(accountState);
                         localStorage.setItem('filler_state', accountState);
                       }
-                      const accountDistrict = loginData.user?.district || fillerDistrict;
+                      const rawAccountDistrict = loginData.user?.district || fillerDistrict;
+                      const accountDistrict = sameAsStateValue(rawAccountDistrict, accountState || fillerState) ? '' : rawAccountDistrict;
                       if (accountDistrict) {
                         setFillerDistrict(accountDistrict);
                         localStorage.setItem('filler_district', accountDistrict);

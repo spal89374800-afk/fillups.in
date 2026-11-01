@@ -121,7 +121,18 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputValue, preferType, state]);
 
-  const topSuggestions = useMemo(() => suggestions.slice(0, 20), [suggestions]);
+  // Filter again at render time. This keeps the district field district-only and
+  // the city field city-only even if an older backend (or a cached response)
+  // returns a mixed list. A state name is never a valid district/city value.
+  const topSuggestions = useMemo(() => {
+    const normalizedState = (state || '').trim().toLowerCase();
+    const visible = suggestions.filter(suggestion => {
+      if (preferType && suggestion.type !== preferType) return false;
+      if (normalizedState && suggestion.value.trim().toLowerCase() === normalizedState) return false;
+      return true;
+    });
+    return visible.slice(0, 20);
+  }, [suggestions, preferType, state]);
 
   const commitValue = (next: string) => {
     skipNextFetch.current = true;
@@ -199,7 +210,7 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
       {open && topSuggestions.length > 0 && (
         <ul
           role="listbox"
-          className="absolute z-50 mt-1 w-full min-w-[320px] max-h-60 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/50 py-1"
+          className="absolute z-50 mt-1 w-full min-w-full sm:min-w-[320px] max-h-60 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/50 py-1"
         >
           {topSuggestions.map((suggestion, index) => (
             <li
@@ -220,8 +231,8 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
                 <span className="truncate">{suggestion.value}</span>
               </span>
               <span className="text-[10px] uppercase tracking-wide text-slate-400 flex-shrink-0">
-                {suggestion.type}
-                {suggestion.state ? ` · ${suggestion.state}` : ''}
+                {suggestion.type === 'district' ? 'District' : 'City'}
+                {suggestion.state && !state ? ` · ${suggestion.state}` : ''}
               </span>
             </li>
           ))}
