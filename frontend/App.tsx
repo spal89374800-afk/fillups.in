@@ -1401,6 +1401,11 @@ export default function App() {
   const startVoiceCall = async (order?: any) => {
     const target = order || activeWorkspaceOrderRef.current;
     if (!target?.id) return;
+    if (!activeWorkspaceOrderRef.current) {
+      setActiveWorkspaceOrder(target);
+    } else if (order && order.id !== activeWorkspaceOrderRef.current.id) {
+      setActiveWorkspaceOrder(order);
+    }
     if (!realtimeSocket.connected) {
       setWorkspaceStatusMsg({ text: 'Live connection offline hai — call ke liye internet check karein.', type: 'error' });
       return;
@@ -1418,7 +1423,7 @@ export default function App() {
     }
     callOrderRef.current = target.id;
     callRoleRef.current = 'caller';
-    setCallPeerLabel(activeRoleRef.current === 'client' ? 'Jan Seva Operator' : (target.clientName || 'Citizen'));
+    setCallPeerLabel((activeRoleRef.current === 'client' || activeRoleRef.current === 'vle' || activeRoleRef.current === 'form_filler') ? (target.acceptedByVleName || target.acceptedByFillerName || target.clientName || 'Operator') : (target.clientName || 'Citizen'));
     setCallingState('calling');
     setCallDuration(0);
     startCallRingtone();
@@ -6188,7 +6193,6 @@ export default function App() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setActiveWorkspaceOrder(notif.order);
                             void startVoiceCall(notif.order);
                           }}
                           className="p-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-blue-400 border border-slate-800 transition-colors"
@@ -9841,7 +9845,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     if (callingState === 'idle') {
-                      void startVoiceCall();
+                      void startVoiceCall(activeWorkspaceOrder || undefined);
                     } else if (callingState === 'incoming') {
                       void acceptVoiceCall();
                     } else {
