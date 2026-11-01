@@ -3,6 +3,7 @@ import {
   communityQueriesStore,
   fillerOrdersStore,
   fillerServicesStore,
+  findVleOperatorForAccount,
   getOperatorPricing,
   getOperatorFormFilling,
   getPublicOperatorCatalog,
@@ -57,6 +58,8 @@ function getPublicVles(account?: ReturnType<typeof getRequestAccount>) {
   return vleListStore.map(operator => ({
     id: operator.id,
     name: operator.name,
+    centerName: operator.centerName,
+    photoUrl: operator.photoUrl,
     cscId: operator.cscId,
     district: operator.district,
     city: operator.city,
@@ -91,11 +94,29 @@ statsRouter.get('/dashboard', (req, res) => {
   const payload: Record<string, unknown> = {
     success: true,
     ...getPlatformStats(),
+    // Saved account details so every device restores the logged-in user's
+    // name, phone, email and location instead of blank form fields.
+    account: account ? {
+      id: account.id,
+      role: account.role,
+      name: account.name,
+      phone: account.phone,
+      email: account.email,
+      state: account.state || '',
+      district: account.district || '',
+      city: account.city || '',
+      cscId: account.cscId || '',
+      centerName: account.centerName || '',
+      photoUrl: account.photoUrl || ''
+    } : null,
     vles: getPublicVles(account),
     catalog: getPublicOperatorCatalog(account),
     fillerServices: getPublicFillerServices(account),
     communityQueries: communityQueriesStore
   };
+  if (account?.role === 'vle') {
+    payload.operatorProfile = findVleOperatorForAccount(account) || null;
+  }
 
   const allOrders = dedupeOrders();
 

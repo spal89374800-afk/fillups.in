@@ -740,8 +740,20 @@ export default function App() {
 
   // --- CLIENT AUTH STATE ---
   const [, setIsClientLoggedIn] = useState(() => readStoredSession()?.role === 'client');
-  const [clientName, setClientName] = useState('');
-  const [clientPhone, setClientPhone] = useState('');
+  const [clientName, setClientName] = useState(() => {
+    try {
+      return localStorage.getItem('client_name') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [clientPhone, setClientPhone] = useState(() => {
+    try {
+      return localStorage.getItem('client_phone') || '';
+    } catch {
+      return '';
+    }
+  });
   const [clientEmail, setClientEmail] = useState(() => {
     try {
       return localStorage.getItem('client_email') || '';
@@ -759,6 +771,12 @@ export default function App() {
   const vleVerifyLockRef = useRef(false);
   const vleRegisterVerifyLockRef = useRef(false);
   const fillerVerifyLockRef = useRef(false);
+  // Tracks the last OTP that was auto-submitted, so a failed attempt does not
+  // re-submit the same code in a loop.
+  const clientAutoSubmittedCodeRef = useRef('');
+  const vleAutoSubmittedCodeRef = useRef('');
+  const vleRegAutoSubmittedCodeRef = useRef('');
+  const fillerAutoSubmittedCodeRef = useRef('');
   const [clientState, setClientState] = useState(() => {
     try {
       return localStorage.getItem('client_state') || '';
@@ -964,8 +982,20 @@ export default function App() {
     }
   });
   const [vleDistrict, setVleDistrict] = useState(() => readStoredDistrict('vle_district', 'vle_state'));
-  const [vleCity, setVleCity] = useState('');
-  const [vlePhone, setVlePhone] = useState('');
+  const [vleCity, setVleCity] = useState(() => {
+    try {
+      return localStorage.getItem('vle_city') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [vlePhone, setVlePhone] = useState(() => {
+    try {
+      return localStorage.getItem('vle_phone') || '';
+    } catch {
+      return '';
+    }
+  });
   const [vleEmail, setVleEmail] = useState(() => {
     try {
       return localStorage.getItem('vle_email') || '';
@@ -986,7 +1016,13 @@ export default function App() {
   // --- FORM FILLER AUTH & STATE ---
   const [isFormFillerLoggedIn, setIsFormFillerLoggedIn] = useState(() => readStoredSession()?.role === 'form_filler');
   const [isFillerRegistering, setIsFillerRegistering] = useState(false);
-  const [fillerName, setFillerName] = useState('');
+  const [fillerName, setFillerName] = useState(() => {
+    try {
+      return localStorage.getItem('filler_operator_name') || '';
+    } catch {
+      return '';
+    }
+  });
   const [fillerState, setFillerState] = useState(() => {
     try {
       return localStorage.getItem('filler_state') || '';
@@ -995,8 +1031,20 @@ export default function App() {
     }
   });
   const [fillerDistrict, setFillerDistrict] = useState(() => readStoredDistrict('filler_district', 'filler_state'));
-  const [fillerCity, setFillerCity] = useState('');
-  const [fillerPhone, setFillerPhone] = useState('');
+  const [fillerCity, setFillerCity] = useState(() => {
+    try {
+      return localStorage.getItem('filler_city') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [fillerPhone, setFillerPhone] = useState(() => {
+    try {
+      return localStorage.getItem('filler_phone') || '';
+    } catch {
+      return '';
+    }
+  });
   const [fillerEmail, setFillerEmail] = useState(() => {
     try {
       return localStorage.getItem('filler_email') || '';
@@ -1013,6 +1061,41 @@ export default function App() {
   const [isFillerAuthBusy, setIsFillerAuthBusy] = useState(false);
   const [fillerOrders, setFillerOrders] = useState<any[]>([]);
   const [fillerNotificationMsg, setFillerNotificationMsg] = useState('');
+
+  // Auto-submit the OTP once the 4th digit is typed. This runs AFTER React has
+  // committed the new value, unlike the old requestSubmit() inside onChange
+  // which submitted a stale 3-digit state and silently did nothing.
+  useEffect(() => {
+    if (!clientOtpSent || clientMobileOtpCode.length !== 4) return;
+    if (isClientAuthBusy || clientVerifyLockRef.current) return;
+    if (clientAutoSubmittedCodeRef.current === clientMobileOtpCode) return;
+    clientAutoSubmittedCodeRef.current = clientMobileOtpCode;
+    (document.getElementById('client-otp-verify-form') as HTMLFormElement | null)?.requestSubmit();
+  }, [clientMobileOtpCode, clientOtpSent, isClientAuthBusy]);
+
+  useEffect(() => {
+    if (!vleOtpSent || vleMobileOtpCode.length !== 4) return;
+    if (isVleAuthBusy || vleVerifyLockRef.current) return;
+    if (vleAutoSubmittedCodeRef.current === vleMobileOtpCode) return;
+    vleAutoSubmittedCodeRef.current = vleMobileOtpCode;
+    (document.getElementById('vle-otp-verify-form') as HTMLFormElement | null)?.requestSubmit();
+  }, [vleMobileOtpCode, vleOtpSent, isVleAuthBusy]);
+
+  useEffect(() => {
+    if (!vleOtpSent || vleRegistrationOtpCode.length !== 4) return;
+    if (verifyingGovt || vleRegisterVerifyLockRef.current) return;
+    if (vleRegAutoSubmittedCodeRef.current === vleRegistrationOtpCode) return;
+    vleRegAutoSubmittedCodeRef.current = vleRegistrationOtpCode;
+    (document.getElementById('vle-register-otp-verify-form') as HTMLFormElement | null)?.requestSubmit();
+  }, [vleRegistrationOtpCode, vleOtpSent, verifyingGovt]);
+
+  useEffect(() => {
+    if (!fillerOtpSent || fillerMobileOtpCode.length !== 4) return;
+    if (isFillerAuthBusy || fillerVerifyLockRef.current) return;
+    if (fillerAutoSubmittedCodeRef.current === fillerMobileOtpCode) return;
+    fillerAutoSubmittedCodeRef.current = fillerMobileOtpCode;
+    (document.getElementById('filler-otp-verify-form') as HTMLFormElement | null)?.requestSubmit();
+  }, [fillerMobileOtpCode, fillerOtpSent, isFillerAuthBusy]);
 
   // Restore the saved profile details for a returning (auto-logged-in) user so
   // the dashboard has the right name, phone, district etc. on first paint.
@@ -1040,6 +1123,14 @@ export default function App() {
       if (session.district && !sameAsStateValue(session.district, session.state)) setVleDistrict(session.district);
       if (session.city && !sameAsStateValue(session.city, session.state)) setVleCity(session.city);
       if (session.cscId) setVleId(session.cscId);
+      try {
+        const savedCenter = localStorage.getItem('vle_center_name') || '';
+        const savedPhoto = localStorage.getItem('vle_photo_url') || '';
+        if (savedCenter) setVleCenterName(savedCenter);
+        if (savedPhoto.startsWith('data:image/') || /^https?:\/\//.test(savedPhoto)) setVlePhotoUrl(savedPhoto);
+        const savedCity = localStorage.getItem('vle_city') || '';
+        if (savedCity) setVleCity(savedCity);
+      } catch {}
     } else if (session.role === 'form_filler') {
       if (session.name) setFillerName(session.name);
       if (session.phone) setFillerPhone(session.phone);
@@ -1436,6 +1527,62 @@ export default function App() {
     }
   };
 
+  // ================= ☎️ CALL CONNECTION RECOVERY =================
+  // Render free instances sleep and the socket can be reconnecting when the
+  // user taps "call". Instead of failing instantly with "Live connection
+  // offline", wait for the socket to come back, then make sure we are inside
+  // the order room before inviting the other side.
+  const waitForRealtimeConnection = (timeoutMs = 15000): Promise<boolean> =>
+    new Promise(resolve => {
+      if (realtimeSocket.connected) {
+        resolve(true);
+        return;
+      }
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const finish = (connected: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        realtimeSocket.off('connect', onConnect);
+        realtimeSocket.off('connect_error', onConnectError);
+        resolve(connected);
+      };
+      const onConnect = () => finish(true);
+      const onConnectError = () => { /* keep waiting until timeout / reconnect */ };
+      realtimeSocket.on('connect', onConnect);
+      realtimeSocket.on('connect_error', onConnectError);
+      timer = setTimeout(() => finish(false), timeoutMs);
+      try {
+        realtimeSocket.connect();
+      } catch {
+        finish(false);
+      }
+    });
+
+  const joinCallOrderRoom = (orderId: string): Promise<{ success: boolean; error?: string }> =>
+    new Promise(resolve => {
+      const role = activeRoleRef.current === 'client' ? 'client' : 'operator';
+      const phone = role === 'client' ? clientPhoneRef.current : '';
+      const token = readStoredSession()?.token;
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve({ success: false, error: 'Order room join timeout.' });
+      }, 12000);
+      realtimeSocket.emit(
+        'order:join',
+        { orderId, role, phone, token },
+        (result: { success?: boolean; error?: string }) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve({ success: Boolean(result?.success), error: result?.error });
+        }
+      );
+    });
+
   const startVoiceCall = async (order?: any) => {
     const target = order || activeWorkspaceOrderRef.current;
     if (!target?.id) return;
@@ -1443,10 +1590,6 @@ export default function App() {
       setActiveWorkspaceOrder(target);
     } else if (order && order.id !== activeWorkspaceOrderRef.current.id) {
       setActiveWorkspaceOrder(order);
-    }
-    if (!realtimeSocket.connected) {
-      setWorkspaceStatusMsg({ text: 'Live connection offline hai — call ke liye internet check karein.', type: 'error' });
-      return;
     }
     if (callOrderRef.current) {
       setWorkspaceStatusMsg({ text: 'Ek call pehle se chal rahi hai.', type: 'info' });
@@ -1459,18 +1602,58 @@ export default function App() {
       setWorkspaceStatusMsg({ text: 'Call ke liye microphone permission chahiye.', type: 'error' });
       return;
     }
+
+    // 1) Wait for the live socket (handles cold starts / reconnects).
+    setWorkspaceStatusMsg({ text: '📞 Live server se connect ho raha hai…', type: 'info' });
+    const connected = await waitForRealtimeConnection(15000);
+    if (!connected) {
+      teardownCallMedia();
+      setWorkspaceStatusMsg({ text: 'Live server se connection nahi bana. Internet check karke 10-15 second baad dobara call karein.', type: 'error' });
+      return;
+    }
+
+    // 2) Ensure this order room is joined before sending the invite.
+    const joinResult = await joinCallOrderRoom(target.id);
+    if (!joinResult.success) {
+      teardownCallMedia();
+      setWorkspaceStatusMsg({ text: `Call room join nahi hua: ${joinResult.error || 'unknown error'}. Page refresh karke dobara try karein.`, type: 'error' });
+      return;
+    }
+
     callOrderRef.current = target.id;
     callRoleRef.current = 'caller';
     setCallPeerLabel((activeRoleRef.current === 'client' || activeRoleRef.current === 'vle' || activeRoleRef.current === 'form_filler') ? (target.acceptedByVleName || target.acceptedByFillerName || target.clientName || 'Operator') : (target.clientName || 'Citizen'));
     setCallingState('calling');
     setCallDuration(0);
     startCallRingtone();
-    realtimeSocket.emit('call:invite', { orderId: target.id }, (result: { success: boolean; error?: string }) => {
-      if (!result?.success) {
-        setWorkspaceStatusMsg({ text: result?.error || 'Call nahi lag saki (the other side offline hai).', type: 'error' });
-        resetCall();
+
+    // 3) Invite with a timeout so the button never gets stuck on "calling".
+    let inviteSettled = false;
+    const inviteTimer = setTimeout(() => {
+      if (inviteSettled) return;
+      inviteSettled = true;
+      setWorkspaceStatusMsg({ text: 'Call invite ka jawab nahi aaya. Dusri taraf app band/offline ho sakti hai — dobara try karein.', type: 'error' });
+      resetCall();
+    }, 25000);
+
+    realtimeSocket.timeout(25000).emit(
+      'call:invite',
+      { orderId: target.id },
+      (timeoutError: unknown, result?: { success?: boolean; error?: string }) => {
+        if (inviteSettled) return;
+        inviteSettled = true;
+        clearTimeout(inviteTimer);
+        if (timeoutError) {
+          setWorkspaceStatusMsg({ text: 'Call invite timeout ho gaya. Internet check karke dobara try karein.', type: 'error' });
+          resetCall();
+          return;
+        }
+        if (!result?.success) {
+          setWorkspaceStatusMsg({ text: result?.error || 'Call nahi lag saki (dusri taraf wala online/order room me nahi hai).', type: 'error' });
+          resetCall();
+        }
       }
-    });
+    );
   };
 
   const acceptVoiceCall = async () => {
@@ -1634,11 +1817,23 @@ export default function App() {
   }, [activeWorkspaceOrder?.id]);
 
   const [isKendraDetailsModalOpen, setIsKendraDetailsModalOpen] = useState(false);
+  const isKendraDetailsModalOpenRef = useRef(false);
+  useEffect(() => {
+    isKendraDetailsModalOpenRef.current = isKendraDetailsModalOpen;
+  }, [isKendraDetailsModalOpen]);
 
   // Edit state for Kendra & Operator details modal
   const [kendraEditCenterName, setKendraEditCenterName] = useState(vleCenterName);
   const [kendraEditOperatorName, setKendraEditOperatorName] = useState(vleName);
   const [kendraEditVleId, setKendraEditVleId] = useState(vleId);
+  const [kendraEditPhone, setKendraEditPhone] = useState(vlePhone);
+  const [kendraEditEmail, setKendraEditEmail] = useState(vleEmail);
+  const [kendraEditStateValue, setKendraEditStateValue] = useState(vleState);
+  const [kendraEditDistrict, setKendraEditDistrict] = useState(vleDistrict);
+  const [kendraEditCity, setKendraEditCity] = useState(vleCity);
+  const [kendraEditPhotoUrl, setKendraEditPhotoUrl] = useState(vlePhotoUrl);
+  const [isSavingKendraDetails, setIsSavingKendraDetails] = useState(false);
+  const [kendraSaveError, setKendraSaveError] = useState('');
 
   // Sync Kendra edit modal state when opening
   useEffect(() => {
@@ -1646,31 +1841,127 @@ export default function App() {
       setKendraEditCenterName(vleCenterName);
       setKendraEditOperatorName(vleName);
       setKendraEditVleId(vleId);
+      setKendraEditPhone(vlePhone);
+      setKendraEditEmail(vleEmail);
+      setKendraEditStateValue(vleState);
+      setKendraEditDistrict(vleDistrict);
+      setKendraEditCity(vleCity);
+      setKendraEditPhotoUrl(vlePhotoUrl);
+      setKendraSaveError('');
     }
   }, [isKendraDetailsModalOpen]);
 
-  const saveKendraDetails = () => {
-    const cleanCenter = kendraEditCenterName.trim() || '';
-    const cleanOperator = kendraEditOperatorName.trim() || '';
-    const cleanId = kendraEditVleId.trim() || '';
+  const saveKendraDetails = async () => {
+    if (isSavingKendraDetails) return;
+    const cleanCenter = kendraEditCenterName.trim();
+    const cleanOperator = kendraEditOperatorName.trim();
+    const cleanId = kendraEditVleId.trim();
+    const cleanPhone = kendraEditPhone.replace(/\D/g, '').slice(-10);
+    const cleanEmail = kendraEditEmail.trim().toLowerCase();
+    const cleanState = kendraEditStateValue.trim();
+    const cleanDistrict = kendraEditDistrict.trim();
+    const cleanCity = kendraEditCity.trim();
+    const cleanPhoto = kendraEditPhotoUrl.trim();
 
-    setVleCenterName(cleanCenter);
-    setVleName(cleanOperator);
-    setVleId(cleanId);
+    const missing = collectMissingFields([
+      { label: 'Jan Seva Kendra / Center Name', ok: isNonEmpty(cleanCenter) },
+      { label: 'Operator Name', ok: isNonEmpty(cleanOperator) },
+      { label: 'CSC ID / Kendra Registration No.', ok: isNonEmpty(cleanId) },
+      { label: 'State / UT', ok: isNonEmpty(cleanState) },
+      { label: 'District', ok: isNonEmpty(cleanDistrict) },
+      { label: 'City / Tehsil', ok: isNonEmpty(cleanCity) },
+      { label: '10-Digit Mobile Number', ok: isValidMobile(cleanPhone) },
+      { label: 'Gmail / Email', ok: isValidEmail(cleanEmail) },
+    ]);
+    if (missing.length > 0) {
+      setKendraSaveError(requiredFieldsMessage(missing));
+      return;
+    }
 
+    setIsSavingKendraDetails(true);
+    setKendraSaveError('');
     try {
-      localStorage.setItem('vle_center_name', cleanCenter);
-      localStorage.setItem('vle_operator_name', cleanOperator);
-      localStorage.setItem('vle_csc_id', cleanId);
-    } catch {}
+      const response = await fetchWithRetry('/api/vle/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: cleanOperator,
+          centerName: cleanCenter,
+          cscId: cleanId,
+          phone: cleanPhone,
+          email: cleanEmail,
+          state: cleanState,
+          district: cleanDistrict,
+          city: cleanCity,
+          photoUrl: cleanPhoto
+        })
+      });
+      const data = await parseJsonResponse(response);
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Could not save profile details. Please try again.');
+      }
 
-    setIsKendraDetailsModalOpen(false);
-    setWorkspaceStatusMsg({
-      text: `✅ ${cleanCenter} (${cleanOperator}) का विवरण सभी सेवाओं व आधिकारिक रसीद पर सुरक्षित हो गया!`,
-      type: 'success',
-    });
-    showSaveToast('✅ Kendra details saved successfully!');
-    void fetchAllData();
+      const savedUser = data.user || {};
+      const savedOperator = data.operator || {};
+      const resolvedName = String(savedUser.name || savedOperator.name || cleanOperator).trim();
+      const resolvedCenter = String(savedUser.centerName || savedOperator.centerName || cleanCenter).trim();
+      const resolvedId = String(savedUser.cscId || savedOperator.cscId || cleanId).trim();
+      const resolvedPhone = String(savedUser.phone || savedOperator.phone || cleanPhone).replace(/\D/g, '').slice(-10);
+      const resolvedEmail = String(savedUser.email || savedOperator.email || cleanEmail).trim().toLowerCase();
+      const resolvedState = String(savedUser.state || savedOperator.state || cleanState).trim();
+      const resolvedDistrict = String(savedUser.district || savedOperator.district || cleanDistrict).trim();
+      const resolvedCity = String(savedUser.city || savedOperator.city || cleanCity).trim();
+      const resolvedPhoto = String(savedUser.photoUrl || savedOperator.photoUrl || cleanPhoto).trim();
+
+      setVleCenterName(resolvedCenter);
+      setVleName(resolvedName);
+      setVleId(resolvedId);
+      setVlePhone(resolvedPhone);
+      setVleEmail(resolvedEmail);
+      setVleState(resolvedState);
+      setVleDistrict(resolvedDistrict);
+      setVleCity(resolvedCity);
+      setVlePhotoUrl(resolvedPhoto);
+
+      try {
+        localStorage.setItem('vle_center_name', resolvedCenter);
+        localStorage.setItem('vle_operator_name', resolvedName);
+        localStorage.setItem('vle_csc_id', resolvedId);
+        localStorage.setItem('vle_phone', resolvedPhone);
+        localStorage.setItem('vle_email', resolvedEmail);
+        localStorage.setItem('vle_state', resolvedState);
+        localStorage.setItem('vle_district', resolvedDistrict);
+        localStorage.setItem('vle_city', resolvedCity);
+        if (resolvedPhoto) localStorage.setItem('vle_photo_url', resolvedPhoto);
+        else localStorage.removeItem('vle_photo_url');
+      } catch {}
+
+      const session = readStoredSession();
+      writeStoredSession({
+        role: 'vle',
+        name: resolvedName,
+        phone: resolvedPhone,
+        email: resolvedEmail,
+        state: resolvedState,
+        district: resolvedDistrict,
+        city: resolvedCity,
+        cscId: resolvedId,
+        token: session?.token,
+        loggedInAt: session?.loggedInAt || Date.now()
+      });
+
+      setIsKendraDetailsModalOpen(false);
+      setWorkspaceStatusMsg({
+        text: `✅ ${resolvedCenter} (${resolvedName}) का विवरण सुरक्षित हो गया!`,
+        type: 'success',
+      });
+      showSaveToast('✅ Kendra details saved successfully!');
+      void fetchAllData();
+    } catch (error) {
+      setKendraSaveError(error instanceof Error ? error.message : 'Could not save profile details. Please try again.');
+    } finally {
+      setIsSavingKendraDetails(false);
+    }
   };
 
   // Multiple files staging for bulk upload (asli File objects — upload par server ko bhejenge)
@@ -1717,6 +2008,56 @@ export default function App() {
     try {
       const dashboardData = await safeFetchJson('/api/dashboard');
       if (!dashboardData?.success) return;
+
+      // Restore the logged-in account's saved details from MongoDB/backend on
+      // every dashboard sync, so a new device never shows blank fields.
+      const account = dashboardData.account;
+      if (account && typeof account === 'object' && account.role) {
+        const accountName = String(account.name || '').trim();
+        const accountPhone = String(account.phone || '').replace(/\D/g, '').slice(-10);
+        const accountEmail = String(account.email || '').trim();
+        const accountState = String(account.state || '').trim();
+        const accountDistrict = sameAsStateValue(String(account.district || ''), accountState) ? '' : String(account.district || '').trim();
+        const accountCity = sameAsStateValue(String(account.city || ''), accountState) ? '' : String(account.city || '').trim();
+        if (account.role === 'client') {
+          if (accountName) setClientName(accountName);
+          if (accountPhone) setClientPhone(accountPhone);
+          if (accountEmail) setClientEmail(accountEmail);
+          if (accountState) setClientState(accountState);
+          if (accountDistrict) setClientDistrictFilter(accountDistrict);
+          if (accountCity) setClientCityFilter(accountCity);
+        } else if (account.role === 'vle') {
+          const operator = dashboardData.operatorProfile || {};
+          const profile = {
+            name: String(account.name || operator.name || '').trim(),
+            centerName: String(account.centerName || operator.centerName || '').trim(),
+            cscId: String(account.cscId || operator.cscId || '').trim(),
+            photoUrl: String(account.photoUrl || operator.photoUrl || '').trim(),
+            state: String(account.state || operator.state || '').trim(),
+            district: String(account.district || operator.district || '').trim(),
+            city: String(account.city || operator.city || '').trim()
+          };
+          // Do not clobber unsaved edits while the profile modal is open.
+          if (!isKendraDetailsModalOpenRef.current) {
+            if (profile.name) setVleName(profile.name);
+            if (profile.centerName) setVleCenterName(profile.centerName);
+            if (profile.cscId) setVleId(profile.cscId);
+            if (accountPhone) setVlePhone(accountPhone);
+            if (accountEmail) setVleEmail(accountEmail);
+            if (profile.state) setVleState(profile.state);
+            if (profile.district) setVleDistrict(profile.district);
+            if (profile.city) setVleCity(profile.city);
+            if (profile.photoUrl) setVlePhotoUrl(profile.photoUrl);
+          }
+        } else if (account.role === 'filler') {
+          if (accountName) setFillerName(accountName);
+          if (accountPhone) setFillerPhone(accountPhone);
+          if (accountEmail) setFillerEmail(accountEmail);
+          if (accountState) setFillerState(accountState);
+          if (accountDistrict) setFillerDistrict(accountDistrict);
+          if (accountCity) setFillerCity(accountCity);
+        }
+      }
 
       if (Array.isArray(dashboardData.fillerServices) && dashboardData.fillerServices.length > 0) {
         const json = takeServerSnapshot(fillerServicesSnapRef, dashboardData.fillerServices);
@@ -5234,7 +5575,7 @@ export default function App() {
               ) : (
                 <form id="client-otp-verify-form" onSubmit={async (e) => {
                   e.preventDefault();
-                  if (isClientAuthBusy) return;
+                  if (isClientAuthBusy || clientVerifyLockRef.current) return;
                   setClientAuthError('');
                   if (clientMobileOtpCode.length !== 4) {
                     setClientAuthError('');
@@ -5252,6 +5593,7 @@ export default function App() {
                     setClientAuthError(requiredFieldsMessage(missingClientVerifyFields));
                     return;
                   }
+                  clientVerifyLockRef.current = true;
                   setIsClientAuthBusy(true);
                   try {
                     const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
@@ -5285,20 +5627,39 @@ export default function App() {
                     if (!loginResponse.ok || !loginData.success) {
                       throw new Error(loginData.error || 'Login failed after verification. Please try again.');
                     }
-                    localStorage.setItem('client_name', clientName);
-                    localStorage.setItem('client_phone', clientPhone);
-                    localStorage.setItem('client_email', clientEmail);
-                    localStorage.setItem('client_state', clientState);
-                    localStorage.setItem('client_district', clientDistrictFilter);
-                    localStorage.setItem('client_city', clientCityFilter);
+                    // Use the saved server account, so the user's real stored
+                    // details always appear on the dashboard after login.
+                    const savedUser = loginData.user || {};
+                    const resolvedName = String(savedUser.name || clientName || '').trim();
+                    const resolvedPhone = String(savedUser.phone || clientPhone || '').replace(/\D/g, '').slice(-10);
+                    const resolvedEmail = String(savedUser.email || clientEmail || '').trim().toLowerCase();
+                    const resolvedState = String(savedUser.state || clientState || '').trim();
+                    const rawDistrict = String(savedUser.district || clientDistrictFilter || '').trim();
+                    const resolvedDistrict = sameAsStateValue(rawDistrict, resolvedState) ? '' : rawDistrict;
+                    const rawCity = String(savedUser.city || clientCityFilter || '').trim();
+                    const resolvedCity = sameAsStateValue(rawCity, resolvedState) ? '' : rawCity;
+
+                    if (resolvedName) setClientName(resolvedName);
+                    if (resolvedPhone) setClientPhone(resolvedPhone);
+                    if (resolvedEmail) setClientEmail(resolvedEmail);
+                    if (resolvedState) setClientState(resolvedState);
+                    if (resolvedDistrict) setClientDistrictFilter(resolvedDistrict);
+                    if (resolvedCity) setClientCityFilter(resolvedCity);
+
+                    localStorage.setItem('client_name', resolvedName || clientName);
+                    localStorage.setItem('client_phone', resolvedPhone || clientPhone);
+                    localStorage.setItem('client_email', resolvedEmail || clientEmail);
+                    localStorage.setItem('client_state', resolvedState || clientState);
+                    if (resolvedDistrict) localStorage.setItem('client_district', resolvedDistrict);
+                    if (resolvedCity) localStorage.setItem('client_city', resolvedCity);
                     writeStoredSession({
                       role: 'client',
-                      name: clientName,
-                      phone: clientPhone,
-                      email: clientEmail,
-                      state: clientState,
-                      district: clientDistrictFilter,
-                      city: clientCityFilter,
+                      name: resolvedName || clientName,
+                      phone: resolvedPhone || clientPhone,
+                      email: resolvedEmail || clientEmail,
+                      state: resolvedState || clientState,
+                      district: resolvedDistrict || clientDistrictFilter,
+                      city: resolvedCity || clientCityFilter,
                       token: loginData.token,
                       loggedInAt: Date.now()
                     });
@@ -5311,6 +5672,7 @@ export default function App() {
                   } catch (error) {
                     setClientAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
                   } finally {
+                    clientVerifyLockRef.current = false;
                     setIsClientAuthBusy(false);
                   }
                 }} className="space-y-4 relative z-10">
@@ -5341,10 +5703,6 @@ export default function App() {
                           onChange={(e) => {
                             const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                             setClientMobileOtpCode(val);
-                            if (val.length === 4 && !isClientAuthBusy) {
-                              const form = document.getElementById('client-otp-verify-form') as HTMLFormElement | null;
-                              form?.requestSubmit();
-                            }
                           }}
                           placeholder="• • • •"
                           className="w-full h-full px-3 bg-transparent text-white text-center text-lg font-black tracking-[0.4em] focus:outline-none min-w-0"
@@ -7784,6 +8142,8 @@ export default function App() {
                     setVleAuthError(requiredFieldsMessage(missingVleVerifyFields));
                     return;
                   }
+                  if (vleVerifyLockRef.current) return;
+                  vleVerifyLockRef.current = true;
                   setIsVleAuthBusy(true);
                   try {
                     const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
@@ -7798,19 +8158,7 @@ export default function App() {
                     if (!verifyData.verificationToken) {
                       throw new Error('OTP verification expired. Request a new code.');
                     }
-                  const matched = registeredVles.find(v =>
-                    v.cscId.trim().toLowerCase() === vleId.trim().toLowerCase() &&
-                    v.phone.replace(/\D/g, '').slice(-10) === vlePhone &&
-                    v.email.trim().toLowerCase() === vleEmail.trim().toLowerCase()
-                  );
-                  if (matched) {
-                    if (matched.name) setVleName(matched.name);
-                    if (matched.state) setVleState(matched.state);
-                    if (matched.district) setVleDistrict(matched.district);
-                    if (matched.city) setVleCity(matched.city);
-                    if (matched.pricingList && matched.pricingList.length > 0) setCustomPricingList(matched.pricingList);
-                  }
-                  // Retain login permanently in backend (Zero Data Retention is NOT for logins)
+                    // Retain login permanently in backend (Zero Data Retention is NOT for logins)
                     const loginResponse = await fetchWithRetry('/api/vle/login', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
@@ -7829,30 +8177,54 @@ export default function App() {
                     if (!loginResponse.ok || !loginData.success) {
                       throw new Error(loginData.error || 'Operator login failed. Please try again.');
                     }
-                    localStorage.setItem('vle_operator_name', vleName);
-                    localStorage.setItem('vle_csc_id', vleId);
-                    localStorage.setItem('vle_phone', vlePhone);
-                    localStorage.setItem('vle_email', vleEmail);
-                    const accountState = loginData.user?.state || matched?.state || vleState;
-                    if (accountState) {
-                      setVleState(accountState);
-                      localStorage.setItem('vle_state', accountState);
-                    }
-                    const rawAccountDistrict = loginData.user?.district || matched?.district || vleDistrict;
-                    const accountDistrict = sameAsStateValue(rawAccountDistrict, accountState || vleState) ? '' : rawAccountDistrict;
-                    if (accountDistrict) {
-                      setVleDistrict(accountDistrict);
-                      localStorage.setItem('vle_district', accountDistrict);
+                    // Prefer the saved server profile, so saved details always show
+                    // up even on a fresh browser/device.
+                    const savedAccount = loginData.user || {};
+                    const savedOperator = loginData.operator || {};
+                    const resolvedName = String(savedAccount.name || savedOperator.name || vleName || '').trim();
+                    const resolvedCenter = String(savedAccount.centerName || savedOperator.centerName || vleCenterName || '').trim();
+                    const resolvedCsc = String(savedAccount.cscId || savedOperator.cscId || vleId || '').trim();
+                    const resolvedPhone = String(savedAccount.phone || savedOperator.phone || vlePhone || '').replace(/\D/g, '').slice(-10);
+                    const resolvedEmail = String(savedAccount.email || savedOperator.email || vleEmail || '').trim().toLowerCase();
+                    const accountState = String(savedAccount.state || savedOperator.state || vleState || '').trim();
+                    const rawAccountDistrict = String(savedAccount.district || savedOperator.district || vleDistrict || '').trim();
+                    const accountDistrict = sameAsStateValue(rawAccountDistrict, accountState) ? '' : rawAccountDistrict;
+                    const rawAccountCity = String(savedAccount.city || savedOperator.city || vleCity || '').trim();
+                    const accountCity = sameAsStateValue(rawAccountCity, accountState) ? '' : rawAccountCity;
+                    const accountPhoto = String(savedAccount.photoUrl || savedOperator.photoUrl || '').trim();
+                    const savedPricing = savedOperator.pricingList;
+
+                    if (resolvedName) setVleName(resolvedName);
+                    if (resolvedCenter) setVleCenterName(resolvedCenter);
+                    if (resolvedCsc) setVleId(resolvedCsc);
+                    if (resolvedPhone) setVlePhone(resolvedPhone);
+                    if (resolvedEmail) setVleEmail(resolvedEmail);
+                    if (accountState) setVleState(accountState);
+                    if (accountDistrict) setVleDistrict(accountDistrict);
+                    if (accountCity) setVleCity(accountCity);
+                    if (Array.isArray(savedPricing) && savedPricing.length > 0) setCustomPricingList(savedPricing);
+                    if (accountPhoto) setVlePhotoUrl(accountPhoto);
+
+                    localStorage.setItem('vle_operator_name', resolvedName || vleName);
+                    localStorage.setItem('vle_center_name', resolvedCenter || vleCenterName);
+                    localStorage.setItem('vle_csc_id', resolvedCsc || vleId);
+                    localStorage.setItem('vle_phone', resolvedPhone || vlePhone);
+                    localStorage.setItem('vle_email', resolvedEmail || vleEmail);
+                    if (accountState) localStorage.setItem('vle_state', accountState);
+                    if (accountDistrict) localStorage.setItem('vle_district', accountDistrict);
+                    if (accountCity) localStorage.setItem('vle_city', accountCity);
+                    if (accountPhoto) {
+                      try { localStorage.setItem('vle_photo_url', accountPhoto); } catch {}
                     }
                     writeStoredSession({
                       role: 'vle',
-                      name: vleName,
-                      phone: vlePhone,
-                      email: vleEmail,
+                      name: resolvedName || vleName,
+                      phone: resolvedPhone || vlePhone,
+                      email: resolvedEmail || vleEmail,
                       state: accountState || vleState,
                       district: accountDistrict || vleDistrict,
-                      city: vleCity,
-                      cscId: vleId,
+                      city: accountCity || vleCity,
+                      cscId: resolvedCsc || vleId,
                       token: loginData.token,
                       loggedInAt: Date.now()
                     });
@@ -7865,6 +8237,7 @@ export default function App() {
                   } catch (error) {
                     setVleAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
                   } finally {
+                    vleVerifyLockRef.current = false;
                     setIsVleAuthBusy(false);
                   }
                 }} className="space-y-4 relative z-10">
@@ -8152,6 +8525,8 @@ export default function App() {
                   setVleAuthError(requiredFieldsMessage(missingVleRegisterVerifyFields));
                   return;
                 }
+                if (vleRegisterVerifyLockRef.current) return;
+                vleRegisterVerifyLockRef.current = true;
                 setVerifyingGovt(true);
                 try {
                   const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
@@ -8168,6 +8543,8 @@ export default function App() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                       name: vleName,
+                      centerName: vleCenterName,
+                      photoUrl: vlePhotoUrl,
                       cscId: vleId,
                       state: vleState,
                       district: vleDistrict,
@@ -8182,24 +8559,47 @@ export default function App() {
                   if (!registerResponse.ok || !registerData.success) {
                     throw new Error(registerData.error || 'Could not register this operator.');
                   }
+                  const savedAccount = registerData.user || {};
+                  const savedOperator = registerData.operator || registerData.vle || {};
+                  const resolvedName = String(savedAccount.name || savedOperator.name || vleName || '').trim();
+                  const resolvedCenter = String(savedAccount.centerName || savedOperator.centerName || vleCenterName || '').trim();
+                  const resolvedCsc = String(savedAccount.cscId || savedOperator.cscId || vleId || '').trim();
+                  const resolvedPhone = String(savedAccount.phone || savedOperator.phone || vlePhone || '').replace(/\D/g, '').slice(-10);
+                  const resolvedEmail = String(savedAccount.email || savedOperator.email || vleEmail || '').trim().toLowerCase();
+                  const resolvedState = String(savedAccount.state || savedOperator.state || vleState || '').trim();
+                  const resolvedDistrict = String(savedAccount.district || savedOperator.district || vleDistrict || '').trim();
+                  const resolvedCity = String(savedAccount.city || savedOperator.city || vleCity || '').trim();
+                  const resolvedPhoto = String(savedAccount.photoUrl || savedOperator.photoUrl || vlePhotoUrl || '').trim();
+                  if (resolvedName) setVleName(resolvedName);
+                  if (resolvedCenter) setVleCenterName(resolvedCenter);
+                  if (resolvedCsc) setVleId(resolvedCsc);
+                  if (resolvedPhone) setVlePhone(resolvedPhone);
+                  if (resolvedEmail) setVleEmail(resolvedEmail);
+                  if (resolvedState) setVleState(resolvedState);
+                  if (resolvedDistrict) setVleDistrict(resolvedDistrict);
+                  if (resolvedCity) setVleCity(resolvedCity);
+                  if (resolvedPhoto) setVlePhotoUrl(resolvedPhoto);
                   await fetchAllData();
-                  localStorage.setItem('vle_operator_name', vleName);
-                  localStorage.setItem('vle_center_name', vleCenterName);
-                  localStorage.setItem('vle_csc_id', vleId);
-                  localStorage.setItem('vle_phone', vlePhone);
-                  localStorage.setItem('vle_email', vleEmail);
-                  localStorage.setItem('vle_state', vleState);
-                  localStorage.setItem('vle_district', vleDistrict);
-                  localStorage.setItem('vle_city', vleCity);
+                  localStorage.setItem('vle_operator_name', resolvedName || vleName);
+                  localStorage.setItem('vle_center_name', resolvedCenter || vleCenterName);
+                  localStorage.setItem('vle_csc_id', resolvedCsc || vleId);
+                  localStorage.setItem('vle_phone', resolvedPhone || vlePhone);
+                  localStorage.setItem('vle_email', resolvedEmail || vleEmail);
+                  localStorage.setItem('vle_state', resolvedState || vleState);
+                  localStorage.setItem('vle_district', resolvedDistrict || vleDistrict);
+                  localStorage.setItem('vle_city', resolvedCity || vleCity);
+                  if (resolvedPhoto) {
+                    try { localStorage.setItem('vle_photo_url', resolvedPhoto); } catch {}
+                  }
                   writeStoredSession({
                     role: 'vle',
-                    name: vleName,
-                    phone: vlePhone,
-                    email: vleEmail,
-                    state: vleState,
-                    district: vleDistrict,
-                    city: vleCity,
-                    cscId: vleId,
+                    name: resolvedName || vleName,
+                    phone: resolvedPhone || vlePhone,
+                    email: resolvedEmail || vleEmail,
+                    state: resolvedState || vleState,
+                    district: resolvedDistrict || vleDistrict,
+                    city: resolvedCity || vleCity,
+                    cscId: resolvedCsc || vleId,
                     token: registerData.token,
                     loggedInAt: Date.now()
                   });
@@ -8212,6 +8612,7 @@ export default function App() {
                 } catch (error) {
                   setVleAuthError(error instanceof Error ? error.message : 'Registration verification failed.');
                 } finally {
+                  vleRegisterVerifyLockRef.current = false;
                   setVerifyingGovt(false);
                 }
               }} className="space-y-4">
@@ -8227,10 +8628,6 @@ export default function App() {
                   onChange={(e) => {
                     const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                     setVleRegistrationOtpCode(val);
-                    if (val.length === 4 && !verifyingGovt) {
-                      const form = document.getElementById('vle-register-otp-verify-form') as HTMLFormElement | null;
-                      form?.requestSubmit();
-                    }
                   }}
                   placeholder="4-digit code"
                   className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -8260,7 +8657,7 @@ export default function App() {
         <main className="flex-1 w-full min-w-0 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 box-border">
           
           {/* Top Quick Navigation & Back Bar */}
-          <div className="flex items-center">
+          <div className="flex items-center justify-between gap-2">
             <button
               onClick={() => {
                 setStep('landing');
@@ -8271,176 +8668,54 @@ export default function App() {
               <ArrowLeft className="w-4 h-4 text-blue-400" />
               <span>Back to Home</span>
             </button>
+            <button
+              onClick={() => setIsKendraDetailsModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-sky-300 hover:text-white border border-slate-800 hover:border-sky-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+            >
+              <Building2 className="w-4 h-4 text-sky-400" />
+              <span>Profile &amp; Location</span>
+            </button>
           </div>
 
-          {/* Minimalist Operator Profile & Kendra Details Form */}
-          <div className="min-w-0 bg-slate-900 rounded-3xl border border-slate-800 p-4 sm:p-6 md:p-8 shadow-xl space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400">
-                  <Building2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-black text-white">🏛️ Jan Seva Kendra Operator Profile & Location</h3>
-                  <p className="text-xs text-slate-400">Operator name, photo, district, city & center details manager</p>
+          {/* Compact Profile & Location Card — full editor opens in the modal */}
+          <div className="min-w-0 bg-slate-900 rounded-3xl border border-slate-800 p-4 sm:p-6 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                {vlePhotoUrl ? (
+                  <img
+                    src={vlePhotoUrl}
+                    alt="Operator"
+                    className="w-14 h-14 rounded-2xl object-cover border-2 border-sky-500/50 bg-slate-800 shrink-0"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-2xl bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400 shrink-0">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-black text-white truncate">
+                    {vleCenterName || 'Jan Seva Kendra Name'}
+                  </h3>
+                  <p className="text-xs text-slate-400 truncate">
+                    {vleName || 'Operator Name'}{vleId ? ` • ${vleId}` : ''}
+                  </p>
+                  <p className="text-[11px] text-slate-500 flex items-center gap-1 truncate">
+                    <MapPin className="w-3 h-3 text-sky-400 shrink-0" />
+                    <span>{[vleCity, vleDistrict, vleState].filter(Boolean).join(', ') || 'Location not set'}</span>
+                  </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  try {
-                    localStorage.setItem('vle_operator_name', vleName);
-                    localStorage.setItem('vle_center_name', vleCenterName);
-                    localStorage.setItem('vle_csc_id', vleId);
-                    localStorage.setItem('vle_state', vleState);
-                    localStorage.setItem('vle_district', vleDistrict);
-                    localStorage.setItem('vle_city', vleCity);
-                    localStorage.setItem('vle_photo_url', vlePhotoUrl);
-                    localStorage.setItem('fillup_custom_pricing', JSON.stringify(customPricingList));
-                  } catch {}
-                  setVleNotificationMsg('✅ Operator Profile & Kendra Settings saved successfully!');
-                  showSaveToast('✅ Profile & Kendra details saved successfully!');
-                  try {
-                    sessionStorage.setItem('digiseva_pending_save_toast', '✅ Profile & Kendra details saved successfully!');
-                  } catch {}
-                  setTimeout(() => setVleNotificationMsg(''), 4000);
-                  void fetchAllData();
-                  setTimeout(() => window.location.reload(), 900);
-                }}
-                className="px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                onClick={() => setIsKendraDetailsModalOpen(true)}
+                className="px-4 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
               >
-                <Save className="w-3.5 h-3.5" />
-                <span>Save Profile</span>
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Profile &amp; Location</span>
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Operator Name</label>
-                <input
-                  type="text"
-                  maxLength={50}
-                  value={vleName}
-                  onChange={e => setVleName(e.target.value.slice(0, 50))}
-                  placeholder=""
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-bold focus:border-sky-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Kendra Name</label>
-                <input
-                  type="text"
-                  maxLength={60}
-                  value={vleCenterName}
-                  onChange={e => setVleCenterName(e.target.value.slice(0, 60))}
-                  placeholder=""
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-bold focus:border-sky-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">State / UT</label>
-                <StateSelect
-                  value={vleState}
-                  onChange={setVleState}
-                  options={INDIAN_STATES}
-                  emptyLabel="Select State / UT"
-                  ariaLabel="State / UT"
-                  className="w-full px-3.5 pr-9 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-bold focus:border-sky-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">District (Kaha se)</label>
-                <LocationAutocomplete
-                  value={vleDistrict}
-                  onChange={val => setVleDistrict(val.slice(0, 40))}
-                  preferType="district"
-                  state={vleState}
-                  placeholder=""
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-bold focus:border-sky-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">City / Town (Shar)</label>
-                <LocationAutocomplete
-                  value={vleCity}
-                  onChange={val => setVleCity(val.slice(0, 40))}
-                  preferType="city"
-                  state={vleState}
-                  placeholder=""
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-bold focus:border-sky-500 outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center pt-2">
-              <div className="sm:col-span-2 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-300">Operator Photo (Direct Photo Upload)</label>
-                  {vlePhotoUrl && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setVlePhotoUrl('');
-                        try {
-                          localStorage.removeItem('vle_photo_url');
-                        } catch {}
-                      }}
-                      className="text-[11px] text-rose-400 hover:text-rose-300 underline font-medium cursor-pointer"
-                    >
-                      Remove Photo
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="user"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (event) => {
-                        if (event.target?.result) {
-                          const res = event.target.result as string;
-                          setVlePhotoUrl(res);
-                          try {
-                            localStorage.setItem('vle_photo_url', res);
-                          } catch {}
-                        }
-                      };
-                      reader.readAsDataURL(file);
-                    }
-                  }}
-                  className="block w-full text-xs text-slate-300 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-600 hover:file:bg-sky-500 file:text-white file:cursor-pointer file:shadow-md bg-slate-950 border border-slate-800 rounded-xl cursor-pointer p-1.5 focus:border-sky-500 outline-none transition-all"
-                />
-                <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                  <Camera className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
-                  <span>{t('Upload operator photo directly via Camera or Gallery (JPG, PNG, WebP)', 'गैलरी या कैमरे से ऑपरेटर फोटो सीधे अपलोड करें (JPG, PNG, WebP)')}</span>
-                </p>
-              </div>
-              <div className="flex items-center gap-3 pt-4 sm:pt-0">
-                <div className="relative group">
-                  {vlePhotoUrl ? (
-                    <img
-                      src={vlePhotoUrl}
-                      alt="Operator"
-                      className="w-14 h-14 rounded-2xl object-cover border-2 border-sky-500/50 shadow-md bg-slate-800"
-                      onError={() => {
-                        setVlePhotoUrl('');
-                        localStorage.removeItem('vle_photo_url');
-                      }}
-                    />
-                  ) : (
-                    <div className="w-14 h-14 rounded-2xl border border-slate-700 bg-slate-800 flex items-center justify-center text-slate-500">
-                      <Camera className="w-5 h-5" />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
-
-
 
           {/* Direct UPI payment notice */}
           <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex items-start gap-3 text-blue-300 text-xs">
@@ -9175,6 +9450,8 @@ export default function App() {
                     setFillerAuthError(requiredFieldsMessage(missingFillerVerifyFields));
                     return;
                   }
+                  if (fillerVerifyLockRef.current) return;
+                  fillerVerifyLockRef.current = true;
                   setIsFillerAuthBusy(true);
                   try {
                     const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
@@ -9208,63 +9485,38 @@ export default function App() {
                     }
                     if (isFillerRegistering) {
                       setFillerAuthNotice('');
-                      const accountState = loginData.user?.state || fillerState;
-                      if (accountState) {
-                        setFillerState(accountState);
-                        localStorage.setItem('filler_state', accountState);
-                      }
-                      const rawAccountDistrict = loginData.user?.district || fillerDistrict;
-                      const accountDistrict = sameAsStateValue(rawAccountDistrict, accountState || fillerState) ? '' : rawAccountDistrict;
-                      if (accountDistrict) {
-                        setFillerDistrict(accountDistrict);
-                        localStorage.setItem('filler_district', accountDistrict);
-                      }
-                      localStorage.setItem('filler_operator_name', fillerName);
-                      localStorage.setItem('filler_phone', fillerPhone);
-                      localStorage.setItem('filler_email', fillerEmail);
-                      writeStoredSession({
-                        role: 'form_filler',
-                        name: fillerName,
-                        phone: fillerPhone,
-                        email: fillerEmail,
-                        state: accountState || fillerState,
-                        district: accountDistrict || fillerDistrict,
-                        city: fillerCity,
-                        token: loginData.token,
-                        loggedInAt: Date.now()
-                      });
-                      setIsFormFillerLoggedIn(true);
-                      setActiveRole('form_filler');
-                      setPendingRole('form_filler');
-                      setLegalAccepted(false);
-                      try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
-                      setShowLegalModal(true);
-                      setFillerOtpSent(false);
-                      setFillerMobileOtpCode('');
-                      return;
                     }
-                    setFillerAuthNotice('');
-                    const accountState = loginData.user?.state || fillerState;
-                    if (accountState) {
-                      setFillerState(accountState);
-                      localStorage.setItem('filler_state', accountState);
-                    }
-                    const accountDistrict = loginData.user?.district || fillerDistrict;
-                    if (accountDistrict) {
-                      setFillerDistrict(accountDistrict);
-                      localStorage.setItem('filler_district', accountDistrict);
-                    }
-                    localStorage.setItem('filler_operator_name', fillerName);
-                    localStorage.setItem('filler_phone', fillerPhone);
-                    localStorage.setItem('filler_email', fillerEmail);
+                    const savedUser = loginData.user || {};
+                    const resolvedName = String(savedUser.name || fillerName || '').trim();
+                    const resolvedPhone = String(savedUser.phone || fillerPhone || '').replace(/\D/g, '').slice(-10);
+                    const resolvedEmail = String(savedUser.email || fillerEmail || '').trim().toLowerCase();
+                    const accountState = String(savedUser.state || fillerState || '').trim();
+                    const rawAccountDistrict = String(savedUser.district || fillerDistrict || '').trim();
+                    const accountDistrict = sameAsStateValue(rawAccountDistrict, accountState) ? '' : rawAccountDistrict;
+                    const rawAccountCity = String(savedUser.city || fillerCity || '').trim();
+                    const accountCity = sameAsStateValue(rawAccountCity, accountState) ? '' : rawAccountCity;
+
+                    if (resolvedName) setFillerName(resolvedName);
+                    if (resolvedPhone) setFillerPhone(resolvedPhone);
+                    if (resolvedEmail) setFillerEmail(resolvedEmail);
+                    if (accountState) setFillerState(accountState);
+                    if (accountDistrict) setFillerDistrict(accountDistrict);
+                    if (accountCity) setFillerCity(accountCity);
+
+                    localStorage.setItem('filler_operator_name', resolvedName || fillerName);
+                    localStorage.setItem('filler_phone', resolvedPhone || fillerPhone);
+                    localStorage.setItem('filler_email', resolvedEmail || fillerEmail);
+                    if (accountState) localStorage.setItem('filler_state', accountState);
+                    if (accountDistrict) localStorage.setItem('filler_district', accountDistrict);
+                    if (accountCity) localStorage.setItem('filler_city', accountCity);
                     writeStoredSession({
                       role: 'form_filler',
-                      name: fillerName,
-                      phone: fillerPhone,
-                      email: fillerEmail,
+                      name: resolvedName || fillerName,
+                      phone: resolvedPhone || fillerPhone,
+                      email: resolvedEmail || fillerEmail,
                       state: accountState || fillerState,
                       district: accountDistrict || fillerDistrict,
-                      city: fillerCity,
+                      city: accountCity || fillerCity,
                       token: loginData.token,
                       loggedInAt: Date.now()
                     });
@@ -9274,9 +9526,12 @@ export default function App() {
                     setLegalAccepted(false);
                     try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
                     setShowLegalModal(true);
+                    setFillerOtpSent(false);
+                    setFillerMobileOtpCode('');
                   } catch (error) {
                     setFillerAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
                   } finally {
+                    fillerVerifyLockRef.current = false;
                     setIsFillerAuthBusy(false);
                   }
                 }} className="space-y-4 relative z-10">
@@ -11188,50 +11443,200 @@ export default function App() {
 
             {/* Input Fields */}
             <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{t('Kendra / Center Name', 'जन सेवा केंद्र का नाम')}</span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={60}
+                    value={kendraEditCenterName}
+                    onChange={e => setKendraEditCenterName(e.target.value.slice(0, 60))}
+                    placeholder="e.g. Sai Jan Seva Kendra"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-sky-500 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{t('Operator Name', 'ऑपरेटर का नाम')}</span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={50}
+                    value={kendraEditOperatorName}
+                    onChange={e => setKendraEditOperatorName(e.target.value.slice(0, 50))}
+                    placeholder="Your full name"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-sky-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                    <span>CSC ID / Kendra Registration No.</span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={25}
+                    value={kendraEditVleId}
+                    onChange={e => setKendraEditVleId(e.target.value.slice(0, 25))}
+                    placeholder="CSC ID"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-mono focus:border-sky-500 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{t('10-Digit Mobile Number', '10 अंकों का मोबाइल नंबर')}</span>
+                  </label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={kendraEditPhone}
+                    onChange={e => setKendraEditPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="9876543210"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-mono focus:border-sky-500 outline-none"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                  <Building2 className="w-3.5 h-3.5 text-sky-400" />
-                  <span>{t('Jan Seva Kendra Name (Center Name)', 'जन सेवा केंद्र का नाम (Center Name)')}</span>
+                  <Mail className="w-3.5 h-3.5 text-rose-400" />
+                  <span>{t('Gmail / Email Address', 'जीमेल / ईमेल पता')}</span>
                 </label>
                 <input
-                  type="text"
-                  maxLength={60}
-                  value={kendraEditCenterName}
-                  onChange={e => setKendraEditCenterName(e.target.value.slice(0, 60))}
-                  placeholder=""
+                  type="email"
+                  maxLength={80}
+                  value={kendraEditEmail}
+                  onChange={e => setKendraEditEmail(e.target.value.slice(0, 80))}
+                  placeholder="name@gmail.com"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-sky-500 outline-none"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{t('Operator Name (Operator Name)', 'ऑपरेटर का नाम (Operator Name)')}</span>
+                  <MapPin className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{t('State / UT', 'राज्य / केंद्र शासित प्रदेश')}</span>
                 </label>
-                <input
-                  type="text"
-                  maxLength={50}
-                  value={kendraEditOperatorName}
-                  onChange={e => setKendraEditOperatorName(e.target.value.slice(0, 50))}
-                  placeholder=""
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-sky-500 outline-none"
+                <StateSelect
+                  value={kendraEditStateValue}
+                  onChange={(val) => {
+                    setKendraEditStateValue(val);
+                    if (sameAsStateValue(kendraEditDistrict, val)) setKendraEditDistrict('');
+                    if (sameAsStateValue(kendraEditCity, val)) setKendraEditCity('');
+                  }}
+                  options={INDIAN_STATES}
+                  emptyLabel="Select State / UT"
+                  ariaLabel="State / UT"
+                  className="w-full px-3.5 pr-9 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-sky-500 outline-none"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                  <span>CSC ID / Kendra Registration No.</span>
-                </label>
-                <input
-                  type="text"
-                  maxLength={25}
-                  value={kendraEditVleId}
-                  onChange={e => setKendraEditVleId(e.target.value.slice(0, 25))}
-                  placeholder=""
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-mono focus:border-sky-500 outline-none"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{t('District', 'जिला')}</span>
+                  </label>
+                  <LocationAutocomplete
+                    value={kendraEditDistrict}
+                    onChange={val => setKendraEditDistrict(val.slice(0, 40))}
+                    preferType="district"
+                    state={kendraEditStateValue}
+                    placeholder="e.g. Lucknow"
+                    wrapperClassName="w-full"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-sky-500 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{t('City / Tehsil', 'शहर / तहसील')}</span>
+                  </label>
+                  <LocationAutocomplete
+                    value={kendraEditCity}
+                    onChange={val => setKendraEditCity(val.slice(0, 40))}
+                    preferType="city"
+                    state={kendraEditStateValue}
+                    placeholder="e.g. Sadar"
+                    wrapperClassName="w-full"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-sky-500 outline-none"
+                  />
+                </div>
               </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{t('Operator Photo', 'ऑपरेटर फोटो')}</span>
+                  </label>
+                  {kendraEditPhotoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setKendraEditPhotoUrl('')}
+                      className="text-[11px] text-rose-400 hover:text-rose-300 underline font-medium cursor-pointer"
+                    >
+                      Remove Photo
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  {kendraEditPhotoUrl ? (
+                    <img
+                      src={kendraEditPhotoUrl}
+                      alt="Operator preview"
+                      className="w-14 h-14 rounded-2xl object-cover border-2 border-sky-500/50 shadow-md bg-slate-800 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl border border-slate-700 bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
+                      <Camera className="w-5 h-5" />
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="user"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 2 * 1024 * 1024) {
+                        setKendraSaveError('Photo 2MB se chhoti honi chahiye. Kripya chhoti image chunein.');
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        if (event.target?.result) {
+                          setKendraEditPhotoUrl(event.target.result as string);
+                          setKendraSaveError('');
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                    className="block flex-1 min-w-0 text-xs text-slate-300 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-600 hover:file:bg-sky-500 file:text-white file:cursor-pointer file:shadow-md bg-slate-950 border border-slate-700 rounded-xl cursor-pointer p-1.5 focus:border-sky-500 outline-none transition-all"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  {t('Camera or gallery se JPG / PNG / WebP photo upload karein (max 2MB).', 'कैमरा या गैलरी से JPG / PNG / WebP फोटो अपलोड करें (max 2MB)।')}
+                </p>
+              </div>
+
+              {kendraSaveError && (
+                <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">
+                  {kendraSaveError}
+                </p>
+              )}
             </div>
 
             {/* Modal Actions */}
@@ -11250,10 +11655,11 @@ export default function App() {
                 <button
                   type="button"
                   onClick={saveKendraDetails}
-                  className="w-full sm:w-auto px-5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-sky-600/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                  disabled={isSavingKendraDetails}
+                  className="w-full sm:w-auto px-5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-sky-600/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>{t('Save Details', 'विवरण सुरक्षित करें')}</span>
+                  {isSavingKendraDetails ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  <span>{isSavingKendraDetails ? t('Saving…', 'सुरक्षित हो रहा है…') : t('Save Details', 'विवरण सुरक्षित करें')}</span>
                 </button>
               </div>
             </div>

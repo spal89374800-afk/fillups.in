@@ -41,6 +41,8 @@ export interface UserAccount {
   phone: string;
   role: 'client' | 'vle' | 'filler' | 'expert';
   cscId?: string;
+  centerName?: string;
+  photoUrl?: string;
   district?: string;
   city?: string;
   state?: string;
@@ -113,6 +115,8 @@ export function saveOrUpdateUserAccount(account: Partial<UserAccount> & { role: 
       phone: account.phone || '',
       role: account.role,
       cscId: account.cscId || '',
+      centerName: account.centerName || '',
+      photoUrl: account.photoUrl || '',
       district: account.district || '',
       city: account.city || '',
       state: account.state || '',

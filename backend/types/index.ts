@@ -185,12 +185,14 @@ export interface FillerOrder {
 export interface VleOperator {
   id: string;
   name: string;
+  centerName?: string;
   cscId: string;
   district: string;
   city: string;
   state?: string;
   phone: string;
   email?: string;
+  photoUrl?: string;
   role?: 'vle' | 'filler';
   status: 'Online' | 'Busy';
   bidsSuspended?: boolean;

@@ -21,6 +21,7 @@ import {
   getBidLimitStatus,
   recordBidAccepted,
   persistOrder,
+  persistToMongo,
   matchesAnyOperatorId,
   normalizeLocation,
   locationMatches
@@ -68,11 +69,109 @@ vleRouter.post('/vle/login', (req, res) => {
     return res.status(401).json({ success: false, error: 'Verify the OTP sent to this phone and email before logging in.' });
   }
   registeredAccount.lastLoginAt = new Date().toISOString();
+  void persistToMongo('userAccount', registeredAccount);
   res.json({
     success: true,
     message: '✅ Jan Seva Kendra Operator Logged in successfully (Permanent Account Retention Active).',
     token: registeredAccount.token,
-    user: registeredAccount
+    user: registeredAccount,
+    // Saved Kendra profile (center name, photo, location) so a fresh device
+    // shows the operator's real details instead of blank fields.
+    operator: findVleOperatorForAccount(registeredAccount) || null
+  });
+});
+
+// ========================================================
+// 🏛️ OPERATOR PROFILE & LOCATION UPDATE
+// ========================================================
+// Saves the complete Jan Seva Kendra profile (operator name, center name,
+// CSC ID, phone, email, state, district, city, photo) to the account *and*
+// the public operator record, then persists both to MongoDB.
+vleRouter.post('/vle/profile', requireAccount('vle'), async (req, res) => {
+  const account = getRequestAccount(req)!;
+  const name = String(req.body?.name || '').trim().slice(0, 50);
+  const centerName = String(req.body?.centerName || '').trim().slice(0, 60);
+  const cscId = String(req.body?.cscId || account.cscId || '').trim().slice(0, 25);
+  const phone = String(req.body?.phone || '').replace(/\D/g, '').slice(-10);
+  const email = String(req.body?.email || '').trim().toLowerCase().slice(0, 80);
+  const state = String(req.body?.state || '').trim().slice(0, 60);
+  const district = String(req.body?.district || '').trim().slice(0, 60);
+  const city = String(req.body?.city || '').trim().slice(0, 60);
+  const photoUrl = typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
+
+  if (!name || !cscId || !state || !district || !city) {
+    return res.status(400).json({ success: false, error: 'Operator name, CSC ID, state, district and city are required.' });
+  }
+  if (!/^[6-9]\d{9}$/.test(phone)) {
+    return res.status(400).json({ success: false, error: 'Enter a valid 10-digit Indian mobile number.' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ success: false, error: 'Enter a valid Gmail/email address.' });
+  }
+  if (photoUrl && photoUrl.length > 3_000_000) {
+    return res.status(413).json({ success: false, error: 'Operator photo is too large. Please choose a smaller image.' });
+  }
+  if (photoUrl.startsWith('data:') && !isRasterImageDataUrl(photoUrl)) {
+    return res.status(400).json({ success: false, error: 'Operator photo must be a JPG, PNG or WebP image.' });
+  }
+
+  const cscOwner = userAccountsStore.find(other =>
+    other.role === 'vle' &&
+    other !== account &&
+    other.cscId?.trim().toLowerCase() === cscId.toLowerCase()
+  );
+  if (cscOwner) {
+    return res.status(409).json({ success: false, error: 'This CSC ID is already registered with another operator account.' });
+  }
+
+  // Find the operator record *before* changing account identity fields.
+  const existingOperator = findVleOperatorForAccount(account);
+
+  account.name = name;
+  account.cscId = cscId;
+  account.phone = phone;
+  account.email = email;
+  account.state = state;
+  account.district = district;
+  account.city = city;
+  account.centerName = centerName;
+  account.photoUrl = photoUrl;
+
+  const updatedOperator: VleOperator = {
+    ...(existingOperator || {
+      id: 'VLE-' + Date.now(),
+      role: 'vle',
+      status: 'Online',
+      complianceScore: 100,
+      pricingList: Array.isArray(account.pricingList) ? account.pricingList : [],
+      formFillingList: []
+    }),
+    name,
+    centerName,
+    cscId,
+    phone,
+    email,
+    state,
+    district,
+    city,
+    photoUrl,
+    role: 'vle'
+  };
+
+  if (existingOperator) {
+    Object.assign(existingOperator, updatedOperator);
+  } else {
+    vleListStore.unshift(updatedOperator);
+  }
+
+  await persistToMongo('userAccount', account);
+  await persistToMongo('vleOperator', existingOperator || updatedOperator);
+
+  return res.json({
+    success: true,
+    message: '✅ Operator profile & location saved successfully.',
+    user: account,
+    operator: existingOperator || updatedOperator
   });
 });
 
@@ -117,6 +216,8 @@ vleRouter.post('/vle/pricing', requireAccount('vle'), (req, res) => {
 
 vleRouter.post('/vle/register', async (req, res) => {
   const { name, cscId, district, city, state, phone, email, pricingList, formFillingList } = req.body;
+  const centerName = String(req.body?.centerName || '').trim().slice(0, 60);
+  const photoUrl = typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
   const normalizedCscId = String(cscId || '').trim().toLowerCase();
   const normalizedPhone = String(phone || '').replace(/\D/g, '').slice(-10);
   const normalizedEmail = String(email || '').trim().toLowerCase();
@@ -170,6 +271,8 @@ vleRouter.post('/vle/register', async (req, res) => {
   const account = saveOrUpdateUserAccount({
     cscId: cscId || '',
     name: name || '',
+    centerName,
+    photoUrl,
     phone: phone || '',
     email: email || '',
     district: district || '',
@@ -183,12 +286,14 @@ vleRouter.post('/vle/register', async (req, res) => {
   const updatedVle: VleOperator = {
     id: existingIndex >= 0 ? vleListStore[existingIndex].id : 'VLE-' + Date.now(),
     name: name || '',
+    centerName,
     cscId: cscId || ('CSC-UP-' + Math.floor(10000 + Math.random() * 90000)),
     district: district || '',
     city: city || '',
     state: normalizedState,
     phone: phone || '',
     email: email || '',
+    photoUrl,
     role: 'vle',
     status: 'Online',
     bidsSuspended: false,
@@ -209,7 +314,14 @@ vleRouter.post('/vle/register', async (req, res) => {
   saveOperatorPricing(account, ownPricing);
   saveOperatorFormFilling(account, formFillingList || []);
 
-  res.json({ success: true, token: account.token, vle: updatedVle, pricingList: ownPricing });
+  res.json({
+    success: true,
+    token: account.token,
+    user: account,
+    operator: updatedVle,
+    vle: updatedVle,
+    pricingList: ownPricing
+  });
 });
 
 vleRouter.get('/vle/orders', requireAccount(), (req, res) => {
