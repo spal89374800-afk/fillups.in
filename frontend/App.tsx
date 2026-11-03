@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon } from 'lucide-react';
+import type { MouseEvent } from 'react';
+import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
 import { OrderStatusFilter, OrderStatusFilterValue } from './components/OrderStatusFilter';
@@ -524,6 +525,16 @@ export default function App() {
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isWorkspaceMinimized, setIsWorkspaceMinimized] = useState(false);
+  // Mobile workspace chrome: the top bar hides while chatting so messages get
+  // the full screen. Desktop keeps the header always visible.
+  const [isWorkspaceHeaderHidden, setIsWorkspaceHeaderHidden] = useState(false);
+  const [mobileWorkspacePanel, setMobileWorkspacePanel] = useState<'none' | 'proof' | 'payments' | 'pdf' | 'whatsapp'>('none');
+
+  const hideMobileWorkspaceHeader = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsWorkspaceHeaderHidden(true);
+    }
+  };
 
   // --- LIVE CAMERA CAPTURE SYSTEM STATE ---
   const [liveCameraToken, setLiveCameraToken] = useState<string | null>(() => {
@@ -822,6 +833,31 @@ export default function App() {
 
   // Drag and Drop files/photos in chat state & handlers
   const [isDraggingOverChat, setIsDraggingOverChat] = useState(false);
+  // Whole-workspace drag state so a file can be dropped anywhere.
+  const [isDraggingOverWorkspace, setIsDraggingOverWorkspace] = useState(false);
+  const [isDraggingOverProof, setIsDraggingOverProof] = useState(false);
+  // Chat photo picked (drag on desktop / long-press on mobile) to become proof.
+  const [draggedChatImageUrl, setDraggedChatImageUrl] = useState<string | null>(null);
+  const [pendingProofChatImage, setPendingProofChatImage] = useState<string | null>(null);
+  const proofLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Turn dropped/picked files into staged chat attachments.
+  const attachFilesToChat = (files: File[]) => {
+    if (!files.length) return;
+    const formatted = files.map((file) => {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      return {
+        name: file.name,
+        type: (ext === 'pdf' ? 'pdf' : ext === 'png' ? 'png' : 'jpg') as 'pdf' | 'jpg' | 'png',
+        size: `${(file.size / 1024).toFixed(1)} KB`,
+        file
+      };
+    });
+    setStagedFiles(prev => [...prev, ...formatted]);
+    if (soundAlertEnabled) playChime();
+    setWorkspaceStatusMsg({ text: `📁 ${files.length} file(s) attached via drag & drop! Click send to upload.`, type: 'success' });
+  };
+
   const handleChatDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -836,21 +872,183 @@ export default function App() {
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingOverChat(false);
+    setIsDraggingOverWorkspace(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const droppedFiles = Array.from(e.dataTransfer.files);
-      const formatted = droppedFiles.map((file) => {
-        const ext = file.name.split('.').pop()?.toLowerCase();
-        return {
-          name: file.name,
-          type: (ext === 'pdf' ? 'pdf' : ext === 'png' ? 'png' : 'jpg') as 'pdf' | 'jpg' | 'png',
-          size: `${(file.size / 1024).toFixed(1)} KB`,
-          file
-        };
-      });
-      setStagedFiles(prev => [...prev, ...formatted]);
-      if (soundAlertEnabled) playChime();
-      setWorkspaceStatusMsg({ text: `📁 ${droppedFiles.length} file(s) attached via drag & drop! Click send to upload.`, type: 'success' });
+      attachFilesToChat(Array.from(e.dataTransfer.files));
     }
+  };
+
+  // Submit a base64 image as the order's photo proof (existing endpoint).
+  const submitPhotoProof = async (photoUrl: string) => {
+    if (!activeWorkspaceOrder) return;
+    try {
+      setWorkspaceStatusMsg({ text: '📸 Setting photo proof…', type: 'info' });
+      const res = await fetch(`/api/orders/${activeWorkspaceOrder.id}/upload-proof`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photoUrl })
+      });
+      const data = await parseJsonResponse(res);
+      if (data.success) {
+        setActiveWorkspaceOrder(data.order);
+        fetchAllData();
+        setWorkspaceStatusMsg({ text: '📸 Photo proof upload ho gaya — citizen inspection ke liye ready hai.', type: 'success' });
+        if (soundAlertEnabled) playChime();
+      } else {
+        setWorkspaceStatusMsg({ text: data.error || 'Failed to upload photo proof', type: 'error' });
+      }
+    } catch (err) {
+      console.warn('Error uploading proof:', err);
+      setWorkspaceStatusMsg({ text: 'Network error uploading photo proof', type: 'error' });
+    }
+  };
+
+  const uploadPhotoProofFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setWorkspaceStatusMsg({ text: 'Photo proof ke liye sirf JPG/PNG/WebP image drop karein.', type: 'error' });
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setWorkspaceStatusMsg({ text: 'Photo 8 MB se chhoti honi chahiye.', type: 'error' });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => { void submitPhotoProof(reader.result as string); };
+    reader.readAsDataURL(file);
+  };
+
+  // Use an image that already exists in chat as the photo proof.
+  const setProofFromChatImage = async (url: string) => {
+    try {
+      setWorkspaceStatusMsg({ text: '📸 Chat photo ko proof bana rahe hain…', type: 'info' });
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('This photo is no longer available.');
+      const blob = await res.blob();
+      if (!blob.type.startsWith('image/')) throw new Error('Only images can be set as photo proof.');
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+      await submitPhotoProof(dataUrl);
+    } catch (err) {
+      setWorkspaceStatusMsg({
+        text: err instanceof Error ? err.message : 'Chat photo could not be set as proof.',
+        type: 'error'
+      });
+    }
+  };
+
+  // --- Workspace-wide drag & drop ---
+  const handleWorkspaceDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOverWorkspace(true);
+  };
+  const handleWorkspaceDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOverWorkspace(true);
+  };
+  const handleWorkspaceDragLeave = (e: React.DragEvent) => {
+    const next = e.relatedTarget as Node | null;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const outside =
+      e.clientX <= rect.left || e.clientX >= rect.right ||
+      e.clientY <= rect.top || e.clientY >= rect.bottom;
+    if (outside || (next && !e.currentTarget.contains(next))) {
+      setIsDraggingOverWorkspace(false);
+      setIsDraggingOverProof(false);
+    }
+  };
+  const handleWorkspaceDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOverWorkspace(false);
+    setIsDraggingOverProof(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      attachFilesToChat(Array.from(e.dataTransfer.files));
+    }
+  };
+
+  // --- Photo Proof card drop zone ---
+  const handleProofDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOverProof(true);
+    setIsDraggingOverWorkspace(true);
+  };
+  const handleProofDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = e.relatedTarget as Node | null;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const outside =
+      e.clientX <= rect.left || e.clientX >= rect.right ||
+      e.clientY <= rect.top || e.clientY >= rect.bottom;
+    if (outside || (next && !e.currentTarget.contains(next))) {
+      setIsDraggingOverProof(false);
+      if (outside) setIsDraggingOverWorkspace(false);
+    }
+  };
+  const handleProofDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOverProof(false);
+    setIsDraggingOverWorkspace(false);
+
+    // In-app drag: a chat image dropped straight onto the proof card.
+    const fromChat = e.dataTransfer.getData('application/x-digiseva-proof') || draggedChatImageUrl;
+    if (fromChat) {
+      if (activeRole === 'client') {
+        setWorkspaceStatusMsg({ text: 'Photo proof sirf operator set kar sakta hai.', type: 'error' });
+      } else {
+        void setProofFromChatImage(fromChat);
+      }
+      setDraggedChatImageUrl(null);
+      return;
+    }
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      if (activeRole === 'client') {
+        setWorkspaceStatusMsg({ text: 'Photo proof sirf operator set kar sakta hai.', type: 'error' });
+      } else {
+        uploadPhotoProofFile(file);
+      }
+    }
+  };
+
+  // Touch-friendly fallback for in-app drag: long-press a chat image, then tap
+  // the Photo Proof badge to use it as proof.
+  const startChatImageLongPress = (url: string) => {
+    if (activeRole === 'client') return;
+    if (proofLongPressTimerRef.current) clearTimeout(proofLongPressTimerRef.current);
+    proofLongPressTimerRef.current = setTimeout(() => {
+      setPendingProofChatImage(url);
+      setWorkspaceStatusMsg({
+        text: '📸 Photo selected — ab upar "Photo Proof" badge tap karein. Wo proof ban jayegi.',
+        type: 'info'
+      });
+      if (soundAlertEnabled) playChime();
+    }, 500);
+  };
+  const cancelChatImageLongPress = () => {
+    if (proofLongPressTimerRef.current) {
+      clearTimeout(proofLongPressTimerRef.current);
+      proofLongPressTimerRef.current = null;
+    }
+  };
+
+  // Badge tap: if a chat photo is waiting, use it as proof; otherwise expand
+  // the matching card (only one card open at a time).
+  const handleMobileWorkspaceBadgeClick = (key: 'proof' | 'payments' | 'pdf' | 'whatsapp') => {
+    if (key === 'proof' && pendingProofChatImage) {
+      setMobileWorkspacePanel('proof');
+      setIsWorkspaceHeaderHidden(false);
+      void setProofFromChatImage(pendingProofChatImage);
+      setPendingProofChatImage(null);
+      return;
+    }
+    setMobileWorkspacePanel(prev => prev === key ? 'none' : key);
   };
 
   // 🎙️ Voice Message Recording State — click = start, click = stop & send
@@ -1942,7 +2140,17 @@ export default function App() {
     setGovtUpiInput(String((activeWorkspaceOrder as any)?.govtUpiId || ''));
     const currentGovtFee = Number((activeWorkspaceOrder as any)?.govtFee);
     setGovtFeeInput(Number.isFinite(currentGovtFee) ? String(currentGovtFee) : '');
+    // New order = fresh mobile workspace: show the header and close any
+    // collapsed detail card.
+    setIsWorkspaceHeaderHidden(false);
+    setMobileWorkspacePanel('none');
+    setPendingProofChatImage(null);
   }, [activeWorkspaceOrder?.id]);
+
+  // Incoming/active calls must never stay hidden behind the collapsed mobile header.
+  useEffect(() => {
+    if (callingState !== 'idle') setIsWorkspaceHeaderHidden(false);
+  }, [callingState]);
 
   const [isKendraDetailsModalOpen, setIsKendraDetailsModalOpen] = useState(false);
   const isKendraDetailsModalOpenRef = useRef(false);
@@ -3143,6 +3351,7 @@ export default function App() {
 
   // Send Chat Message with correct sender identity
   const handleSendMessage = async () => {
+    hideMobileWorkspaceHeader();
     if (activeRole === 'client') {
       const allowed = Boolean(
         activeWorkspaceOrder?.acceptedByVleName ||
@@ -3848,6 +4057,75 @@ export default function App() {
     } finally {
       setIsSavingPricing(false);
     }
+  };
+
+  const mobileWorkspaceBadges: Array<{
+    key: 'proof' | 'payments' | 'pdf' | 'whatsapp';
+    label: string;
+    icon: typeof ImageIcon;
+    status: 'idle' | 'action' | 'done';
+  }> = [
+    {
+      key: 'proof',
+      label: t('Photo Proof', 'फोटो प्रूफ'),
+      icon: ImageIcon,
+      status: !activeWorkspaceOrder?.previewPhotoProof
+        ? 'idle'
+        : activeWorkspaceOrder?.isProofApprovedByClient ? 'done' : 'action'
+    },
+    {
+      key: 'payments',
+      label: t('Payments', 'पेमेंट'),
+      icon: CreditCard,
+      status: (() => {
+        const qrs = workspacePaymentIntent?.qrs || [];
+        const confirmed = qrs.filter(qr => qr.status === 'confirmed').length;
+        const unlocked = Boolean(activeWorkspaceOrder?.isProofApprovedByClient || activeRole !== 'client');
+        if (activeWorkspaceOrder?.isPaymentDoneInApp || (qrs.length > 0 && confirmed === qrs.length)) return 'done';
+        return unlocked ? 'action' : 'idle';
+      })()
+    },
+    {
+      key: 'pdf',
+      label: t('Final PDF', 'फाइनल PDF'),
+      icon: FileText,
+      status: activeWorkspaceOrder?.completedFormPdfUrl ? 'done' : 'idle'
+    },
+    {
+      key: 'whatsapp',
+      label: t('WhatsApp', 'व्हाट्सएप'),
+      icon: Smartphone,
+      status: activeWorkspaceOrder?.credentialsDispatched
+        ? 'done'
+        : activeWorkspaceOrder?.isPaymentDoneInApp ? 'action' : 'idle'
+    }
+  ];
+
+  const mobileBadgeDotClass = (status: 'idle' | 'action' | 'done') =>
+    status === 'done'
+      ? 'bg-emerald-400'
+      : status === 'action'
+        ? 'bg-amber-400 animate-pulse'
+        : 'bg-slate-600';
+
+  const handleWorkspaceCallButton = () => {
+    if (callingState === 'idle') {
+      void startVoiceCall(activeWorkspaceOrder || undefined);
+    } else if (callingState === 'incoming') {
+      void acceptVoiceCall();
+    } else {
+      endVoiceCall();
+    }
+  };
+
+  // Tapping empty workspace space on mobile hides the top bar so the chat gets
+  // the full height. Buttons, inputs and links are ignored so nothing is
+  // tapped by accident.
+  const handleWorkspaceBackgroundClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (typeof window === 'undefined' || window.innerWidth >= 768) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, a, input, textarea, select, label, summary, [role="button"], [data-keep-workspace-header]')) return;
+    setIsWorkspaceHeaderHidden(true);
   };
 
   return (
@@ -10244,6 +10522,7 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-950 flex flex-col z-50 overflow-hidden">
             
             {/* Workspace Header with Back, Minimize, Fullscreen & Call Buttons */}
+            <div className={`overflow-hidden bg-slate-950 transition-all duration-200 md:max-h-none md:opacity-100 ${isWorkspaceHeaderHidden ? 'max-h-0 opacity-0' : 'max-h-52 opacity-100'}`}>
             <div className="p-3.5 sm:p-4 bg-slate-950 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
               <div className="flex items-center gap-3">
                 {/* ⬅️ Prominent Back Button */}
@@ -10280,16 +10559,8 @@ export default function App() {
 
                 {/* Voice Call Trigger Button */}
                 <button
-                  onClick={() => {
-                    if (callingState === 'idle') {
-                      void startVoiceCall(activeWorkspaceOrder || undefined);
-                    } else if (callingState === 'incoming') {
-                      void acceptVoiceCall();
-                    } else {
-                      endVoiceCall();
-                    }
-                  }}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 ${
+                  onClick={handleWorkspaceCallButton}
+                  className={`hidden md:flex px-3 py-2 rounded-xl text-xs font-bold items-center gap-1.5 transition-all shadow-md active:scale-95 ${
                     callingState === 'connected' ? 'bg-rose-600 text-white animate-pulse' :
                     callingState === 'calling' ? 'bg-amber-600 text-white animate-bounce' :
                     callingState === 'incoming' ? 'bg-emerald-600 text-white animate-bounce' :
@@ -10347,6 +10618,19 @@ export default function App() {
                 </button>
               </div>
             </div>
+            </div>
+
+            {isWorkspaceHeaderHidden && (
+              <button
+                type="button"
+                onClick={() => setIsWorkspaceHeaderHidden(false)}
+                className="md:hidden flex w-full items-center justify-center gap-1 border-b border-slate-800 bg-slate-900 py-1 text-[10px] font-bold text-slate-400 active:bg-slate-800"
+                title="Show top bar"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+                <span>{t('Show controls', 'कंट्रोल दिखाएं')}</span>
+              </button>
+            )}
 
             {/* Active Voice Call Screen Notification Bar */}
             {callingState !== 'idle' && (
@@ -10430,7 +10714,23 @@ export default function App() {
             )}
 
             {/* Main Workspace Body */}
-            <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden relative">
+            <div
+              className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden relative"
+              onClick={handleWorkspaceBackgroundClick}
+              onDragEnter={handleWorkspaceDragEnter}
+              onDragOver={handleWorkspaceDragOver}
+              onDragLeave={handleWorkspaceDragLeave}
+              onDrop={handleWorkspaceDrop}
+            >
+              {isDraggingOverWorkspace && !isDraggingOverChat && !isDraggingOverProof && (
+                <div className="pointer-events-none absolute inset-0 z-[60] flex flex-col items-center justify-center gap-2 bg-blue-950/70 p-6 text-center text-white backdrop-blur-sm">
+                  <FileUp className="h-10 w-10 animate-bounce text-cyan-300" />
+                  <p className="text-sm font-black">📥 Yahan drop karein</p>
+                  <p className="max-w-xs text-[11px] font-medium text-blue-100">
+                    Chat ke liye file attach hogi. Photo Proof card par drop karein to proof set hoga.
+                  </p>
+                </div>
+              )}
               
               {/* PENDING NOTICE OVERLAY FOR CITIZEN (English Message as requested) */}
               {activeWorkspaceOrder.status === 'pending' && (
@@ -10451,7 +10751,7 @@ export default function App() {
               <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden w-full h-full">
                   {/* Left Column: Live Chat & Upload Interface */}
               <div 
-                className="flex-1 min-h-0 flex flex-col border-r border-slate-800 bg-slate-900/50 relative"
+                className="order-2 md:order-1 flex-1 min-h-0 flex flex-col border-t md:border-t-0 md:border-r border-slate-800 bg-slate-900/50 relative"
                 onDragOver={handleChatDragOver}
                 onDragLeave={handleChatDragLeave}
                 onDrop={handleChatDrop}
@@ -10544,7 +10844,33 @@ export default function App() {
 
                         {/* Rich Document Card inside Chat message */}
                         {msg.attachment && (
-                          <div className="mt-2.5 p-2.5 rounded-xl bg-slate-950 border border-slate-700/80 flex items-center justify-between gap-2 text-white shadow-inner">
+                          <div
+                            className="mt-2.5 p-2.5 rounded-xl bg-slate-950 border border-slate-700/80 flex items-center justify-between gap-2 text-white shadow-inner"
+                            draggable={activeRole !== 'client' && msg.attachment.type !== 'pdf' && Boolean(msg.attachment.url)}
+                            onDragStart={(e) => {
+                              const url = msg.attachment?.url;
+                              if (activeRole === 'client' || !url || msg.attachment?.type === 'pdf') {
+                                e.preventDefault();
+                                return;
+                              }
+                              e.dataTransfer.setData('application/x-digiseva-proof', url);
+                              e.dataTransfer.setData('text/uri-list', url);
+                              e.dataTransfer.effectAllowed = 'copy';
+                              setDraggedChatImageUrl(url);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedChatImageUrl(null);
+                              setIsDraggingOverWorkspace(false);
+                              setIsDraggingOverProof(false);
+                            }}
+                            onTouchStart={() => {
+                              const url = msg.attachment?.url;
+                              if (url && msg.attachment?.type !== 'pdf') startChatImageLongPress(url);
+                            }}
+                            onTouchEnd={cancelChatImageLongPress}
+                            onTouchMove={cancelChatImageLongPress}
+                            onTouchCancel={cancelChatImageLongPress}
+                          >
                             <div className="flex items-center gap-2 overflow-hidden mr-2 flex-1 min-w-0">
                               {msg.attachment.type === 'pdf' ? (
                                 <FileText className="w-5 h-5 text-rose-400 flex-shrink-0" />
@@ -10555,6 +10881,9 @@ export default function App() {
                                 <p className="text-[11px] font-bold truncate">{msg.attachment.name}</p>
                                 <span className="text-[9px] uppercase text-blue-300 font-mono">
                                   {msg.attachment.type.toUpperCase()} Attached & Verified
+                                  {activeRole !== 'client' && msg.attachment.type !== 'pdf' && msg.attachment.url && (
+                                    <span className="normal-case text-emerald-300"> · Proof me drag karein</span>
+                                  )}
                                 </span>
                               </div>
                             </div>
@@ -10688,12 +11017,37 @@ export default function App() {
                           </span>
                         </button>
 
+                        {/* Mobile call button — sits next to the mic so calling stays
+                            reachable even when the top bar is hidden. */}
+                        <button
+                          type="button"
+                          onClick={handleWorkspaceCallButton}
+                          className={`md:hidden p-2.5 rounded-xl border transition-all flex items-center gap-1 text-xs font-bold ${
+                            callingState === 'connected'
+                              ? 'bg-rose-600 border-rose-500 text-white animate-pulse'
+                              : callingState === 'calling'
+                                ? 'bg-amber-600 border-amber-500 text-white animate-bounce'
+                                : callingState === 'incoming'
+                                  ? 'bg-emerald-600 border-emerald-500 text-white animate-bounce'
+                                  : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-blue-300 hover:text-blue-200'
+                          }`}
+                          title={
+                            callingState === 'idle' ? t('Start voice call', 'कॉल शुरू करें')
+                              : callingState === 'incoming' ? t('Accept call', 'कॉल उठाएं')
+                                : t('End call', 'कॉल बंद करें')
+                          }
+                          aria-label={t('Voice call', 'वॉइस कॉल')}
+                        >
+                          <PhoneCall className={`w-4 h-4 ${callingState !== 'idle' ? 'animate-bounce' : ''}`} />
+                        </button>
+
                         <input
                           type="text"
                           value={chatInputText}
                           onChange={(e) => setChatInputText(e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSendMessage(); } }}
                           onFocus={(e) => {
+                            hideMobileWorkspaceHeader();
                             const inputEl = e.currentTarget;
                             // Keyboard khulne ke baad input ko visible area me rakho
                             // taaki workspace header / minimize / fullscreen upar na chhupen.
@@ -10730,8 +11084,61 @@ export default function App() {
               </div>
 
               {/* Right Column: Documents Vault, Photo Proof, In-App Payment & WhatsApp Delivery */}
-              <div className="w-full md:w-96 min-h-0 max-h-[45vh] md:max-h-none shrink-0 bg-slate-950 p-5 overflow-y-auto space-y-5">
-                
+              <div className={`order-1 md:order-2 w-full md:w-96 min-h-0 shrink-0 bg-slate-950 p-3 md:p-5 overflow-y-auto space-y-2 md:space-y-5 ${mobileWorkspacePanel === 'none' ? 'max-h-none' : 'max-h-[42vh]'} md:max-h-none`}>
+
+                {/* Mobile quick badges: tap a badge to expand that card above the chat. */}
+                <div className="md:hidden sticky top-0 z-20 -mx-3 -mt-3 border-b border-slate-800 bg-slate-950/95 px-3 py-2 backdrop-blur">
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                    {mobileWorkspaceBadges.map(badge => {
+                      const Icon = badge.icon;
+                      const active = mobileWorkspacePanel === badge.key;
+                      const waitingForProofBadge = badge.key === 'proof' && Boolean(pendingProofChatImage);
+                      return (
+                        <button
+                          key={badge.key}
+                          type="button"
+                          onClick={() => handleMobileWorkspaceBadgeClick(badge.key)}
+                          className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition-all active:scale-95 ${
+                            waitingForProofBadge
+                              ? 'border-emerald-400 bg-emerald-500/20 text-emerald-200 animate-pulse'
+                              : active
+                                ? 'border-amber-500/60 bg-amber-500/15 text-amber-200'
+                                : 'border-slate-700 bg-slate-900 text-slate-300'
+                          }`}
+                          aria-expanded={active}
+                          title={
+                            waitingForProofBadge
+                              ? t('Tap to set the selected chat photo as proof', 'चुनी हुई चैट फोटो को प्रूफ बनाने के लिए टैप करें')
+                              : undefined
+                          }
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          <span>{badge.label}</span>
+                          <span className={`h-1.5 w-1.5 rounded-full ${mobileBadgeDotClass(badge.status)}`} />
+                        </button>
+                      );
+                    })}
+                    {mobileWorkspacePanel !== 'none' && (
+                      <button
+                        type="button"
+                        onClick={() => setMobileWorkspacePanel('none')}
+                        className="shrink-0 inline-flex items-center justify-center rounded-full border border-slate-700 bg-slate-900 p-1.5 text-slate-400 active:scale-95"
+                        title={t('Hide details', 'विवरण छिपाएं')}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  className={`${mobileWorkspacePanel === 'proof' ? 'block' : 'hidden'} md:block rounded-2xl transition-all ${
+                    isDraggingOverProof ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : ''
+                  }`}
+                  onDragOver={handleProofDragOver}
+                  onDragLeave={handleProofDragLeave}
+                  onDrop={handleProofDrop}
+                >
                 {/* Stage 2: Photo Proof of Filled Form (Operator Uploads, Client Reviews) */}
                 <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-md">
                   <div className="flex items-center justify-between">
@@ -10852,34 +11259,10 @@ export default function App() {
                               accept="image/*"
                               className="hidden"
                               onClick={(e) => e.stopPropagation()}
-                              onChange={async (e) => {
+                              onChange={(e) => {
                                 const file = e.target.files?.[0];
-                                if (file) {
-                                  const reader = new FileReader();
-                                  reader.onload = async () => {
-                                    const base64Url = reader.result as string;
-                                    try {
-                                      const endpoint = `/api/orders/${activeWorkspaceOrder.id}/upload-proof`;
-                                      const res = await fetch(endpoint, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ photoUrl: base64Url })
-                                      });
-                                      const data = await parseJsonResponse(res);
-                                      if (data.success) {
-                                        setActiveWorkspaceOrder(data.order);
-                                        fetchAllData();
-                                        setWorkspaceStatusMsg({ text: '📸 Filled form photo proof uploaded for citizen inspection!', type: 'success' });
-                                      } else {
-                                        setWorkspaceStatusMsg({ text: data.error || 'Failed to upload photo proof', type: 'error' });
-                                      }
-                                    } catch (err) {
-                                      console.warn('Error uploading proof:', err);
-                                      setWorkspaceStatusMsg({ text: 'Network error uploading photo proof', type: 'error' });
-                                    }
-                                  };
-                                  reader.readAsDataURL(file);
-                                }
+                                if (file) uploadPhotoProofFile(file);
+                                e.target.value = '';
                               }}
                             />
                           </label>
@@ -10893,7 +11276,9 @@ export default function App() {
                     </div>
                   )}
                 </div>
+                </div>
 
+                <div className={`${mobileWorkspacePanel === 'payments' ? 'block' : 'hidden'} md:block`}>
                 {/* Stage 3: Compact split UPI payment */}
                 {(activeWorkspaceOrder.isProofApprovedByClient || activeRole !== 'client') ? (
                   <div className="rounded-2xl border border-emerald-500/40 bg-slate-900 p-3.5 space-y-3 shadow-lg animate-in fade-in duration-200">
@@ -11108,7 +11493,9 @@ export default function App() {
                     <p className="mt-1 text-[10px] text-slate-500">Approve the photo proof above to unlock payments.</p>
                   </div>
                 )}
+                </div>
 
+                <div className={`${mobileWorkspacePanel === 'pdf' ? 'block' : 'hidden'} md:block`}>
                 {/* Stage 3.5: Final completed form PDF (completion = payment + this PDF) */}
                 <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-2 shadow-md">
                   <h4 className="flex items-center gap-1.5 text-xs font-bold text-white">
@@ -11193,7 +11580,9 @@ export default function App() {
                     </p>
                   )}
                 </div>
+                </div>
 
+                <div className={`${mobileWorkspacePanel === 'whatsapp' ? 'block' : 'hidden'} md:block`}>
                 {/* Stage 4: WhatsApp Direct Dispatch of Application No & Password */}
                 <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-md">
                   <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
@@ -11321,6 +11710,7 @@ export default function App() {
                     </p>
                     )}
                   </div>
+                </div>
                 </div>
               </div>
             </div>
