@@ -102,6 +102,16 @@ const CRAWLER_USER_AGENTS: RegExp[] = [
   /mj12/i, /dataprovider/i, /dotbot/i, /yandex/i, /baiduspider/i
 ];
 
+// Search engine crawlers must be able to fetch the public SEO pages. They are
+// read-only (GET/HEAD) and never touch /api, so exempting them here cannot
+// mutate data. Without this the generic "bot" signature above marks every
+// Google/Bing hit as SUSPICIOUS and the per-IP auto-block hides the site.
+const SEARCH_ENGINE_CRAWLERS: RegExp[] = [
+  /googlebot/i, /google-inspectiontool/i, /adsbot-google/i,
+  /bingbot/i, /bingpreview/i, /duckduckbot/i, /slurp/i,
+  /baiduspider/i, /yandex(?:bot|images)/i, /applebot/i, /petalbot/i
+];
+
 // App ke andar khula hua link (WhatsApp/Telegram etc.) legit hai — inhe mat roko.
 const TRUSTED_APP_USER_AGENTS = /whatsapp|telegram|instagram|facebook|linkedin|pinterest|gmail/i;
 
@@ -406,6 +416,23 @@ export function botShieldMiddleware(req: Request, res: Response, next: NextFunct
   if (process.env.NODE_ENV !== 'production') {
     return next();
   }
+
+  // Search engines may read public pages (HTML, sitemap, robots) without being
+  // scored. API and everything else still goes through the normal shield.
+  const requestPath = req.path || req.url || '';
+  const isPublicPage = !requestPath.startsWith('/api/') && requestPath !== '/api';
+  const isReadOnly = req.method === 'GET' || req.method === 'HEAD';
+  const userAgentHeader = readHeader(req, 'user-agent').trim();
+  if (
+    isPublicPage &&
+    isReadOnly &&
+    SEARCH_ENGINE_CRAWLERS.some(pattern => pattern.test(userAgentHeader))
+  ) {
+    res.setHeader('X-Bot-Protection', 'allowed');
+    res.setHeader('X-Bot-Score', '0');
+    return next();
+  }
+
   const startedAt = process.hrtime.bigint();
   const network = resolveClientNetwork(req);
   const { score, reasons } = scoreRequest(req, network);

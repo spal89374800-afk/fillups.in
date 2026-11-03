@@ -9,6 +9,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { createExpressApp, isAllowedCorsOrigin } from './app.ts';
 import { getIceServers, setRealtimeServer } from './services/realtimeService.ts';
 import { startDocumentRetentionScheduler } from './services/documentRetentionService.ts';
+import { createSeoRouter } from './routes/seoRoutes.ts';
 import { connectDB } from './config/db.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -63,6 +64,10 @@ async function startServer() {
       console.error('[startup] build failed:', err);
     }
   }
+
+  // Public SEO routes (service pages, sitemap, robots) must be registered
+  // before the SPA catch-all so Google receives unique titles and content.
+  app.use(createSeoRouter({ distPath, isProduction }));
 
   // Serve the built frontend in production. Vite middleware is used only for
   // local development (or if the production build genuinely failed).

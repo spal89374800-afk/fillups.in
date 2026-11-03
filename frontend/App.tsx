@@ -493,6 +493,34 @@ export default function App() {
     return 'landing';
   });
 
+  // Public SEO page -> application flow. The public page sends a small intent
+  // in the query string; it is preserved through login and then used to
+  // pre-select the service on the same citizen portal.
+  const publicServiceIntent = useMemo(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('apply') !== '1') return null;
+      const name = (params.get('name') || '').trim();
+      if (!name) return null;
+      return {
+        slug: (params.get('service') || '').trim(),
+        name,
+        scope: (params.get('scope') || 'district').trim()
+      };
+    } catch {
+      return null;
+    }
+  }, []);
+  const [pendingPublicService, setPendingPublicService] = useState<{ slug: string; name: string; scope: string } | null>(() => {
+    if (publicServiceIntent) return publicServiceIntent;
+    try {
+      const raw = sessionStorage.getItem('digiseva_pending_public_service');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isWorkspaceMinimized, setIsWorkspaceMinimized] = useState(false);
@@ -1216,6 +1244,43 @@ export default function App() {
   // Jan Seva Kendra Services Search & Category Filter
   const [janSevaSearchQuery, setJanSevaSearchQuery] = useState('');
   const [janSevaSelectedCategory, setJanSevaSelectedCategory] = useState<string>('all');
+
+  // A visitor came from a public SEO page and pressed "Apply". Keep the intent
+  // through the OTP login, then open the matching service form. For online
+  // forms (NEET/JEE etc.) open the form-filling tab instead.
+  useEffect(() => {
+    if (!publicServiceIntent) return;
+    try {
+      sessionStorage.setItem('digiseva_pending_public_service', JSON.stringify(publicServiceIntent));
+    } catch {}
+    if (readStoredSession()?.role === 'client') return;
+    setStep('client_login');
+    try { window.history.replaceState({}, '', '/'); } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!pendingPublicService) return;
+    if (activeRole !== 'client') return;
+    if (pendingPublicService.scope === 'online_form') {
+      setClientPortalTab('form_filling');
+      setExamFormTitle(pendingPublicService.name);
+    } else {
+      setClientPortalTab('jan_seva_docs');
+      setSelectedJanSevaDoc(pendingPublicService.name);
+      setJanSevaSearchQuery(pendingPublicService.name);
+    }
+    setStep('client_portal');
+    setPendingPublicService(null);
+    try { sessionStorage.removeItem('digiseva_pending_public_service'); } catch {}
+    try { window.history.replaceState({}, '', '/'); } catch {}
+    setTimeout(() => {
+      const target = pendingPublicService.scope === 'online_form'
+        ? document.getElementById('form-filling-section')
+        : document.getElementById('jan-seva-doc-form');
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 700);
+  }, [pendingPublicService, activeRole]);
 
   // --- JAN SEVA KENDRA ORDERS ---
   const [vleExclusiveOrders, setVleExclusiveOrders] = useState<any[]>([]);
@@ -7852,7 +7917,7 @@ export default function App() {
               </div>
 
               {/* Document Application Form */}
-              <form onSubmit={handleJanSevaDocSubmit} className="space-y-4">
+              <form id="jan-seva-doc-form" onSubmit={handleJanSevaDocSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* Selected Document Name (Can also type if different) */}
                   <div className="space-y-1.5">
