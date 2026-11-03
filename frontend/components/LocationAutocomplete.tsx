@@ -49,6 +49,9 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
   const [highlight, setHighlight] = useState(-1);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const skipNextFetch = useRef(false);
+  // Suggestions must open only after the user starts typing. A prefilled
+  // district/city (from the profile) should never auto-open the strip.
+  const hasTyped = useRef(false);
 
   // Keep internal input in sync when parent value changes externally (e.g. session restore).
   useEffect(() => {
@@ -73,12 +76,17 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     }
 
     const query = inputValue.trim();
-    if (query.length < MIN_CHARS) {
+    if (query.length < MIN_CHARS || !hasTyped.current) {
       setSuggestions([]);
       setOpen(false);
       setLoading(false);
       return;
     }
+
+    // Hide the previous strip immediately while the new query is fetched, so
+    // an old district/city can never look like a fresh match.
+    setOpen(false);
+    setLoading(true);
 
     const cacheKey = `${preferType || 'all'}:${(state || '').toLowerCase()}:${query.toLowerCase()}`;
     const cached = cache.get(cacheKey);
@@ -90,7 +98,6 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     }
 
     let cancelled = false;
-    setLoading(true);
     const timer = setTimeout(async () => {
       try {
         const stateParam = state ? `&state=${encodeURIComponent(state)}` : '';
@@ -126,13 +133,16 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
   // returns a mixed list. A state name is never a valid district/city value.
   const topSuggestions = useMemo(() => {
     const normalizedState = (state || '').trim().toLowerCase();
+    const normalizedInput = inputValue.trim().toLowerCase();
     const visible = suggestions.filter(suggestion => {
       if (preferType && suggestion.type !== preferType) return false;
       if (normalizedState && suggestion.value.trim().toLowerCase() === normalizedState) return false;
+      // Never repeat the value that is already written in the field.
+      if (normalizedInput && suggestion.value.trim().toLowerCase() === normalizedInput) return false;
       return true;
     });
     return visible.slice(0, 20);
-  }, [suggestions, preferType, state]);
+  }, [suggestions, preferType, state, inputValue]);
 
   const commitValue = (next: string) => {
     skipNextFetch.current = true;
@@ -143,6 +153,7 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
   };
 
   const handleInputChange = (next: string) => {
+    hasTyped.current = true;
     setInputValue(next);
     onChange(next);
   };
@@ -183,8 +194,10 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
           type="text"
           value={inputValue}
           onChange={(e) => handleInputChange(e.target.value)}
-          onFocus={() => {
-            if (topSuggestions.length > 0 && inputValue.trim().length >= MIN_CHARS) setOpen(true);
+          onFocus={(e) => {
+            // Select the existing district/city so typing replaces it instead
+            // of appending to it. The suggestion strip opens only on typing.
+            e.currentTarget.select();
           }}
           onKeyDown={handleKeyDown}
           onBlur={() => {
@@ -197,6 +210,11 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
           placeholder={placeholder}
           className={className}
           autoComplete={autoComplete}
+          autoCorrect="off"
+          spellCheck={false}
+          name="location-search"
+          data-lpignore="true"
+          data-1p-ignore="true"
           disabled={disabled}
           role="combobox"
           aria-expanded={open}
