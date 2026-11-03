@@ -826,7 +826,18 @@ export default function App() {
   const [clientDistrictFilter, setClientDistrictFilter] = useState('');
   const [clientCityFilter, setClientCityFilter] = useState('');
   const [clientOrderSuccessMsg, setClientOrderSuccessMsg] = useState('');
-  const [clientPortalTab, setClientPortalTab] = useState<'notifications' | 'services' | 'orders' | 'custom_form' | 'form_filling' | 'jan_seva_docs' | 'all'>('notifications');
+  const [clientPortalTab, setClientPortalTab] = useState<'home' | 'notifications' | 'services' | 'orders' | 'custom_form' | 'form_filling' | 'jan_seva_docs'>('home');
+  const clientPortalTopRef = useRef<HTMLElement | null>(null);
+
+  // Each portal section is a dedicated page: whenever the citizen opens or
+  // leaves a section, start from the top instead of leaving them mid-scroll.
+  useEffect(() => {
+    if (step !== 'client_portal' || activeRole !== 'client') return;
+    const timer = setTimeout(() => {
+      clientPortalTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [clientPortalTab, step, activeRole]);
   const [soundAlertEnabled] = useState(true);
   const [quickReplyText, setQuickReplyText] = useState<{ [orderId: string]: string }>({});
   const [orderStatusFilter, setOrderStatusFilter] = useState<OrderStatusFilterValue>('all');
@@ -1568,7 +1579,7 @@ export default function App() {
         setOrderStatusFilter('all');
         setClientPortalTab('orders');
         setTimeout(() => {
-          document.getElementById('orders-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          document.getElementById('client-portal-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 900);
       }
     } catch {}
@@ -3711,7 +3722,7 @@ export default function App() {
     setClientPortalTab('orders');
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        document.getElementById('orders-section')?.scrollIntoView({
+        document.getElementById('client-portal-top')?.scrollIntoView({
           behavior: 'smooth',
           block: 'start'
         });
@@ -3915,7 +3926,7 @@ export default function App() {
         setClientPortalTab('orders');
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            document.getElementById('orders-section')?.scrollIntoView({
+            document.getElementById('client-portal-top')?.scrollIntoView({
               behavior: 'smooth',
               block: 'start'
             });
@@ -4578,7 +4589,7 @@ export default function App() {
                 setClientPortalTab('jan_seva_docs');
                 if (soundAlertEnabled) playChime();
                 setTimeout(() => {
-                  document.getElementById('jan-seva-docs-section')?.scrollIntoView({ behavior: 'smooth' });
+                  document.getElementById('client-portal-top')?.scrollIntoView({ behavior: 'smooth' });
                 }, 80);
               }}
               className="relative p-[1.5px] rounded-2xl bg-gradient-to-b from-amber-300/50 via-amber-500/20 to-black/80 shadow-[0_16px_32px_-8px_rgba(0,0,0,0.9),0_4px_12px_rgba(245,158,11,0.2)] hover:shadow-[0_22px_40px_-6px_rgba(245,158,11,0.35),0_8px_16px_rgba(0,0,0,0.8)] transition-all duration-300 group hover:-translate-y-1.5 border-b-[3px] border-b-amber-950/80 cursor-pointer"
@@ -6176,22 +6187,42 @@ export default function App() {
       {/* 3. CITIZEN PORTAL (With Live Orders, Direct Apply with Rajesh, Chat & Call) */}
       {/* ========================================================================= */}
       {step === 'client_portal' && activeRole === 'client' && (
-        <main className="flex-1 w-full min-w-0 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 box-border">
+        <main
+          ref={clientPortalTopRef}
+          id="client-portal-top"
+          className="flex-1 w-full min-w-0 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 box-border scroll-mt-20"
+        >
           
           {/* Top Quick Navigation & Back Bar */}
-          <div className="flex items-center">
+          <div className="flex items-center justify-between gap-3">
             <button
               onClick={() => {
-                setStep('landing');
-                setActiveRole('none');
+                if (clientPortalTab === 'home') {
+                  setStep('landing');
+                  setActiveRole('none');
+                } else {
+                  setClientPortalTab('home');
+                }
               }}
               className="px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-blue-300 hover:text-white border border-slate-800 hover:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4 text-blue-400" />
-              <span>Back to Home</span>
+              <span>{clientPortalTab === 'home' ? 'Back to Home' : 'Back to Dashboard'}</span>
             </button>
+            {clientPortalTab !== 'home' && (
+              <span className="truncate text-xs sm:text-sm font-black text-slate-200">
+                {(clientPortalTab as string) === 'notifications' ? '💬 Live Chats & Notifications'
+                  : (clientPortalTab as string) === 'services' ? '🏛️ All Jan Seva Kendra Services'
+                  : (clientPortalTab as string) === 'orders' ? '⚡ Active Ongoing Orders'
+                  : (clientPortalTab as string) === 'form_filling' ? '📝 Online Form Filling'
+                  : (clientPortalTab as string) === 'jan_seva_docs' ? '🪪 Jan Seva Kendra Documents'
+                  : clientPortalTab === 'custom_form' ? '✍️ Custom Form' : ''}
+              </span>
+            )}
           </div>
           
+          {clientPortalTab === 'home' && (
+            <>
           {/* ========================================================================= */}
           {/* CLIENT HOME BRAND HEADER: 3D LOGO, WEBSITE NAME & 4-BOX "HOW IT WORKS"   */}
           {/* ========================================================================= */}
@@ -6432,6 +6463,8 @@ export default function App() {
               </div>
             </div>
           </div>
+            </>
+          )}
 
           {clientOrderSuccessMsg && (
             <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex items-center justify-between gap-3 text-blue-300 text-sm animate-in fade-in">
@@ -6445,8 +6478,8 @@ export default function App() {
             </div>
           )}
 
-
-
+          {clientPortalTab === 'home' && (
+            <>
           {/* ========================================================================= */}
           {/* 🎛️ TWO MAIN HERO OPTIONS RIGHT BELOW "HOW IT WORKS"                       */}
           {/* Option 1: Live Chats & Notifications | Option 2: All Jan Seva Services    */}
@@ -6470,7 +6503,7 @@ export default function App() {
                   if (soundAlertEnabled) playChime();
                 }}
                 className={`p-6 rounded-3xl border cursor-pointer transition-all duration-300 relative overflow-hidden group shadow-xl ${
-                  clientPortalTab === 'notifications'
+                  (clientPortalTab as string) === 'notifications'
                     ? 'bg-gradient-to-br from-emerald-500/20 via-slate-900 to-slate-900 border-emerald-500 shadow-emerald-500/10 scale-[1.01]'
                     : 'bg-slate-900/90 hover:bg-slate-900 border-slate-800 hover:border-emerald-500/50'
                 }`}
@@ -6515,7 +6548,7 @@ export default function App() {
                   </div>
 
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    clientPortalTab === 'notifications' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'
+                    (clientPortalTab as string) === 'notifications' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'
                   }`}>
                     ✓
                   </span>
@@ -6541,12 +6574,9 @@ export default function App() {
                 onClick={() => {
                   setClientPortalTab('services');
                   if (soundAlertEnabled) playChime();
-                  setTimeout(() => {
-                    document.getElementById('services-section')?.scrollIntoView({ behavior: 'smooth' });
-                  }, 60);
                 }}
                 className={`p-6 rounded-3xl border cursor-pointer transition-all duration-300 relative overflow-hidden group shadow-xl ${
-                  clientPortalTab === 'services'
+                  (clientPortalTab as string) === 'services'
                     ? 'bg-gradient-to-br from-sky-500/20 via-slate-900 to-slate-900 border-sky-400 shadow-sky-500/10 scale-[1.01]'
                     : 'bg-slate-900/90 hover:bg-slate-900 border-slate-800 hover:border-sky-500/50'
                 }`}
@@ -6589,7 +6619,7 @@ export default function App() {
                   </div>
 
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    clientPortalTab === 'services' ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-400'
+                    (clientPortalTab as string) === 'services' ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-400'
                   }`}>
                     ✓
                   </span>
@@ -6612,12 +6642,9 @@ export default function App() {
                 onClick={() => {
                   setClientPortalTab('form_filling');
                   if (soundAlertEnabled) playChime();
-                  setTimeout(() => {
-                    document.getElementById('form-filling-section')?.scrollIntoView({ behavior: 'smooth' });
-                  }, 60);
                 }}
                 className={`p-6 rounded-3xl border cursor-pointer transition-all duration-300 relative overflow-hidden group shadow-xl ${
-                  clientPortalTab === 'form_filling'
+                  (clientPortalTab as string) === 'form_filling'
                     ? 'bg-gradient-to-br from-emerald-500/20 via-slate-900 to-slate-900 border-emerald-400 shadow-emerald-500/10 scale-[1.01]'
                     : 'bg-slate-900/90 hover:bg-slate-900 border-slate-800 hover:border-emerald-500/50'
                 }`}
@@ -6658,7 +6685,7 @@ export default function App() {
                   </div>
 
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    clientPortalTab === 'form_filling' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
+                    (clientPortalTab as string) === 'form_filling' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
                   }`}>
                     ✓
                   </span>
@@ -6690,12 +6717,9 @@ export default function App() {
                 onClick={() => {
                   setClientPortalTab('jan_seva_docs');
                   if (soundAlertEnabled) playChime();
-                  setTimeout(() => {
-                    document.getElementById('jan-seva-docs-section')?.scrollIntoView({ behavior: 'smooth' });
-                  }, 60);
                 }}
                 className={`p-6 rounded-3xl border cursor-pointer transition-all duration-300 relative overflow-hidden group shadow-xl ${
-                  clientPortalTab === 'jan_seva_docs'
+                  (clientPortalTab as string) === 'jan_seva_docs'
                     ? 'bg-gradient-to-br from-amber-500/20 via-slate-900 to-slate-900 border-amber-400 shadow-amber-500/10 scale-[1.01]'
                     : 'bg-slate-900/90 hover:bg-slate-900 border-slate-800 hover:border-amber-500/50'
                 }`}
@@ -6736,7 +6760,7 @@ export default function App() {
                   </div>
 
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    clientPortalTab === 'jan_seva_docs' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'
+                    (clientPortalTab as string) === 'jan_seva_docs' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'
                   }`}>
                     ✓
                   </span>
@@ -6774,12 +6798,9 @@ export default function App() {
               <button
                 onClick={() => {
                   setClientPortalTab('orders');
-                  setTimeout(() => {
-                    document.getElementById('orders-section')?.scrollIntoView({ behavior: 'smooth' });
-                  }, 60);
                 }}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all flex-shrink-0 ${
-                  clientPortalTab === 'orders'
+                  (clientPortalTab as string) === 'orders'
                     ? 'bg-indigo-600 text-white font-black shadow-md'
                     : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800'
                 }`}
@@ -6792,12 +6813,9 @@ export default function App() {
               <button
                 onClick={() => {
                   setClientPortalTab('form_filling');
-                  setTimeout(() => {
-                    document.getElementById('form-filling-section')?.scrollIntoView({ behavior: 'smooth' });
-                  }, 60);
                 }}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all flex-shrink-0 ${
-                  clientPortalTab === 'form_filling'
+                  (clientPortalTab as string) === 'form_filling'
                     ? 'bg-emerald-600 text-white font-black shadow-md'
                     : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800'
                 }`}
@@ -6810,12 +6828,9 @@ export default function App() {
               <button
                 onClick={() => {
                   setClientPortalTab('jan_seva_docs');
-                  setTimeout(() => {
-                    document.getElementById('jan-seva-docs-section')?.scrollIntoView({ behavior: 'smooth' });
-                  }, 60);
                 }}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all flex-shrink-0 ${
-                  clientPortalTab === 'jan_seva_docs'
+                  (clientPortalTab as string) === 'jan_seva_docs'
                     ? 'bg-amber-600 text-white font-black shadow-md'
                     : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800'
                 }`}
@@ -6828,12 +6843,9 @@ export default function App() {
               <button
                 onClick={() => {
                   setClientPortalTab('services');
-                  setTimeout(() => {
-                    document.getElementById('services-section')?.scrollIntoView({ behavior: 'smooth' });
-                  }, 60);
                 }}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all flex-shrink-0 ${
-                  clientPortalTab === 'services'
+                  (clientPortalTab as string) === 'services'
                     ? 'bg-sky-600 text-white font-black shadow-md'
                     : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800'
                 }`}
@@ -6841,26 +6853,15 @@ export default function App() {
                 <Building2 className="w-3.5 h-3.5 text-sky-400" />
                 <span>🏛️ All Services ({customPricingList.length})</span>
               </button>
-
-
-              {/* All in one view */}
-              <button
-                onClick={() => setClientPortalTab('all')}
-                className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all flex-shrink-0 ml-auto ${
-                  clientPortalTab === 'all'
-                    ? 'bg-slate-800 text-blue-300 border border-blue-500/30'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <span>All Views</span>
-              </button>
             </div>
           </div>
+            </>
+          )}
 
           {/* ========================================================================= */}
           {/* TAB 1: 🔔 LIVE CHATS & OPERATOR NOTIFICATIONS CENTER                     */}
           {/* ========================================================================= */}
-          {(clientPortalTab === 'notifications' || clientPortalTab === 'all') && (
+          {(clientPortalTab as string) === 'notifications' && (
             <div id="notifications-section" className="bg-gradient-to-br from-emerald-500/10 via-slate-900 to-slate-950 rounded-3xl border border-blue-500/30 p-4 sm:p-6 md:p-8 shadow-2xl space-y-6 max-w-full overflow-hidden box-border">
               {/* Header Bar */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-800">
@@ -7097,7 +7098,7 @@ export default function App() {
           {/* ========================================================================= */}
           {/* TAB 2: 🏛️ ALL JAN SEVA KENDRA SERVICES (CLEAN, FILTERED & UN-MIXED)       */}
           {/* ========================================================================= */}
-          {(clientPortalTab === 'services' || clientPortalTab === 'all') && (
+          {(clientPortalTab as string) === 'services' && (
             <div id="services-section" className="bg-slate-900/95 backdrop-blur-md rounded-3xl border border-slate-800 p-6 sm:p-8 shadow-2xl space-y-6">
               {/* Header */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-800">
@@ -7279,7 +7280,7 @@ export default function App() {
           {/* ========================================================================= */}
           {/* TAB 3: ⚡ ACTIVE ONGOING ORDERS                                           */}
           {/* ========================================================================= */}
-          {(clientPortalTab === 'orders' || clientPortalTab === 'all') && (
+          {(clientPortalTab as string) === 'orders' && (
             <div id="orders-section" className="bg-gradient-to-r from-emerald-500/10 via-slate-900 to-slate-900 rounded-3xl border border-blue-500/30 p-6 sm:p-8 shadow-xl space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                 <h3 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-2">
@@ -7479,7 +7480,7 @@ export default function App() {
           {/* ========================================================================= */}
           {/* TAB 5: 📝 ONLINE FORM FILLING (NEET, JEE, SARKARI EXAM & ADMISSION)       */}
           {/* ========================================================================= */}
-          {(clientPortalTab === 'form_filling' || clientPortalTab === 'all') && (
+          {(clientPortalTab as string) === 'form_filling' && (
             <div id="form-filling-section" className="bg-gradient-to-br from-emerald-500/10 via-slate-900 to-slate-950 rounded-3xl border border-emerald-500/30 p-6 sm:p-8 shadow-2xl space-y-6">
               {/* Header */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-800">
@@ -8014,7 +8015,7 @@ export default function App() {
           {/* ========================================================================= */}
           {/* TAB 6: 🪪 JAN SEVA KENDRA DOCUMENTS (PAN CARD, CERTIFICATES & GOVT SCHEMES) */}
           {/* ========================================================================= */}
-          {(clientPortalTab === 'jan_seva_docs' || clientPortalTab === 'all') && (
+          {(clientPortalTab as string) === 'jan_seva_docs' && (
             <div id="jan-seva-docs-section" className="bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-950 rounded-3xl border border-amber-500/30 p-6 sm:p-8 shadow-2xl space-y-6">
               {/* Header */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-800">
