@@ -1495,7 +1495,20 @@ export default function App() {
   const [vleExclusiveOrders, setVleExclusiveOrders] = useState<any[]>([]);
   const [vleNotificationMsg, setVleNotificationMsg] = useState('');
   const [vleDashboardTab, setVleDashboardTab] = useState<'open_market' | 'active_bids_chats' | 'pricing' | 'form_pricing' | 'payments'>('open_market');
+  const vleDashboardTopRef = useRef<HTMLElement | null>(null);
   const [fillerDashboardTab, setFillerDashboardTab] = useState<'services' | 'payments'>('services');
+  const fillerDashboardTopRef = useRef<HTMLElement | null>(null);
+
+  // Operator and Form Filler dashboards are section pages as well: every tab
+  // change starts from the top instead of leaving the user mid-scroll.
+  useEffect(() => {
+    if (step !== 'vle_home' && step !== 'form_filler_app') return;
+    const timer = setTimeout(() => {
+      vleDashboardTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      fillerDashboardTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [vleDashboardTab, fillerDashboardTab, step]);
 
   // --- LIVE TRANSPARENCY & TRUST STATS DASHBOARD STATE ---
   const [platformStats, setPlatformStats] = useState({
@@ -9075,23 +9088,41 @@ export default function App() {
       {/* 5. JAN SEVA KENDRA DASHBOARD (Live Bids, Auto-Open Talking Panel on Accept) */}
       {/* ========================================================================= */}
       {step === 'vle_home' && isVleLoggedIn && (
-        <main className="flex-1 w-full min-w-0 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 box-border">
+        <main
+          ref={vleDashboardTopRef}
+          id="vle-dashboard-top"
+          className="flex-1 w-full min-w-0 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 box-border scroll-mt-20"
+        >
           
           {/* Top Quick Navigation & Back Bar */}
-          <div className="flex items-center justify-between gap-2">
-            <button
-              onClick={() => {
-                setStep('landing');
-                setActiveRole('none');
-              }}
-              className="px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-blue-300 hover:text-white border border-slate-800 hover:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4 text-blue-400" />
-              <span>Back to Home</span>
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <button
+                onClick={() => {
+                  if (vleDashboardTab === 'open_market') {
+                    setStep('landing');
+                    setActiveRole('none');
+                  } else {
+                    setVleDashboardTab('open_market');
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-blue-300 hover:text-white border border-slate-800 hover:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer flex-shrink-0"
+              >
+                <ArrowLeft className="w-4 h-4 text-blue-400" />
+                <span>{vleDashboardTab === 'open_market' ? 'Back to Home' : 'Back to Dashboard'}</span>
+              </button>
+              {vleDashboardTab !== 'open_market' && (
+                <span className="truncate text-xs sm:text-sm font-black text-slate-200">
+                  {vleDashboardTab === 'active_bids_chats' ? '💬 My Active Chats'
+                    : vleDashboardTab === 'pricing' ? '💲 Document Pricing'
+                    : vleDashboardTab === 'form_pricing' ? '📝 Form Filling Price'
+                    : vleDashboardTab === 'payments' ? '💳 Payments & Payouts' : ''}
+                </span>
+              )}
+            </div>
             <button
               onClick={() => setIsKendraDetailsModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-sky-300 hover:text-white border border-slate-800 hover:border-sky-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-sky-300 hover:text-white border border-slate-800 hover:border-sky-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer flex-shrink-0"
             >
               <Building2 className="w-4 h-4 text-sky-400" />
               <span>Profile &amp; Location</span>
@@ -10028,23 +10059,35 @@ export default function App() {
       )}
 
       {step === 'form_filler_app' && isFormFillerLoggedIn && (
-        <main className="flex-1 w-full min-w-0 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6 box-border">
-          {/* Top Header Bar with Back to Home (Cleanly positioned at top) */}
+        <main
+          ref={fillerDashboardTopRef}
+          id="filler-dashboard-top"
+          className="flex-1 w-full min-w-0 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6 box-border scroll-mt-20"
+        >
+          {/* Top Header Bar with Back to Home / Dashboard (Cleanly positioned at top) */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => {
-                  setStep('landing');
-                  setActiveRole('none');
+                  if (fillerDashboardTab === 'services') {
+                    setStep('landing');
+                    setActiveRole('none');
+                  } else {
+                    setFillerDashboardTab('services');
+                  }
                 }}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-blue-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-blue-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer flex-shrink-0"
               >
                 <ArrowLeft className="w-4 h-4 text-blue-400" />
-                <span>Back to Home</span>
+                <span>{fillerDashboardTab === 'services' ? 'Back to Home' : 'Back to Dashboard'}</span>
               </button>
-              <h2 className="text-xl sm:text-2xl font-black text-white">
-                Form Filler Dashboard: <span className="text-emerald-400">{fillerName || 'Expert'}</span> ✍️
+              <h2 className="min-w-0 truncate text-xl sm:text-2xl font-black text-white">
+                {fillerDashboardTab === 'services' ? (
+                  <>Form Filler Dashboard: <span className="text-emerald-400">{fillerName || 'Expert'}</span> ✍️</>
+                ) : (
+                  <>💳 Payments &amp; Payouts</>
+                )}
               </h2>
             </div>
           </div>
