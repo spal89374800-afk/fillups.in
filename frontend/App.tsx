@@ -3566,7 +3566,7 @@ export default function App() {
     const upi = govtUpiInput.trim();
     const fee = govtFeeInput.trim();
     if (!upi && !govtQrImageInput && !fee) {
-      setWorkspaceStatusMsg({ text: 'Enter the government fee, UPI ID or upload the QR image.', type: 'error' });
+      setWorkspaceStatusMsg({ text: t('Enter the government fee, UPI ID or upload the QR image.', 'सरकारी शुल्क, UPI आईडी दर्ज करें या QR इमेज अपलोड करें।'), type: 'error' });
       return;
     }
     setIsSavingGovtDetails(true);
@@ -3745,7 +3745,7 @@ export default function App() {
     const appNumber = editAppNo.trim();
     const pass = editPassword.trim();
     if (!appNumber || !pass) {
-      setWorkspaceStatusMsg({ text: 'Enter Application No and Password (max 80 chars each).', type: 'error' });
+      setWorkspaceStatusMsg({ text: t('Enter Application No and Password (max 80 chars each).', 'आवेदन संख्या और पासवर्ड दर्ज करें (अधिकतम 80 अक्षर)।'), type: 'error' });
       return;
     }
     if (appNumber.length > 80 || pass.length > 80) {
@@ -6767,7 +6767,7 @@ export default function App() {
 
                 <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs font-bold relative z-10">
                   <span className="text-emerald-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                    <span>Fill Exam Form Now (Enter Name &amp; Description)</span>
+                    <span>{t('Fill Exam Form Now (Enter Name & Description)', 'अभी परीक्षा फॉर्म भरें (नाम और विवरण दर्ज करें)')}</span>
                     <ChevronRight className="w-4 h-4" />
                   </span>
                 </div>
@@ -8724,7 +8724,7 @@ export default function App() {
                   }
                 }} className="space-y-4 relative z-10">
                   <div className="flex items-center justify-between pb-1">
-                    <span className="text-[11px] text-slate-400 font-semibold">Enter the 4-digit code sent to your Gmail:</span>
+                    <span className="text-[11px] text-slate-400 font-semibold">{t('Enter the 4-digit code sent to your Gmail:', 'Gmail पर भेजा गया 4 अंकों का कोड दर्ज करें:')}</span>
                   </div>
 
                   <div className="space-y-1">
@@ -8754,7 +8754,7 @@ export default function App() {
                     disabled={isVleAuthBusy || vleMobileOtpCode.length !== 4}
                     className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-purple-600 text-white font-black text-sm hover:shadow-xl transition-all"
                   >
-                    {isVleAuthBusy ? 'Verifying…' : 'Verify & Enter CSC Dashboard'}
+                    {isVleAuthBusy ? t('Verifying…', 'सत्यापित हो रहा है…') : t('Verify & Enter CSC Dashboard', 'सत्यापित करें और CSC डैशबोर्ड खोलें')}
                   </button>
 
                   <button
@@ -8916,7 +8916,7 @@ export default function App() {
                       value={vleState}
                       onChange={setVleState}
                       options={INDIAN_STATES}
-                      emptyLabel="Select State / UT"
+                      emptyLabel={t('Select State / UT', 'राज्य / केंद्र शासित प्रदेश चुनें')}
                       ariaLabel="State / UT"
                       className="w-full px-3.5 pr-9 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -9098,7 +9098,7 @@ export default function App() {
                   setVerifyingGovt(false);
                 }
               }} className="space-y-4">
-                <p className="text-sm text-slate-300">Enter the 4-digit code sent to {vleEmail}.</p>
+                <p className="text-sm text-slate-300">{t('Enter the 4-digit code sent to', 'भेजा गया 4 अंकों का कोड दर्ज करें')} {vleEmail}.</p>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -9997,7 +9997,7 @@ export default function App() {
                           value={fillerState}
                           onChange={setFillerState}
                           options={INDIAN_STATES}
-                          emptyLabel="Select State / UT"
+                          emptyLabel={t('Select State / UT', 'राज्य / केंद्र शासित प्रदेश चुनें')}
                           ariaLabel="State / UT"
                           className="w-full h-full px-3.5 pr-9 sm:px-4 bg-transparent text-white text-sm focus:outline-none min-w-0"
                         />
@@ -10168,7 +10168,7 @@ export default function App() {
                   }
                 }} className="space-y-4 relative z-10">
                   <div className="flex items-center justify-between pb-1">
-                    <span className="text-[11px] text-slate-400 font-semibold">Enter the 4-digit code sent to your Gmail:</span>
+                    <span className="text-[11px] text-slate-400 font-semibold">{t('Enter the 4-digit code sent to your Gmail:', 'Gmail पर भेजा गया 4 अंकों का कोड दर्ज करें:')}</span>
                   </div>
 
                   <div className="space-y-1">
@@ -12397,7 +12397,7 @@ export default function App() {
                     if (sameAsStateValue(kendraEditCity, val)) setKendraEditCity('');
                   }}
                   options={INDIAN_STATES}
-                  emptyLabel="Select State / UT"
+                  emptyLabel={t('Select State / UT', 'राज्य / केंद्र शासित प्रदेश चुनें')}
                   ariaLabel="State / UT"
                   className="w-full px-3.5 pr-9 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-sky-500 outline-none"
                 />

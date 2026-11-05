@@ -554,6 +554,14 @@ const hindiTranslations: Record<string, string> = {
   'Success': 'सफल',
   'Try Again': 'दोबारा प्रयास करें',
   'UPI & Payments': 'UPI और भुगतान',
+  'Select State / UT': 'राज्य / केंद्र शासित प्रदेश चुनें',
+  'Fill Exam Form Now (Enter Name & Description)': 'अभी परीक्षा फॉर्म भरें (नाम और विवरण दर्ज करें)',
+  'Enter the 4-digit code sent to': 'भेजा गया 4 अंकों का कोड दर्ज करें',
+  'Verify & Enter CSC Dashboard': 'सत्यापित करें और CSC डैशबोर्ड खोलें',
+  'Enter the government fee, UPI ID or upload the QR image.': 'सरकारी शुल्क, UPI आईडी दर्ज करें या QR इमेज अपलोड करें।',
+  'Enter Application No and Password (max 80 chars each).': 'आवेदन संख्या और पासवर्ड दर्ज करें (अधिकतम 80 अक्षर)।',
+  'Verifying…': 'सत्यापित हो रहा है…',
+  'Sending…': 'भेजा जा रहा है…',
 };
 
 const translationCache = new Map<string, string>();
