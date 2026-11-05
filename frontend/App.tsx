@@ -9398,7 +9398,7 @@ export default function App() {
                       value={newDocState}
                       onChange={setNewDocState}
                       options={INDIAN_STATES}
-                      emptyLabel="All India (visible everywhere)"
+                      emptyLabel={t('All India (visible everywhere)', 'पूरे भारत (हर जगह दिखेगा)')}
                       ariaLabel="Service State / UT"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 pr-9 py-2 text-xs text-white"
                     />
@@ -9501,7 +9501,7 @@ export default function App() {
                             value={item.state || ''}
                             onChange={(nextState) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, state: nextState } : p))}
                             options={INDIAN_STATES}
-                            emptyLabel="All India"
+                            emptyLabel={t('All India', 'पूरे भारत')}
                             ariaLabel="Service State / UT"
                             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 pr-8 py-1.5 text-[11px] text-white"
                           />
@@ -9559,7 +9559,7 @@ export default function App() {
                       value={newVleFormState}
                       onChange={setNewVleFormState}
                       options={INDIAN_STATES}
-                      emptyLabel="All India (visible everywhere)"
+                      emptyLabel={t('All India (visible everywhere)', 'पूरे भारत (हर जगह दिखेगा)')}
                       ariaLabel="Service State / UT"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 pr-9 py-2 text-xs text-white outline-none"
                     />
