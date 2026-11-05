@@ -3179,6 +3179,48 @@ export default function App() {
     return localJanSevas.slice(0, 30);
   }, [matchedVles]);
 
+  // Home page ke "Login" buttons: agar user ek baar login kar chuka hai to
+  // seedha uske saved dashboard par bhejo. Login page sirf tab khule jab
+  // koi saved session na ho (ya user ne khud Logout kiya ho).
+  const openPortalOrLogin = (requestedRole: 'client' | 'vle' | 'form_filler') => {
+    const session = readStoredSession();
+    if (session) {
+      setActiveRole(session.role);
+      setPendingRole(null);
+      setStep(
+        session.role === 'client'
+          ? 'client_portal'
+          : session.role === 'vle'
+            ? 'vle_home'
+            : 'form_filler_app'
+      );
+      return;
+    }
+    setStep(
+      requestedRole === 'client'
+        ? 'client_login'
+        : requestedRole === 'vle'
+          ? 'vle_login'
+          : 'form_filler_login'
+    );
+  };
+
+  // Agar kisi bhi wajah se login screen khul jaye lekin saved session maujood
+  // ho, to login form dobara mat dikhao — dashboard par redirect kar do.
+  useEffect(() => {
+    if (step !== 'client_login' && step !== 'vle_login' && step !== 'form_filler_login') return;
+    const session = readStoredSession();
+    if (!session) return;
+    setActiveRole(session.role);
+    setStep(
+      session.role === 'client'
+        ? 'client_portal'
+        : session.role === 'vle'
+          ? 'vle_home'
+          : 'form_filler_app'
+    );
+  }, [step]);
+
   // Global Logout Handler
   const handleLogout = () => {
     clearStoredSession();
@@ -5096,7 +5138,7 @@ export default function App() {
                 {/* Interactive State-Of-The-Art Action Button */}
                 <div className="pt-2 relative z-10">
                   <button
-                    onClick={() => setStep('client_login')}
+                    onClick={() => openPortalOrLogin('client')}
                     className="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-cyan-500/25 flex items-center justify-center gap-2.5 transition-all duration-300 active:scale-[0.98] group/btn cursor-pointer"
                   >
                     <span>{t('Enter Citizen Portal', 'नागरिक पोर्टल में प्रवेश करें')}</span>
@@ -5411,7 +5453,7 @@ export default function App() {
                 {/* Interactive State-Of-The-Art Action Button */}
                 <div className="pt-2 relative z-10">
                   <button
-                    onClick={() => setStep('vle_login')}
+                    onClick={() => openPortalOrLogin('vle')}
                     className="w-full py-4 rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-500 hover:via-purple-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-purple-500/25 flex items-center justify-center gap-2.5 transition-all duration-300 active:scale-[0.98] group/btn cursor-pointer"
                   >
                     <Lock className="w-4 h-4 text-purple-200" />
@@ -5729,7 +5771,7 @@ export default function App() {
                 {/* Interactive State-Of-The-Art Action Button */}
                 <div className="pt-2 relative z-10">
                   <button
-                    onClick={() => setStep('form_filler_login')}
+                    onClick={() => openPortalOrLogin('form_filler')}
                     className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-700 hover:from-emerald-500 hover:via-teal-500 hover:to-cyan-600 text-white font-black text-sm shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2.5 transition-all duration-300 active:scale-[0.98] group/btn cursor-pointer"
                   >
                     <FileText className="w-4 h-4 text-emerald-200" />
