@@ -13,6 +13,7 @@ import TermsJanSeva from './components/legal/TermsJanSeva';
 import TermsFormFiller from './components/legal/TermsFormFiller';
 import PrivacyPolicy from './components/legal/PrivacyPolicy';
 import { LocalizedTree } from './localization';
+import { applyDocumentLanguage, readStoredLanguage, storeLanguage } from './language';
 import { realtimeSocket } from './realtime';
 import { createBlinkLivenessEngine } from './services/blinkLiveness';
 import { getCaptchaToken } from './services/turnstile';
@@ -447,26 +448,18 @@ export default function App() {
 
   // Navigation & Active Role State: 'none' | 'client' | 'vle' | 'form_filler'
   const [activeRole, setActiveRole] = useState<'none' | 'client' | 'vle' | 'form_filler'>(() => readStoredSession()?.role ?? 'none');
-  const [lang, setLang] = useState<'EN' | 'HI'>(() => {
-    try {
-      return localStorage.getItem('app_lang') === 'HI' ? 'HI' : 'EN';
-    } catch {
-      return 'EN';
-    }
-  });
+  const [lang, setLang] = useState<'EN' | 'HI'>(() => readStoredLanguage());
 
   const toggleLang = () => {
     const next = lang === 'EN' ? 'HI' : 'EN';
     setLang(next);
-    try {
-      localStorage.setItem('app_lang', next);
-    } catch {}
+    storeLanguage(next);
   };
 
   const t = (en: string, hi: string) => (lang === 'HI' ? hi : en);
 
   useEffect(() => {
-    document.documentElement.lang = lang === 'HI' ? 'hi' : 'en';
+    applyDocumentLanguage(lang);
     document.title = lang === 'HI'
       ? 'डिजीसेवा प्रो - ऑनलाइन जन सेवा एवं साइबर कैफ़े पोर्टल'
       : 'DigiSeva Pro - Online Jan Seva & Cyber Cafe Portal';

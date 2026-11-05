@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Loader2, Search } from 'lucide-react';
 import { fetchPublicServices, PublicService } from '../services/publicCatalogApi';
+import { applyUrlLanguage, fromUrlLanguage, storeLanguage } from '../language';
 
 type Lang = 'en' | 'hi';
 
@@ -25,7 +26,7 @@ export function PublicServicesIndexPage({ lang, initialServices }: PublicService
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    document.documentElement.lang = lang;
+    applyUrlLanguage(lang);
     document.title = lang === 'hi'
       ? 'सभी ऑनलाइन सरकारी सेवाएं और दस्तावेज़ | Fillups.in'
       : 'All Online Government Services & Documents | Fillups.in';
@@ -65,9 +66,7 @@ export function PublicServicesIndexPage({ lang, initialServices }: PublicService
 
   const switchLanguage = () => {
     const next = lang === 'hi' ? 'en' : 'hi';
-    try {
-      localStorage.setItem('app_lang', next === 'hi' ? 'HI' : 'EN');
-    } catch {}
+    storeLanguage(fromUrlLanguage(next));
     window.location.href = next === 'hi' ? '/hi/services' : '/services';
   };
 

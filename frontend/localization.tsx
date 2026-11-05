@@ -1,7 +1,10 @@
 import { cloneElement, isValidElement, type ReactNode } from 'react';
 import { phase2HindiTranslations } from './localizationPhase2';
+import { phase3HindiTranslations } from './localizationPhase3';
+import { hindiTemplateTranslations } from './localizationTemplates';
+import type { AppLanguage } from './language';
 
-export type AppLanguage = 'EN' | 'HI';
+export type { AppLanguage } from './language';
 
 const hindiTranslations: Record<string, string> = {
   "India's Premier Digital Citizen Services Platform": 'भारत का प्रमुख डिजिटल नागरिक सेवा मंच',
@@ -571,6 +574,38 @@ for (const [key, value] of Object.entries(phase2HindiTranslations)) {
   if (!(key in hindiTranslations)) hindiTranslations[key] = value;
 }
 
+// Phase 3 covers backend/API error and status messages.
+for (const [key, value] of Object.entries(phase3HindiTranslations)) {
+  if (!(key in hindiTranslations)) hindiTranslations[key] = value;
+}
+
+type CompiledTemplate = {
+  regex: RegExp;
+  toHindi: (values: string[]) => string;
+};
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const compileTemplate = (template: string, translation: string): CompiledTemplate => {
+  const parts = template.split(/\{(\d+)\}/g);
+  let pattern = '^';
+  for (let index = 0; index < parts.length; index += 1) {
+    if (index % 2 === 0) pattern += escapeRegExp(parts[index]);
+    else pattern += '([\\s\\S]+?)';
+  }
+  pattern += '$';
+  return {
+    regex: new RegExp(pattern),
+    toHindi: values => translation.replace(/\{(\d+)\}/g, (_match, index) => values[Number(index)] ?? ''),
+  };
+};
+
+const templateTranslations = Object.entries(hindiTemplateTranslations)
+  // Match the most specific template first (e.g. a full routing note before
+  // the generic `✅ Order dispatched! {0}` prefix).
+  .sort(([left], [right]) => right.length - left.length)
+  .map(([template, translation]) => compileTemplate(template, translation));
+
 const translationCache = new Map<string, string>();
 
 type DevElementStore = { _store?: { validated?: number } };
@@ -590,8 +625,19 @@ export function translateText(text: string, language: AppLanguage): string {
   const match = text.match(/^(\s*)([\s\S]*?)(\s*)$/);
   if (match) {
     const [, leading, content, trailing] = match;
-    const translated = hindiTranslations[content.replace(/\s+/g, ' ')];
-    if (translated) result = `${leading}${translated}${trailing}`;
+    const normalized = content.replace(/\s+/g, ' ');
+    const translated = hindiTranslations[normalized];
+    if (translated) {
+      result = `${leading}${translated}${trailing}`;
+    } else {
+      for (const template of templateTranslations) {
+        const templateMatch = normalized.match(template.regex);
+        if (templateMatch) {
+          result = `${leading}${template.toHindi(templateMatch.slice(1))}${trailing}`;
+          break;
+        }
+      }
+    }
   }
   translationCache.set(text, result);
   return result;

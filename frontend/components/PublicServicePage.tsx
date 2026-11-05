@@ -11,6 +11,7 @@ import {
   Users
 } from 'lucide-react';
 import { fetchPublicService, PublicService } from '../services/publicCatalogApi';
+import { applyUrlLanguage, fromUrlLanguage, storeLanguage } from '../language';
 
 type Lang = 'en' | 'hi';
 
@@ -37,7 +38,7 @@ export function PublicServicePage({ slug, lang, initialService }: PublicServiceP
   const t = (en: string, hi: string) => (lang === 'hi' ? hi : en);
 
   useEffect(() => {
-    document.documentElement.lang = lang;
+    applyUrlLanguage(lang);
     document.title = service
       ? `${service.name} ${lang === 'hi' ? 'ऑनलाइन आवेदन' : 'Apply Online'} | Fillups.in`
       : 'Fillups.in';
@@ -71,17 +72,13 @@ export function PublicServicePage({ slug, lang, initialService }: PublicServiceP
   }, [service]);
 
   const handleApply = () => {
-    try {
-      localStorage.setItem('app_lang', lang === 'hi' ? 'HI' : 'EN');
-    } catch {}
+    storeLanguage(fromUrlLanguage(lang));
     window.location.href = applyUrl;
   };
 
   const switchLanguage = () => {
     const next = lang === 'hi' ? 'en' : 'hi';
-    try {
-      localStorage.setItem('app_lang', next === 'hi' ? 'HI' : 'EN');
-    } catch {}
+    storeLanguage(fromUrlLanguage(next));
     window.location.href = next === 'hi'
       ? `/hi/services/${encodeURIComponent(slug)}`
       : `/services/${encodeURIComponent(slug)}`;
