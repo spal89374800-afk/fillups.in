@@ -1,4 +1,5 @@
 import { cloneElement, isValidElement, type ReactNode } from 'react';
+import { phase2HindiTranslations } from './localizationPhase2';
 
 export type AppLanguage = 'EN' | 'HI';
 
@@ -563,6 +564,12 @@ const hindiTranslations: Record<string, string> = {
   'Verifying…': 'सत्यापित हो रहा है…',
   'Sending…': 'भेजा जा रहा है…',
 };
+
+// Phase 2 adds legal pages, the admin console and remaining dashboard strings.
+// Do not override an existing Phase 1 translation.
+for (const [key, value] of Object.entries(phase2HindiTranslations)) {
+  if (!(key in hindiTranslations)) hindiTranslations[key] = value;
+}
 
 const translationCache = new Map<string, string>();
 

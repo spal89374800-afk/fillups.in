@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ShieldAlert, ShieldCheck, Ban, RefreshCw, Globe2, Server, Activity, Lock, Unlock, CreditCard, Save, Trash2, BookOpen, CheckCircle, XCircle, Building2 } from 'lucide-react';
 import { fetchWithRetry, parseJsonResponse } from '../services/apiClient';
+import { LocalizedTree, type AppLanguage } from '../localization';
 
 // ========================================================
 // 🛡️ ADMIN SECURITY CONSOLE
@@ -47,6 +48,7 @@ export interface SecuritySummary {
 
 export interface AdminSecurityPanelProps {
   onBack: () => void;
+  language?: AppLanguage;
 }
 
 interface AdminUpiSettings {
@@ -62,7 +64,7 @@ const getStoredToken = () => {
   return sessionStorage.getItem(TOKEN_STORAGE_KEY) || localStorage.getItem(TOKEN_STORAGE_KEY) || '';
 };
 
-export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }) => {
+export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, language = 'EN' }) => {
   const [token, setToken] = useState<string>(() => getStoredToken());
   const [tokenInput, setTokenInput] = useState<string>(token);
   const [summary, setSummary] = useState<SecuritySummary | null>(null);
@@ -288,6 +290,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
     : [];
 
   return (
+    <LocalizedTree language={language}>
     <div className="min-h-screen bg-[#050914] text-white px-4 py-8">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
@@ -448,9 +451,9 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-              <MiniList title="Top blocked IPs" items={summary.topBlockedIps} />
-              <MiniList title="Top attacked paths" items={summary.topPaths} />
-              <MiniList title="Traffic by country" items={summary.byCountry} />
+              <MiniList title="Top blocked IPs" items={summary.topBlockedIps} language={language} />
+              <MiniList title="Top attacked paths" items={summary.topPaths} language={language} />
+              <MiniList title="Traffic by country" items={summary.byCountry} language={language} />
             </div>
 
             {summary.blockedIpList.length > 0 && (
@@ -638,10 +641,12 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack }
         </div>
       </div>
     </div>
+    </LocalizedTree>
   );
 };
 
-const MiniList: React.FC<{ title: string; items: { key: string; count: number }[] }> = ({ title, items }) => (
+const MiniList: React.FC<{ title: string; items: { key: string; count: number }[]; language?: AppLanguage }> = ({ title, items, language = 'EN' }) => (
+  <LocalizedTree language={language}>
   <div className="rounded-2xl border border-white/10 bg-[#0A1020]/80 p-4">
     <p className="text-xs font-bold text-slate-300 mb-2">{title}</p>
     {items.length === 0 && <p className="text-[11px] text-slate-500">No data yet.</p>}
@@ -656,6 +661,7 @@ const MiniList: React.FC<{ title: string; items: { key: string; count: number }[
       ))}
     </ul>
   </div>
+  </LocalizedTree>
 );
 
 export default AdminSecurityPanel;

@@ -5815,7 +5815,7 @@ export default function App() {
       {/* 🛡️ ADMIN SECURITY CONSOLE (bot attack log + IP blocklist)                    */}
       {/* ========================================================================= */}
       {step === 'admin_security' && (
-        <AdminSecurityPanel onBack={() => setStep('landing')} />
+        <AdminSecurityPanel onBack={() => setStep('landing')} language={lang} />
       )}
 
       {/* ========================================================================= */}
@@ -12781,7 +12781,7 @@ export default function App() {
             else if (session?.role === 'form_filler') setStep('form_filler_app');
             else setStep('landing');
           }
-        }} />
+        }} language={lang} />
       )}
       {step === 'terms_janseva' && (
         <TermsJanSeva onBack={() => {
@@ -12796,7 +12796,7 @@ export default function App() {
             else if (session?.role === 'form_filler') setStep('form_filler_app');
             else setStep('landing');
           }
-        }} />
+        }} language={lang} />
       )}
       {step === 'terms_formfiller' && (
         <TermsFormFiller onBack={() => {
@@ -12811,7 +12811,7 @@ export default function App() {
             else if (session?.role === 'form_filler') setStep('form_filler_app');
             else setStep('landing');
           }
-        }} />
+        }} language={lang} />
       )}
       {step === 'privacy_policy' && (
         <PrivacyPolicy onBack={() => {
@@ -12826,7 +12826,7 @@ export default function App() {
             else if (session?.role === 'form_filler') setStep('form_filler_app');
             else setStep('landing');
           }
-        }} />
+        }} language={lang} />
       )}
 
       {showLegalModal && pendingRole && (

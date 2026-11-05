@@ -1,12 +1,15 @@
 import { ArrowLeft, FileText, Shield, Lock, AlertCircle } from 'lucide-react';
 import { BrandEmblem3D } from '../../App';
+import { LocalizedTree, type AppLanguage } from '../../localization';
 
 interface PrivacyPolicyProps {
   onBack: () => void;
+  language?: AppLanguage;
 }
 
-export default function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
+export default function PrivacyPolicy({ onBack, language = 'EN' }: PrivacyPolicyProps) {
   return (
+    <LocalizedTree language={language}>
     <div className="min-h-screen bg-gradient-to-br from-[#050810] via-[#0a0f1c] to-[#050810] text-white">
       <header className="sticky top-0 z-50 bg-[#07090E]/95 backdrop-blur-xl border-b border-white/[0.08]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -117,5 +120,6 @@ export default function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
         </div>
       </main>
     </div>
+    </LocalizedTree>
   );
 }
