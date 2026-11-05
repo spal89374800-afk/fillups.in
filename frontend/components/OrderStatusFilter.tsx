@@ -22,6 +22,7 @@ export const OrderStatusFilter: React.FC<OrderStatusFilterProps> = ({
   onFilterChange,
   counts
 }) => {
+  const t = (en: string, hi: string) => (language === 'HI' ? hi : en);
   const filterOptions: {
     id: OrderStatusFilterValue;
     label: string;
@@ -33,41 +34,42 @@ export const OrderStatusFilter: React.FC<OrderStatusFilterProps> = ({
   }[] = [
     {
       id: 'all',
-      label: 'All Orders',
+      label: t('All Orders', 'सभी अनुरोध'),
       count: counts.all,
       icon: Layers,
       activeClass: 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-900/30 scale-[1.02]',
       badgeClass: 'bg-blue-400/20 text-blue-200 border-blue-400/30',
-      description: 'Showing all orders'
+      description: t('Showing all orders', 'सभी अनुरोध दिखाए जा रहे हैं')
     },
     {
       id: 'pending',
-      label: 'Pending',
+      label: t('Pending', 'लंबित'),
       count: counts.pending,
       icon: Clock,
       activeClass: 'bg-gradient-to-r from-amber-600 to-yellow-600 text-white shadow-md shadow-amber-900/30 scale-[1.02]',
       badgeClass: 'bg-amber-400/20 text-amber-200 border-amber-400/30',
-      description: 'Awaiting operator acceptance'
+      description: t('Awaiting operator acceptance', 'ऑपरेटर की स्वीकृति की प्रतीक्षा')
     },
     {
       id: 'active',
-      label: 'Active',
+      label: t('Active', 'सक्रिय'),
       count: counts.active,
       icon: Zap,
       activeClass: 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-md shadow-sky-900/30 scale-[1.02]',
       badgeClass: 'bg-sky-400/20 text-sky-200 border-sky-400/30',
-      description: 'In progress, proof ready or escrow locked'
+      description: t('In progress, proof ready or escrow locked', 'प्रगति में, प्रमाण तैयार या एस्क्रो लॉक')
     },
     {
       id: 'completed',
-      label: 'Completed',
+      label: t('Completed', 'पूर्ण'),
       count: counts.completed,
       icon: CheckCircle2,
       activeClass: 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-900/30 scale-[1.02]',
       badgeClass: 'bg-emerald-400/20 text-emerald-200 border-emerald-400/30',
-      description: 'Finished & credentials delivered'
+      description: t('Finished & credentials delivered', 'पूर्ण हुआ और विवरण दिए गए')
     }
   ];
+  const currentOption = filterOptions.find((f) => f.id === currentFilter);
 
   return (
     <LocalizedTree language={language}>
@@ -76,7 +78,7 @@ export const OrderStatusFilter: React.FC<OrderStatusFilterProps> = ({
       <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
         <span className="text-[11px] font-bold text-slate-400 px-1.5 uppercase tracking-wider hidden md:flex items-center gap-1 flex-shrink-0">
           <Filter className="w-3.5 h-3.5 text-blue-400" />
-          <span>Status Filter:</span>
+          <span>{t('Status Filter:', 'स्थिति फ़िल्टर:')}</span>
         </span>
 
         {filterOptions.map((opt) => {
@@ -111,8 +113,7 @@ export const OrderStatusFilter: React.FC<OrderStatusFilterProps> = ({
       {/* Quick Status Subtitle / Indicator */}
       <div className="flex items-center justify-between sm:justify-end gap-2 text-xs text-slate-400 px-1">
         <span className="text-[11px]">
-          Filter: <b className="text-white capitalize">{currentFilter}</b> (
-          {filterOptions.find((f) => f.id === currentFilter)?.count || 0})
+          {t('Filter:', 'फ़िल्टर:')} <b className="text-white">{currentOption?.label || currentFilter}</b> ({currentOption?.count || 0})
         </span>
         {currentFilter !== 'all' && (
           <button
@@ -120,7 +121,7 @@ export const OrderStatusFilter: React.FC<OrderStatusFilterProps> = ({
             onClick={() => onFilterChange('all')}
             className="text-[11px] text-blue-400 hover:text-blue-300 underline font-medium cursor-pointer"
           >
-            Reset
+            {t('Reset', 'रीसेट')}
           </button>
         )}
       </div>

@@ -9157,15 +9157,15 @@ export default function App() {
                 className="px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-blue-300 hover:text-white border border-slate-800 hover:border-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer flex-shrink-0"
               >
                 <ArrowLeft className="w-4 h-4 text-blue-400" />
-                <span>{vleDashboardTab === 'open_market' ? 'Back to Home' : 'Back to Dashboard'}</span>
+                <span>{vleDashboardTab === 'open_market' ? t('Back to Home', 'होम पर वापस जाएँ') : t('Back to Dashboard', 'डैशबोर्ड पर वापस जाएँ')}</span>
               </button>
               {vleDashboardTab !== 'open_market' && (
                 <span className="truncate text-xs sm:text-sm font-black text-slate-200">
-                  {vleDashboardTab === 'active_bids_chats' ? '💬 My Active Chats'
-                    : vleDashboardTab === 'pricing' ? '💲 Document Pricing'
-                    : vleDashboardTab === 'form_pricing' ? '📝 Form Filling Price'
-                    : vleDashboardTab === 'all_saved' ? '📚 All Saved Forms Here'
-                    : vleDashboardTab === 'payments' ? '💳 Payments & Payouts' : ''}
+                  {vleDashboardTab === 'active_bids_chats' ? `💬 ${t('My Active Chats', 'मेरी सक्रिय चैट')}`
+                    : vleDashboardTab === 'pricing' ? `💲 ${t('Document Pricing', 'दस्तावेज़ मूल्य')}`
+                    : vleDashboardTab === 'form_pricing' ? `📝 ${t('Form Filling Price', 'फॉर्म भरने का मूल्य')}`
+                    : vleDashboardTab === 'all_saved' ? `📚 ${t('All Saved Forms Here', 'सभी सेव किए गए फॉर्म यहाँ')}`
+                    : vleDashboardTab === 'payments' ? `💳 ${t('Payments & Payouts', 'भुगतान और राशि निकासी')}` : ''}
                 </span>
               )}
             </div>
@@ -9240,12 +9240,12 @@ export default function App() {
           {/* Dashboard Tabs Navigation */}
           <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 p-1 bg-slate-950/80 border border-slate-800 rounded-2xl w-full sm:w-max shadow-inner">
             {[
-              { id: 'open_market', label: 'Open Market Bids', icon: Zap, color: 'text-blue-400 bg-blue-500/10' },
-              { id: 'active_bids_chats', label: 'My Active Chats', icon: MessageSquare, color: 'text-emerald-400 bg-emerald-500/10' },
-              { id: 'pricing', label: 'Document Pricing', icon: Edit3, color: 'text-amber-400 bg-amber-500/10' },
-              { id: 'form_pricing', label: 'Form Filling Price', icon: FileText, color: 'text-emerald-400 bg-emerald-500/10' },
-              { id: 'all_saved', label: 'All Saved Forms Here', icon: FileText, color: 'text-violet-300 bg-violet-500/10' },
-              { id: 'payments', label: 'Payments & Payouts', icon: CreditCard, color: 'text-cyan-300 bg-cyan-500/10' },
+              { id: 'open_market', label: t('Open Market Bids', 'ओपन मार्केट बोलियाँ'), icon: Zap, color: 'text-blue-400 bg-blue-500/10' },
+              { id: 'active_bids_chats', label: t('My Active Chats', 'मेरी सक्रिय चैट'), icon: MessageSquare, color: 'text-emerald-400 bg-emerald-500/10' },
+              { id: 'pricing', label: t('Document Pricing', 'दस्तावेज़ मूल्य'), icon: Edit3, color: 'text-amber-400 bg-amber-500/10' },
+              { id: 'form_pricing', label: t('Form Filling Price', 'फॉर्म भरने का मूल्य'), icon: FileText, color: 'text-emerald-400 bg-emerald-500/10' },
+              { id: 'all_saved', label: t('All Saved Forms Here', 'सभी सेव किए गए फॉर्म यहाँ'), icon: FileText, color: 'text-violet-300 bg-violet-500/10' },
+              { id: 'payments', label: t('Payments & Payouts', 'भुगतान और राशि निकासी'), icon: CreditCard, color: 'text-cyan-300 bg-cyan-500/10' },
             ].map(tab => (
               <button
                 key={tab.id}
@@ -9378,7 +9378,7 @@ export default function App() {
                     className="w-full py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-slate-700"
                   >
                     {showAllVleDocPricing ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    <span>{showAllVleDocPricing ? 'Show Less' : `Show All Saved Document Prices (${customPricingList.length})`}</span>
+                    <span>{showAllVleDocPricing ? t('Show Less', 'कम दिखाएँ') : `${t('Show All', 'सभी दिखाएँ')} (${customPricingList.length})`}</span>
                   </button>
                 )}
 
@@ -9541,7 +9541,7 @@ export default function App() {
                     className="w-full py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-slate-700"
                   >
                     {showAllVleFormPricing ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    <span>{showAllVleFormPricing ? 'Show Less' : `Show All Saved Form Prices (${vleFormFillingList.length})`}</span>
+                    <span>{showAllVleFormPricing ? t('Show Less', 'कम दिखाएँ') : `${t('Show All', 'सभी दिखाएँ')} (${vleFormFillingList.length})`}</span>
                   </button>
                 )}
 
@@ -9623,10 +9623,10 @@ export default function App() {
                 <div>
                   <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
                     <FileText className="w-5 h-5 text-violet-400" />
-                    <span>All Saved Forms Here</span>
+                    <span>{t('All Saved Forms Here', 'सभी सेव किए गए फॉर्म यहाँ')}</span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Aapke save kiye hue saare Document Prices aur Form Filling Prices ek hi jagah — lamba scroll karne ki zaroorat nahi.
+                    {t('All your saved Document Prices and Form Filling Prices in one place — no long scrolling needed.', 'आपके सेव किए हुए सभी दस्तावेज़ मूल्य और फॉर्म भरने के मूल्य एक ही जगह — लंबा स्क्रॉल करने की ज़रूरत नहीं।')}
                   </p>
                 </div>
 
@@ -9635,7 +9635,7 @@ export default function App() {
                   <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2">
                     <h4 className="text-sm font-black text-amber-300 flex items-center gap-2">
                       <span>📄</span>
-                      <span>Saved Document Prices ({customPricingList.length})</span>
+                      <span>{t('Saved Document Prices', 'सेव किए गए दस्तावेज़ मूल्य')} ({customPricingList.length})</span>
                     </h4>
                     <button
                       type="button"
@@ -9647,7 +9647,7 @@ export default function App() {
                   </div>
                   {customPricingList.length === 0 ? (
                     <p className="text-xs text-slate-500 p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                      Abhi koi document price save nahi hai. Document Pricing tab me add karein.
+                      {t('No document prices saved yet. Add them in the Document Pricing tab.', 'अभी कोई दस्तावेज़ मूल्य सेव नहीं है। Document Pricing टैब में जोड़ें।')}
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -9679,7 +9679,7 @@ export default function App() {
                   <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2">
                     <h4 className="text-sm font-black text-emerald-300 flex items-center gap-2">
                       <span>📝</span>
-                      <span>Saved Form Filling Prices ({vleFormFillingList.length})</span>
+                      <span>{t('Saved Form Filling Prices', 'सेव किए गए फॉर्म भरने के मूल्य')} ({vleFormFillingList.length})</span>
                     </h4>
                     <button
                       type="button"
@@ -9691,7 +9691,7 @@ export default function App() {
                   </div>
                   {vleFormFillingList.length === 0 ? (
                     <p className="text-xs text-slate-500 p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                      Abhi koi form filling price save nahi hai. Form Filling Price tab me add karein.
+                      {t('No form filling prices saved yet. Add them in the Form Filling Price tab.', 'अभी कोई फॉर्म भरने का मूल्य सेव नहीं है। Form Filling Price टैब में जोड़ें।')}
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -10260,15 +10260,15 @@ export default function App() {
                 className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-blue-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer flex-shrink-0"
               >
                 <ArrowLeft className="w-4 h-4 text-blue-400" />
-                <span>{fillerDashboardTab === 'services' ? 'Back to Home' : 'Back to Dashboard'}</span>
+                <span>{fillerDashboardTab === 'services' ? t('Back to Home', 'होम पर वापस जाएँ') : t('Back to Dashboard', 'डैशबोर्ड पर वापस जाएँ')}</span>
               </button>
               <h2 className="min-w-0 truncate text-xl sm:text-2xl font-black text-white">
                 {fillerDashboardTab === 'services' ? (
-                  <>Form Filler Dashboard: <span className="text-emerald-400">{fillerName || 'Expert'}</span> ✍️</>
+                  <>{t('Form Expert Dashboard:', 'फॉर्म विशेषज्ञ डैशबोर्ड:')} <span className="text-emerald-400">{fillerName || t('Expert', 'विशेषज्ञ')}</span> ✍️</>
                 ) : fillerDashboardTab === 'all_saved' ? (
-                  <>📚 All Saved Forms Here</>
+                  <>📚 {t('All Saved Forms Here', 'सभी सेव किए गए फॉर्म यहाँ')}</>
                 ) : (
-                  <>💳 Payments &amp; Payouts</>
+                  <>💳 {t('Payments & Payouts', 'भुगतान और राशि निकासी')}</>
                 )}
               </h2>
             </div>
@@ -10280,21 +10280,21 @@ export default function App() {
               onClick={() => setFillerDashboardTab('services')}
               className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${fillerDashboardTab === 'services' ? 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
             >
-              <FileText className="h-4 w-4" /> Forms &amp; Requests
+              <FileText className="h-4 w-4" /> {t('Forms & Requests', 'फॉर्म और अनुरोध')}
             </button>
             <button
               type="button"
               onClick={() => setFillerDashboardTab('all_saved')}
               className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${fillerDashboardTab === 'all_saved' ? 'bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
             >
-              <FileText className="h-4 w-4" /> All Saved Forms Here
+              <FileText className="h-4 w-4" /> {t('All Saved Forms Here', 'सभी सेव किए गए फॉर्म यहाँ')}
             </button>
             <button
               type="button"
               onClick={() => setFillerDashboardTab('payments')}
               className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${fillerDashboardTab === 'payments' ? 'bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
             >
-              <CreditCard className="h-4 w-4" /> Payments &amp; Payouts
+              <CreditCard className="h-4 w-4" /> {t('Payments & Payouts', 'भुगतान और राशि निकासी')}
             </button>
           </div>
 
@@ -10307,10 +10307,10 @@ export default function App() {
                   <div>
                     <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
                       <FileText className="w-5 h-5 text-violet-400" />
-                      <span>All Saved Forms Here</span>
+                      <span>{t('All Saved Forms Here', 'सभी सेव किए गए फॉर्म यहाँ')}</span>
                     </h3>
                     <p className="text-xs text-slate-400 mt-1">
-                      Aapke publish kiye hue saare forms ek hi jagah — edit ya delete ke liye Forms &amp; Requests tab kholein.
+                      {t('All your published forms in one place. To edit or delete, open the Forms & Requests tab.', 'आपके प्रकाशित सभी फॉर्म एक ही जगह। संपादित या हटाने के लिए Forms & Requests टैब खोलें।')}
                     </p>
                   </div>
                   <button
@@ -10323,7 +10323,7 @@ export default function App() {
                 </div>
                 {fillerServices.length === 0 ? (
                   <p className="text-xs text-slate-500 p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                    Abhi koi form publish nahi hua hai. Forms &amp; Requests tab me naya form add karein.
+                    {t('No forms published yet. Add a new form in the Forms & Requests tab.', 'अभी कोई फॉर्म प्रकाशित नहीं हुआ है। Forms & Requests टैब में नया फॉर्म जोड़ें।')}
                   </p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -10682,7 +10682,7 @@ export default function App() {
                   className="w-full mt-3 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-violet-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-slate-700"
                 >
                   {showAllFillerForms ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  <span>{showAllFillerForms ? 'Show Less' : `Show All Published Forms (${fillerServices.length})`}</span>
+                  <span>{showAllFillerForms ? t('Show Less', 'कम दिखाएँ') : `${t('Show All', 'सभी दिखाएँ')} (${fillerServices.length})`}</span>
                 </button>
               )}
             </div>
