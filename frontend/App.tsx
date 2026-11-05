@@ -1447,6 +1447,12 @@ export default function App() {
   const [isSavingPricing, setIsSavingPricing] = useState(false);
   const [pricingJustUpdated, setPricingJustUpdated] = useState(false);
 
+  // Saved pricing lists ko chhota rakhne ke liye collapse/expand state.
+  // Poori list "All Saved Forms Here" tab me dikhti hai.
+  const [showAllVleDocPricing, setShowAllVleDocPricing] = useState(false);
+  const [showAllVleFormPricing, setShowAllVleFormPricing] = useState(false);
+  const [showAllFillerForms, setShowAllFillerForms] = useState(false);
+
   // --- SEARCH STATE ---
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -1494,9 +1500,9 @@ export default function App() {
   // --- JAN SEVA KENDRA ORDERS ---
   const [vleExclusiveOrders, setVleExclusiveOrders] = useState<any[]>([]);
   const [vleNotificationMsg, setVleNotificationMsg] = useState('');
-  const [vleDashboardTab, setVleDashboardTab] = useState<'open_market' | 'active_bids_chats' | 'pricing' | 'form_pricing' | 'payments'>('open_market');
+  const [vleDashboardTab, setVleDashboardTab] = useState<'open_market' | 'active_bids_chats' | 'pricing' | 'form_pricing' | 'all_saved' | 'payments'>('open_market');
   const vleDashboardTopRef = useRef<HTMLElement | null>(null);
-  const [fillerDashboardTab, setFillerDashboardTab] = useState<'services' | 'payments'>('services');
+  const [fillerDashboardTab, setFillerDashboardTab] = useState<'services' | 'all_saved' | 'payments'>('services');
   const fillerDashboardTopRef = useRef<HTMLElement | null>(null);
 
   // Operator and Form Filler dashboards are section pages as well: every tab
@@ -9158,6 +9164,7 @@ export default function App() {
                   {vleDashboardTab === 'active_bids_chats' ? '💬 My Active Chats'
                     : vleDashboardTab === 'pricing' ? '💲 Document Pricing'
                     : vleDashboardTab === 'form_pricing' ? '📝 Form Filling Price'
+                    : vleDashboardTab === 'all_saved' ? '📚 All Saved Forms Here'
                     : vleDashboardTab === 'payments' ? '💳 Payments & Payouts' : ''}
                 </span>
               )}
@@ -9237,6 +9244,7 @@ export default function App() {
               { id: 'active_bids_chats', label: 'My Active Chats', icon: MessageSquare, color: 'text-emerald-400 bg-emerald-500/10' },
               { id: 'pricing', label: 'Document Pricing', icon: Edit3, color: 'text-amber-400 bg-amber-500/10' },
               { id: 'form_pricing', label: 'Form Filling Price', icon: FileText, color: 'text-emerald-400 bg-emerald-500/10' },
+              { id: 'all_saved', label: 'All Saved Forms Here', icon: FileText, color: 'text-violet-300 bg-violet-500/10' },
               { id: 'payments', label: 'Payments & Payouts', icon: CreditCard, color: 'text-cyan-300 bg-cyan-500/10' },
             ].map(tab => (
               <button
@@ -9311,7 +9319,7 @@ export default function App() {
                 </div>
 
                 <div className="space-y-3 max-h-[400px] overflow-y-auto overflow-x-hidden pr-1">
-                  {customPricingList.map(item => (
+                  {(showAllVleDocPricing ? customPricingList : customPricingList.slice(0, 3)).map(item => (
                     <div key={item.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3 hover:border-slate-700 transition-all shadow-inner overflow-hidden">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0 space-y-1">
@@ -9362,6 +9370,17 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+
+                {customPricingList.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllVleDocPricing(prev => !prev)}
+                    className="w-full py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-slate-700"
+                  >
+                    {showAllVleDocPricing ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    <span>{showAllVleDocPricing ? 'Show Less' : `Show All Saved Document Prices (${customPricingList.length})`}</span>
+                  </button>
+                )}
 
                 <div className="space-y-3 pt-4 border-t border-slate-800">
                   <h4 className="text-xs font-bold text-slate-300">Add New Service</h4>
@@ -9427,7 +9446,7 @@ export default function App() {
                 </div>
 
                 <div className="space-y-3 max-h-[400px] overflow-y-auto overflow-x-hidden pr-1">
-                  {vleFormFillingList.map(item => (
+                  {(showAllVleFormPricing ? vleFormFillingList : vleFormFillingList.slice(0, 3)).map(item => (
                     <div key={item.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3 hover:border-emerald-500/30 transition-all shadow-inner overflow-hidden">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0 space-y-1">
@@ -9515,6 +9534,17 @@ export default function App() {
                   ))}
                 </div>
 
+                {vleFormFillingList.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllVleFormPricing(prev => !prev)}
+                    className="w-full py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-slate-700"
+                  >
+                    {showAllVleFormPricing ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    <span>{showAllVleFormPricing ? 'Show Less' : `Show All Saved Form Prices (${vleFormFillingList.length})`}</span>
+                  </button>
+                )}
+
                 <div className="space-y-3 pt-4 border-t border-slate-800">
                   <h4 className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
                     <Plus className="w-3.5 h-3.5" />
@@ -9583,6 +9613,114 @@ export default function App() {
                 >
                   <span>Save Form Prices</span>
                 </button>
+              </div>
+            </div>
+          )}
+
+          {vleDashboardTab === 'all_saved' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="bg-slate-900 rounded-3xl border border-violet-500/30 p-6 sm:p-8 shadow-xl space-y-8 max-w-5xl mx-auto">
+                <div>
+                  <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-violet-400" />
+                    <span>All Saved Forms Here</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Aapke save kiye hue saare Document Prices aur Form Filling Prices ek hi jagah — lamba scroll karne ki zaroorat nahi.
+                  </p>
+                </div>
+
+                {/* Saved Document Pricing */}
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2">
+                    <h4 className="text-sm font-black text-amber-300 flex items-center gap-2">
+                      <span>📄</span>
+                      <span>Saved Document Prices ({customPricingList.length})</span>
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => setVleDashboardTab('pricing')}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-bold transition-all"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                  {customPricingList.length === 0 ? (
+                    <p className="text-xs text-slate-500 p-4 rounded-2xl bg-slate-950 border border-slate-800">
+                      Abhi koi document price save nahi hai. Document Pricing tab me add karein.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {customPricingList.map(item => (
+                        <div key={item.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <h5 className="text-sm font-bold text-white break-words min-w-0">{item.docName || 'Untitled Service'}</h5>
+                            <span className="shrink-0 px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-xs font-bold font-mono">
+                              ₹{Number(item.price) || 0}
+                            </span>
+                          </div>
+                          {item.feeName && <p className="text-[10px] text-slate-400 truncate">{item.feeName}</p>}
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+                            <span className="text-amber-300">Govt ₹{item.govtFee || 0}</span>
+                            <span className="text-emerald-300">CSC ₹{item.cscFee || 0}</span>
+                            <span className="text-cyan-300">{item.state || 'All India'}</span>
+                            <span className="text-violet-300">
+                              {item.scope === 'national' ? 'National' : item.scope === 'online_form' ? 'Online Form' : 'District'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* Saved Form Filling Pricing */}
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2">
+                    <h4 className="text-sm font-black text-emerald-300 flex items-center gap-2">
+                      <span>📝</span>
+                      <span>Saved Form Filling Prices ({vleFormFillingList.length})</span>
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => setVleDashboardTab('form_pricing')}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold transition-all"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                  {vleFormFillingList.length === 0 ? (
+                    <p className="text-xs text-slate-500 p-4 rounded-2xl bg-slate-950 border border-slate-800">
+                      Abhi koi form filling price save nahi hai. Form Filling Price tab me add karein.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {vleFormFillingList.map(item => (
+                        <div key={item.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <h5 className="text-sm font-bold text-white break-words min-w-0">{item.docName || 'Untitled Form'}</h5>
+                            <span className="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-xs font-bold font-mono">
+                              ₹{Number(item.price) || 0}
+                            </span>
+                          </div>
+                          {item.feeName && <p className="text-[10px] text-slate-400 truncate">{item.feeName}</p>}
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+                            <span className="text-amber-300">Govt ₹{item.govtFee || 0}</span>
+                            <span className="text-cyan-300">{item.state || 'All India'}</span>
+                            <span className="text-violet-300">
+                              {item.scope === 'national' ? 'National' : item.scope === 'district' ? 'District' : 'Online Form'}
+                            </span>
+                          </div>
+                          {item.requirements && (
+                            <p className="text-[10px] text-slate-400 line-clamp-2">
+                              <b className="text-slate-300">Docs:</b> {item.requirements}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
               </div>
             </div>
           )}
@@ -10127,6 +10265,8 @@ export default function App() {
               <h2 className="min-w-0 truncate text-xl sm:text-2xl font-black text-white">
                 {fillerDashboardTab === 'services' ? (
                   <>Form Filler Dashboard: <span className="text-emerald-400">{fillerName || 'Expert'}</span> ✍️</>
+                ) : fillerDashboardTab === 'all_saved' ? (
+                  <>📚 All Saved Forms Here</>
                 ) : (
                   <>💳 Payments &amp; Payouts</>
                 )}
@@ -10144,6 +10284,13 @@ export default function App() {
             </button>
             <button
               type="button"
+              onClick={() => setFillerDashboardTab('all_saved')}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${fillerDashboardTab === 'all_saved' ? 'bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+            >
+              <FileText className="h-4 w-4" /> All Saved Forms Here
+            </button>
+            <button
+              type="button"
               onClick={() => setFillerDashboardTab('payments')}
               className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${fillerDashboardTab === 'payments' ? 'bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
             >
@@ -10153,6 +10300,61 @@ export default function App() {
 
           {fillerDashboardTab === 'payments' ? (
             <PayoutSettingsPanel role="filler" phone={fillerPhone} email={fillerEmail} language={lang} />
+          ) : fillerDashboardTab === 'all_saved' ? (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="bg-slate-900 rounded-3xl border border-violet-500/30 p-6 sm:p-8 shadow-xl space-y-6 max-w-5xl mx-auto">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-violet-400" />
+                      <span>All Saved Forms Here</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Aapke publish kiye hue saare forms ek hi jagah — edit ya delete ke liye Forms &amp; Requests tab kholein.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFillerDashboardTab('services')}
+                    className="px-4 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all shrink-0"
+                  >
+                    + Add / Edit Forms
+                  </button>
+                </div>
+                {fillerServices.length === 0 ? (
+                  <p className="text-xs text-slate-500 p-4 rounded-2xl bg-slate-950 border border-slate-800">
+                    Abhi koi form publish nahi hua hai. Forms &amp; Requests tab me naya form add karein.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {fillerServices.map((srv) => (
+                      <div key={srv.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FormCard3DIcon icon={srv.icon} size="md" />
+                            <div className="min-w-0">
+                              <h5 className="text-xs sm:text-sm font-bold text-white line-clamp-2">{srv.docName}</h5>
+                              <span className="text-[11px] text-emerald-400 font-medium">By: {srv.expertName}</span>
+                            </div>
+                          </div>
+                          <span className="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold font-mono">
+                            ₹{Number(srv.price) + Number(srv.govtFee || 0)}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-300 line-clamp-2">
+                          <b className="text-slate-400">Required Documents:</b> {srv.requirements}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+                          <span className="text-amber-300">Govt ₹{srv.govtFee || 0}</span>
+                          <span className="text-emerald-300">Service ₹{srv.price}</span>
+                          <span className="text-cyan-300">{srv.state || 'All India'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
           <>
           {/* Form Filler Wallet & Earnings Tracker (Total Earnings and 3 cards Placed Up at Top) */}
@@ -10423,7 +10625,7 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {fillerServices.map((srv) => (
+                {(showAllFillerForms ? fillerServices : fillerServices.slice(0, 3)).map((srv) => (
                   <div key={srv.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5 relative group">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -10472,6 +10674,17 @@ export default function App() {
                   </div>
                 ))}
               </div>
+
+              {fillerServices.length > 3 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllFillerForms(prev => !prev)}
+                  className="w-full mt-3 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-violet-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-slate-700"
+                >
+                  {showAllFillerForms ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  <span>{showAllFillerForms ? 'Show Less' : `Show All Published Forms (${fillerServices.length})`}</span>
+                </button>
+              )}
             </div>
           </div>
 
