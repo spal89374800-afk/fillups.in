@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { MouseEvent } from 'react';
-import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon } from 'lucide-react';
+import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
 import { OrderStatusFilter, OrderStatusFilterValue } from './components/OrderStatusFilter';
@@ -316,6 +316,27 @@ type StoredSession = {
   token?: string;
   loggedInAt: number;
 };
+
+const WorkspaceSkeletonCard = () => (
+  <div className="animate-pulse rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3" role="status" aria-label="Loading">
+    <div className="h-3.5 w-2/5 rounded bg-slate-800" />
+    <div className="h-3 w-3/5 rounded bg-slate-800/80" />
+    <div className="h-3 w-full rounded bg-slate-800/60" />
+    <div className="h-3 w-4/5 rounded bg-slate-800/60" />
+    <div className="flex items-center justify-between pt-2">
+      <div className="h-6 w-20 rounded-lg bg-slate-800" />
+      <div className="h-8 w-24 rounded-xl bg-slate-800" />
+    </div>
+  </div>
+);
+
+const WorkspaceSkeletonList = ({ count = 2 }: { count?: number }) => (
+  <div className="space-y-3">
+    {Array.from({ length: count }).map((_, index) => (
+      <WorkspaceSkeletonCard key={index} />
+    ))}
+  </div>
+);
 
 const SESSION_STORAGE_KEY = 'digiseva_session';
 const LEGAL_ACCEPTED_KEY = 'digiseva_legal_accepted';
@@ -843,6 +864,23 @@ export default function App() {
   // Chat photo picked (drag on desktop / long-press on mobile) to become proof.
   const [draggedChatImageUrl, setDraggedChatImageUrl] = useState<string | null>(null);
   const [pendingProofChatImage, setPendingProofChatImage] = useState<string | null>(null);
+  // Visible loading states for manual refresh, chat send, and file/proof uploads.
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isUploadingDocs, setIsUploadingDocs] = useState(false);
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
+  // Action-level loading states (Priority 2 buttons).
+  const [acceptingOrderId, setAcceptingOrderId] = useState<string | null>(null);
+  const [isApprovingProof, setIsApprovingProof] = useState(false);
+  const [isDispatchingCredentials, setIsDispatchingCredentials] = useState(false);
+  const [deletingServiceId, setDeletingServiceId] = useState<string | null>(null);
+  const [directApplyVleId, setDirectApplyVleId] = useState<string | null>(null);
+  const [ratingOrderId, setRatingOrderId] = useState<string | null>(null);
+  const [quickReplySendingId, setQuickReplySendingId] = useState<string | null>(null);
+  const [quickQuestionSendingText, setQuickQuestionSendingText] = useState<string | null>(null);
+  const [attachmentActionKey, setAttachmentActionKey] = useState<string | null>(null);
+  const [isSendingVoiceNote, setIsSendingVoiceNote] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const proofLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Turn dropped/picked files into staged chat attachments.
@@ -884,7 +922,8 @@ export default function App() {
 
   // Submit a base64 image as the order's photo proof (existing endpoint).
   const submitPhotoProof = async (photoUrl: string) => {
-    if (!activeWorkspaceOrder) return;
+    if (!activeWorkspaceOrder || isUploadingProof) return;
+    setIsUploadingProof(true);
     try {
       setWorkspaceStatusMsg({ text: '📸 Setting photo proof…', type: 'info' });
       const res = await fetch(`/api/orders/${activeWorkspaceOrder.id}/upload-proof`, {
@@ -904,6 +943,8 @@ export default function App() {
     } catch (err) {
       console.warn('Error uploading proof:', err);
       setWorkspaceStatusMsg({ text: 'Network error uploading photo proof', type: 'error' });
+    } finally {
+      setIsUploadingProof(false);
     }
   };
 
@@ -998,6 +1039,9 @@ export default function App() {
     e.stopPropagation();
     setIsDraggingOverProof(false);
     setIsDraggingOverWorkspace(false);
+
+    // Ignore extra drops while a proof upload is already in progress.
+    if (isUploadingProof) return;
 
     // In-app drag: a chat image dropped straight onto the proof card.
     const fromChat = e.dataTransfer.getData('application/x-digiseva-proof') || draggedChatImageUrl;
@@ -1129,6 +1173,7 @@ export default function App() {
             ? (clientName || 'Citizen')
             : (activeRole === 'form_filler' ? (fillerName || 'Form Filler') : (vleName || 'Jan Seva Operator'));
 
+          setIsSendingVoiceNote(true);
           try {
             const data = await sendRealtimeMessage(activeWorkspaceOrder.id, {
               sender: actualSender,
@@ -1142,6 +1187,8 @@ export default function App() {
           } catch (err) {
             console.warn('Failed to send voice note:', err);
             setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'The voice message could not be sent.', type: 'error' });
+          } finally {
+            setIsSendingVoiceNote(false);
           }
         };
       };
@@ -2495,6 +2542,23 @@ export default function App() {
     }
   };
 
+  // Manual refresh (Refresh Feed / Refresh Bids) with a visible spinner.
+  // The 15-second auto-polling keeps calling fetchAllData directly and stays silent.
+  const handleManualRefresh = async () => {
+    if (isManualRefreshing) return;
+    setIsManualRefreshing(true);
+    const startedAt = Date.now();
+    try {
+      await fetchAllData();
+    } finally {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < 600) {
+        await new Promise(resolve => setTimeout(resolve, 600 - elapsed));
+      }
+      setIsManualRefreshing(false);
+    }
+  };
+
   // Pleasant Web Audio synthesizer for incoming message & notification alert
   const playChime = () => {
     try {
@@ -2531,6 +2595,8 @@ export default function App() {
   };
 
   const handleRateOrder = async (orderId: string, rating: number, review?: string) => {
+    if (ratingOrderId) return;
+    setRatingOrderId(orderId);
     try {
       const res = await fetch(`/api/orders/${orderId}/rate`, {
         method: 'POST',
@@ -2544,12 +2610,15 @@ export default function App() {
       }
     } catch (err) {
       console.warn('Rate order error:', err);
+    } finally {
+      setRatingOrderId(null);
     }
   };
 
   const handleSendQuickReply = async (order: any, textOverride?: string) => {
     const text = (textOverride || quickReplyText[order.id] || '').trim();
-    if (!text) return;
+    if (!text || quickReplySendingId) return;
+    setQuickReplySendingId(order.id);
     try {
       const result = await sendRealtimeMessage(order.id, {
         sender: 'client',
@@ -2563,14 +2632,27 @@ export default function App() {
     } catch (err) {
       console.warn('Quick reply send error:', err);
       setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'The message could not be sent.', type: 'error' });
+    } finally {
+      setQuickReplySendingId(null);
     }
   };
 
   useEffect(() => {
-    fetchAllData();
+    let cancelled = false;
+    const startedAt = Date.now();
+    void fetchAllData().finally(() => {
+      const elapsed = Date.now() - startedAt;
+      const remaining = Math.max(0, 500 - elapsed);
+      setTimeout(() => {
+        if (!cancelled) setIsInitialLoading(false);
+      }, remaining);
+    });
     // Poll less aggressively to avoid rate limiting while keeping the dashboard in sync.
     const interval = setInterval(fetchAllData, 15000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   // Normalized client active orders across both Jan Seva Kendra and Form Filler orders
@@ -3278,7 +3360,13 @@ export default function App() {
     return URL.createObjectURL(blob);
   };
 
+  const attachmentActionKeyFor = (action: 'download' | 'view', attachment: { name?: string; url?: string }) =>
+    `${action}:${attachment.url || attachment.name || ''}`;
+
   const handleDownloadAttachment = async (attachment: { name?: string; url?: string }) => {
+    if (attachmentActionKey) return;
+    const actionKey = attachmentActionKeyFor('download', attachment);
+    setAttachmentActionKey(actionKey);
     try {
       const objectUrl = await resolveAttachmentBlobUrl(attachment);
       const anchor = document.createElement('a');
@@ -3293,10 +3381,15 @@ export default function App() {
       setWorkspaceStatusMsg({ text: '✅ Download started.', type: 'success' });
     } catch (err) {
       setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'Download failed.', type: 'error' });
+    } finally {
+      setAttachmentActionKey(null);
     }
   };
 
   const handleViewAttachment = async (attachment: { name?: string; url?: string }) => {
+    if (attachmentActionKey) return;
+    const actionKey = attachmentActionKeyFor('view', attachment);
+    setAttachmentActionKey(actionKey);
     try {
       const objectUrl = await resolveAttachmentBlobUrl(attachment);
       const opened = window.open(objectUrl, '_blank', 'noopener');
@@ -3309,6 +3402,8 @@ export default function App() {
       }
     } catch (err) {
       setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'Could not open the document.', type: 'error' });
+    } finally {
+      setAttachmentActionKey(null);
     }
   };
 
@@ -3431,7 +3526,9 @@ export default function App() {
     }
     if (!chatInputText.trim() && stagedFiles.length === 0) return;
     if (!activeWorkspaceOrder) return;
+    if (isSendingMessage) return;
 
+    setIsSendingMessage(true);
     try {
       const actualSender = activeRole === 'client' ? 'client' : 'operator';
       const actualSenderName = activeRole === 'client'
@@ -3465,6 +3562,8 @@ export default function App() {
     } catch (err) {
       console.warn('Unable to send message/files:', err);
       setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'The message or attachment could not be sent.', type: 'error' });
+    } finally {
+      setIsSendingMessage(false);
     }
   };
 
@@ -3714,9 +3813,11 @@ export default function App() {
   };
 
   const handleDeleteFillerForm = async (serviceId: string) => {
+    if (deletingServiceId) return;
     if (editingFillerServiceId === serviceId) {
       cancelFillerFormEdit();
     }
+    setDeletingServiceId(serviceId);
     try {
       const res = await fetch(`/api/filler/services/${serviceId}`, { method: 'DELETE' });
       const data = await parseJsonResponse(res);
@@ -3730,6 +3831,8 @@ export default function App() {
       void fetchAllData();
     } catch {
       setFillerServices(prev => prev.filter(s => s.id !== serviceId));
+    } finally {
+      setDeletingServiceId(null);
     }
   };
 
@@ -4002,6 +4105,7 @@ export default function App() {
 
   // Dispatch direct order to specific operator (Rajesh / Anil) and instantly open communication panel
   const handleDirectApply = async (targetVle: any) => {
+    if (directApplyVleId) return;
     const targetService = searchQuery.trim() || 'Domicile / PAN Card Document';
     const applicantName = (clientName || '').trim();
     const applicantPhone = (clientPhone || '').replace(/\D/g, '').slice(-10);
@@ -4023,6 +4127,7 @@ export default function App() {
       : { govtFee: 0, serviceFee: 150 };
     const finalAmount = serviceFee || 150;
 
+    setDirectApplyVleId(targetVle.id);
     try {
       const res = await fetchWithRetry('/api/vle/orders', {
         method: 'POST',
@@ -4059,6 +4164,8 @@ export default function App() {
     } catch (err) {
       console.warn('Direct order dispatch warning:', err);
       setClientOrderSuccessMsg('Unable to submit the request right now. Please try again.');
+    } finally {
+      setDirectApplyVleId(null);
     }
   };
 
@@ -7038,10 +7145,11 @@ export default function App() {
                             />
                             <button
                               type="submit"
-                              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-black text-xs flex items-center gap-1 shadow-md transition-all active:scale-95"
+                              disabled={quickReplySendingId === notif.order.id}
+                              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-black text-xs flex items-center gap-1 shadow-md transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
                             >
-                              <Send className="w-3.5 h-3.5" />
-                              <span>Reply</span>
+                              {quickReplySendingId === notif.order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                              <span>{quickReplySendingId === notif.order.id ? 'Sending…' : 'Reply'}</span>
                             </button>
                           </form>
                         </div>
@@ -7127,18 +7235,27 @@ export default function App() {
                       ].map((item, idx) => (
                         <button
                           key={idx}
-                          onClick={() => {
+                          onClick={async () => {
                             const targetOrder = clientActiveOrders[0] || vleExclusiveOrders[0];
                             if (targetOrder) {
-                              handleSendQuickReply(targetOrder, item.text);
-                              handleOpenNotification(targetOrder);
+                              setQuickQuestionSendingText(item.text);
+                              try {
+                                await handleSendQuickReply(targetOrder, item.text);
+                                handleOpenNotification(targetOrder);
+                              } finally {
+                                setQuickQuestionSendingText(null);
+                              }
                             }
                           }}
-                          disabled={!clientActiveOrders.length && !vleExclusiveOrders.length}
-                          className="p-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-left text-xs font-semibold text-slate-200 hover:text-blue-300 transition-all flex items-center justify-between group"
+                          disabled={(!clientActiveOrders.length && !vleExclusiveOrders.length) || Boolean(quickQuestionSendingText)}
+                          className="p-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-left text-xs font-semibold text-slate-200 hover:text-blue-300 transition-all flex items-center justify-between group disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           <span className="line-clamp-2">{item.text}</span>
-                          <ArrowRight className="w-3.5 h-3.5 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-1.5" />
+                          {quickQuestionSendingText === item.text ? (
+                            <Loader2 className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 ml-1.5 animate-spin" />
+                          ) : (
+                            <ArrowRight className="w-3.5 h-3.5 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-1.5" />
+                          )}
                         </button>
                       ))}
                     </div>
@@ -7374,7 +7491,12 @@ export default function App() {
                 }}
               />
 
-              {filteredClientActiveOrders.length > 0 ? (
+              {isInitialLoading && clientActiveOrders.length === 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <WorkspaceSkeletonCard />
+                  <WorkspaceSkeletonCard />
+                </div>
+              ) : filteredClientActiveOrders.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredClientActiveOrders.map(ord => (
                     <div key={ord.id} className="bg-slate-950 rounded-2xl border border-slate-800 p-5 space-y-4 shadow-lg hover:border-blue-500/30 transition-all">
@@ -7445,16 +7567,24 @@ export default function App() {
                               </div>
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-1">
-                                  {[1, 2, 3, 4, 5].map(star => (
-                                    <button
-                                      key={star}
-                                      onClick={() => handleRateOrder(ord.id, star, star === 5 ? 'Bahut accha aur tezi se kaam kiya!' : 'Achha kaam')}
-                                      className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-amber-400 font-bold text-xs flex items-center justify-center transition-all border border-slate-700"
-                                      title={`Rate ${star} Stars`}
-                                    >
-                                      {star}★
-                                    </button>
-                                  ))}
+                                  {ratingOrderId === ord.id ? (
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-300">
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      <span>Saving rating…</span>
+                                    </span>
+                                  ) : (
+                                    [1, 2, 3, 4, 5].map(star => (
+                                      <button
+                                        key={star}
+                                        onClick={() => handleRateOrder(ord.id, star, star === 5 ? 'Bahut accha aur tezi se kaam kiya!' : 'Achha kaam')}
+                                        disabled={Boolean(ratingOrderId)}
+                                        className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-amber-400 font-bold text-xs flex items-center justify-center transition-all border border-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                                        title={`Rate ${star} Stars`}
+                                      >
+                                        {star}★
+                                      </button>
+                                    ))
+                                  )}
                                 </div>
                                 <span className="text-[10px] text-slate-400">Click to Rate</span>
                               </div>
@@ -8005,11 +8135,12 @@ export default function App() {
                           <div className="flex items-center gap-1.5">
                             <button 
                               onClick={() => handleDirectApply(vle)}
-                              className="px-2 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-black shadow-md transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                              disabled={Boolean(directApplyVleId)}
+                              className="px-2 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-black shadow-md transition-all active:scale-95 flex items-center gap-1 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                               title="Personal Chat & Call"
                             >
-                              <MessageSquare className="w-3 h-3" />
-                              <span>Chat</span>
+                              {directApplyVleId === vle.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MessageSquare className="w-3 h-3" />}
+                              <span>{directApplyVleId === vle.id ? 'Sending…' : 'Chat'}</span>
                             </button>
                             <button 
                               onClick={() => {
@@ -8021,9 +8152,17 @@ export default function App() {
                                   handleDirectApply(vle);
                                 }
                               }}
-                              className={`px-2.5 py-1.5 rounded-lg ${isFiller ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white text-[10px] font-black shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1`}
+                              disabled={!isFiller && Boolean(directApplyVleId)}
+                              className={`px-2.5 py-1.5 rounded-lg ${isFiller ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white text-[10px] font-black shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed`}
                             >
-                              <span>⚡ {isFiller ? 'Select & Fill' : 'Connect'}</span>
+                              {!isFiller && directApplyVleId === vle.id ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  <span>Sending…</span>
+                                </>
+                              ) : (
+                                <span>⚡ {isFiller ? 'Select & Fill' : 'Connect'}</span>
+                              )}
                             </button>
                           </div>
                         </div>
@@ -8407,17 +8546,26 @@ export default function App() {
                         <div className="flex items-center gap-1.5">
                           <button 
                             onClick={() => handleDirectApply(vle)}
-                            className="px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-black shadow-md transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                            disabled={Boolean(directApplyVleId)}
+                            className="px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-black shadow-md transition-all active:scale-95 flex items-center gap-1 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                             title="Personal Message"
                           >
-                            <MessageSquare className="w-3 h-3" />
-                            <span>💬 Message</span>
+                            {directApplyVleId === vle.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MessageSquare className="w-3 h-3" />}
+                            <span>{directApplyVleId === vle.id ? 'Sending…' : '💬 Message'}</span>
                           </button>
                           <button 
                             onClick={() => handleDirectApply(vle)}
-                            className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black shadow-md transition-all active:scale-95 cursor-pointer"
+                            disabled={Boolean(directApplyVleId)}
+                            className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                           >
-                            Connect &amp; Request
+                            {directApplyVleId === vle.id ? (
+                              <>
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                <span>Sending…</span>
+                              </>
+                            ) : (
+                              <span>Connect &amp; Request</span>
+                            )}
                           </button>
                         </div>
                       </div>
@@ -9727,7 +9875,14 @@ export default function App() {
                     <Bell className="w-5 h-5 text-blue-400 animate-bounce" />
                     <span>Incoming Certificate Bids ({vleExclusiveOrders.length})</span>
                   </h3>
-                  <button onClick={fetchAllData} className="text-xs text-blue-400 hover:underline cursor-pointer">Refresh Feed</button>
+                  <button
+                    onClick={handleManualRefresh}
+                    disabled={isManualRefreshing}
+                    className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:underline cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isManualRefreshing ? 'animate-spin' : ''}`} />
+                    <span>{isManualRefreshing ? 'Refreshing…' : 'Refresh Feed'}</span>
+                  </button>
                 </div>
 
                 {vleBidStatusMsg && (
@@ -9744,7 +9899,9 @@ export default function App() {
                 )}
 
                 <div className="space-y-3 max-h-[600px] overflow-y-auto">
-                  {vleExclusiveOrders.length === 0 ? (
+                  {isInitialLoading && vleExclusiveOrders.length === 0 ? (
+                    <WorkspaceSkeletonList count={3} />
+                  ) : vleExclusiveOrders.length === 0 ? (
                     <div className="p-12 text-center text-slate-500">Abhi koi bid nahi hai.</div>
                   ) : (
                     vleExclusiveOrders.map(ord => {
@@ -9760,6 +9917,8 @@ export default function App() {
                             {ord.status === 'pending' ? (
                               <button
                                 onClick={async () => {
+                                   if (acceptingOrderId) return;
+                                   setAcceptingOrderId(ord.id);
                                    try {
                                      setVleBidStatusMsg(null);
                                      const res = await fetch(`/api/vle/orders/${ord.id}/accept`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vleId, vleName }) });
@@ -9785,11 +9944,21 @@ export default function App() {
                                        text: 'Network error. Unable to accept bid.', 
                                        type: 'error' 
                                      });
+                                   } finally {
+                                     setAcceptingOrderId(null);
                                    }
                                 }}
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl cursor-pointer"
+                                disabled={Boolean(acceptingOrderId)}
+                                className="inline-flex items-center gap-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                               >
-                                Accept
+                                {acceptingOrderId === ord.id ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Accepting…</span>
+                                  </>
+                                ) : (
+                                  <span>Accept</span>
+                                )}
                               </button>
                             ) : isAcceptedByMe ? (
                               <button onClick={() => { setActiveWorkspaceOrder(ord); setVleDashboardTab('active_bids_chats'); }} className="px-3.5 py-2 bg-slate-800 text-emerald-300 text-xs font-bold rounded-xl cursor-pointer">Open</button>
@@ -10657,11 +10826,12 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => handleDeleteFillerForm(srv.id)}
-                        className="text-rose-400 hover:text-rose-300 flex items-center gap-1 text-[11px] font-bold p-1 rounded hover:bg-rose-500/10 cursor-pointer"
+                        disabled={Boolean(deletingServiceId)}
+                        className="text-rose-400 hover:text-rose-300 flex items-center gap-1 text-[11px] font-bold p-1 rounded hover:bg-rose-500/10 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                         title="Remove form"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete</span>
+                        {deletingServiceId === srv.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        <span>{deletingServiceId === srv.id ? 'Deleting…' : 'Delete'}</span>
                       </button>
                     </div>
                   </div>
@@ -10688,8 +10858,13 @@ export default function App() {
                 <Bell className="w-5 h-5 text-sky-400 animate-bounce" />
                 <span>Incoming Form Requests / Bids ({fillerOrders.length})</span>
               </h3>
-              <button onClick={fetchAllData} className="text-xs text-sky-400 hover:underline">
-                Refresh Bids
+              <button
+                onClick={handleManualRefresh}
+                disabled={isManualRefreshing}
+                className="inline-flex items-center gap-1.5 text-xs text-sky-400 hover:underline disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isManualRefreshing ? 'animate-spin' : ''}`} />
+                <span>{isManualRefreshing ? 'Refreshing…' : 'Refresh Bids'}</span>
               </button>
             </div>
 
@@ -10707,6 +10882,12 @@ export default function App() {
             )}
 
             <div className="grid grid-cols-1 gap-4">
+              {isInitialLoading && fillerOrders.length === 0 && (
+                <>
+                  <WorkspaceSkeletonCard />
+                  <WorkspaceSkeletonCard />
+                </>
+              )}
               {fillerOrders.map(ord => {
                 const isAcceptedByMe = (
                   ord.acceptedByFillerId === ('FILLER-' + fillerPhone) ||
@@ -10736,6 +10917,8 @@ export default function App() {
                           {ord.status === 'pending' ? (
                             <button
                               onClick={async () => {
+                                if (acceptingOrderId) return;
+                                setAcceptingOrderId(ord.id);
                                 try {
                                   const res = await fetch(`/api/filler/orders/${ord.id}/accept`, {
                                     method: 'POST',
@@ -10760,12 +10943,24 @@ export default function App() {
                                 } catch (err) {
                                   console.warn('Accept form error:', err);
                                   setFillerNotificationMsg('⚠️ Network error. Please try again.');
+                                } finally {
+                                  setAcceptingOrderId(null);
                                 }
                               }}
-                              className="px-4 py-2.5 bg-gradient-to-r from-sky-500 to-emerald-600 hover:from-sky-600 hover:to-emerald-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                              disabled={Boolean(acceptingOrderId)}
+                              className="px-4 py-2.5 bg-gradient-to-r from-sky-500 to-emerald-600 hover:from-sky-600 hover:to-emerald-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
                             >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Accept Bid</span>
+                              {acceptingOrderId === ord.id ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Accepting…</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Accept Bid</span>
+                                </>
+                              )}
                             </button>
                           ) : isAcceptedByMe ? (
                             <button
@@ -11184,19 +11379,21 @@ export default function App() {
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <button
                                   onClick={() => handleDownloadAttachment(msg.attachment)}
-                                  className="inline-flex items-center gap-1 rounded-md border border-blue-400/40 bg-blue-500/10 px-2 py-1 text-[10px] font-bold text-blue-200 hover:bg-blue-500/20 transition-colors"
+                                  disabled={Boolean(attachmentActionKey)}
+                                  className="inline-flex items-center gap-1 rounded-md border border-blue-400/40 bg-blue-500/10 px-2 py-1 text-[10px] font-bold text-blue-200 hover:bg-blue-500/20 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                   title="Download attachment"
                                 >
-                                  <Download className="w-3 h-3" />
-                                  <span>Download</span>
+                                  {attachmentActionKey === attachmentActionKeyFor('download', msg.attachment) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                                  <span>{attachmentActionKey === attachmentActionKeyFor('download', msg.attachment) ? 'Downloading…' : 'Download'}</span>
                                 </button>
                                 <button
                                   onClick={() => handleViewAttachment(msg.attachment)}
-                                  className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-200 hover:bg-slate-700 transition-colors"
+                                  disabled={Boolean(attachmentActionKey)}
+                                  className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-200 hover:bg-slate-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                   title="Open attachment"
                                 >
-                                  <Eye className="w-3 h-3" />
-                                  <span>View</span>
+                                  {attachmentActionKey === attachmentActionKeyFor('view', msg.attachment) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
+                                  <span>{attachmentActionKey === attachmentActionKeyFor('view', msg.attachment) ? 'Opening…' : 'View'}</span>
                                 </button>
                               </div>
                             ) : (
@@ -11252,18 +11449,28 @@ export default function App() {
 
                       {/* Chat Input & Document Upload File Input */}
                       <div className="p-3 bg-slate-950 border-t border-slate-800 flex items-center gap-2">
-                        <label className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-white cursor-pointer border border-slate-700 transition-all flex items-center gap-1 text-xs font-bold" title="Upload Multiple Documents (PDF/Photos)">
-                          <FileUp className="w-4 h-4" />
-                          <span className="hidden sm:inline">Upload Docs</span>
+                        <label
+                          className={`p-2.5 rounded-xl border transition-all flex items-center gap-1 text-xs font-bold ${
+                            isUploadingDocs
+                              ? 'bg-slate-800 text-sky-300 border-sky-500/40 cursor-wait'
+                              : 'bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-white cursor-pointer border-slate-700'
+                          }`}
+                          title={isUploadingDocs ? 'Uploading documents…' : 'Upload Multiple Documents (PDF/Photos)'}
+                        >
+                          {isUploadingDocs ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />}
+                          <span className="hidden sm:inline">{isUploadingDocs ? 'Uploading…' : 'Upload Docs'}</span>
                           <input
                             type="file"
                             multiple
                             accept=".pdf,.jpg,.jpeg,.png"
                             className="hidden"
+                            disabled={isUploadingDocs}
                             onClick={(e) => e.stopPropagation()}
                             onChange={async (e) => {
                               const files = Array.from(e.target.files || []);
                               if (files.length > 0 && activeWorkspaceOrder) {
+                                setIsUploadingDocs(true);
+                                setWorkspaceStatusMsg({ text: `📤 Uploading ${files.length} document(s)…`, type: 'info' });
                                 try {
                                   const actualSender = activeRole === 'client' ? 'client' : 'operator';
                                   const actualSenderName = activeRole === 'client'
@@ -11285,6 +11492,8 @@ export default function App() {
                                     text: err instanceof Error ? err.message : 'The documents could not be uploaded.',
                                     type: 'error'
                                   });
+                                } finally {
+                                  setIsUploadingDocs(false);
                                 }
                               }
                               e.target.value = '';
@@ -11294,18 +11503,27 @@ export default function App() {
 
                         <button
                           onClick={handleToggleVoiceRecording}
-                          className={`p-2.5 rounded-xl border transition-all flex items-center gap-1 text-xs font-bold ${
+                          disabled={isSendingVoiceNote}
+                          className={`p-2.5 rounded-xl border transition-all flex items-center gap-1 text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed ${
                             isVoiceRecording
                               ? 'bg-rose-600 border-rose-500 text-white animate-pulse'
-                              : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-indigo-400 hover:text-indigo-300'
+                              : isSendingVoiceNote
+                                ? 'bg-slate-800 border-sky-500/40 text-sky-300 cursor-wait'
+                                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-indigo-400 hover:text-indigo-300'
                           }`}
-                          title={isVoiceRecording
-                            ? 'Recording… click again to stop & send'
-                            : 'Voice note record karein — click = start, click = stop & send'}
+                          title={isSendingVoiceNote
+                            ? 'Sending voice note…'
+                            : isVoiceRecording
+                              ? 'Recording… click again to stop & send'
+                              : 'Voice note record karein — click = start, click = stop & send'}
                         >
-                          <Mic className={`w-4 h-4 ${isVoiceRecording ? 'animate-bounce' : ''}`} />
+                          {isSendingVoiceNote ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Mic className={`w-4 h-4 ${isVoiceRecording ? 'animate-bounce' : ''}`} />
+                          )}
                           <span className="hidden sm:inline">
-                            {isVoiceRecording ? `⏹ Stop ${formatDurationLabel(voiceRecordSeconds)}` : '🎙️ Voice'}
+                            {isSendingVoiceNote ? 'Sending…' : isVoiceRecording ? `⏹ Stop ${formatDurationLabel(voiceRecordSeconds)}` : '🎙️ Voice'}
                           </span>
                         </button>
 
@@ -11356,9 +11574,11 @@ export default function App() {
 
                         <button
                           onClick={handleSendMessage}
-                          className="p-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold"
+                          disabled={isSendingMessage}
+                          title={isSendingMessage ? 'Sending…' : 'Send message'}
+                          className="p-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                          <Send className="w-4 h-4" />
+                          {isSendingMessage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                         </button>
                       </div>
 
@@ -11438,7 +11658,12 @@ export default function App() {
                       <ImageIcon className="w-4 h-4 text-blue-400" />
                       <span>Photo Proof of Filled Form</span>
                     </h4>
-                    {activeWorkspaceOrder.previewPhotoProof && (
+                    {isUploadingProof ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-500/20 text-sky-300 text-[10px] font-bold rounded-md">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Uploading…
+                      </span>
+                    ) : activeWorkspaceOrder.previewPhotoProof && (
                       <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-[10px] font-bold rounded-md">
                         Proof Ready
                       </span>
@@ -11492,43 +11717,51 @@ export default function App() {
                         !activeWorkspaceOrder.isProofApprovedByClient ? (
                           <button
                             onClick={async () => {
-                              const updated = {
-                                ...activeWorkspaceOrder,
-                                isProofApprovedByClient: true,
-                                chatMessages: [
-                                  ...(activeWorkspaceOrder.chatMessages || []),
-                                  {
+                              if (isApprovingProof) return;
+                              setIsApprovingProof(true);
+                              const currentOrder = activeWorkspaceOrder;
+                              try {
+                                const res = await fetch(`/api/orders/${currentOrder.id}/approve-proof`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' }
+                                });
+                                const data = await parseJsonResponse(res);
+                                if (data.success) {
+                                  const serverOrder = data.order || currentOrder;
+                                  const approvalMessage = {
                                     id: 'm-apprv-' + Date.now(),
                                     sender: 'client',
                                     senderName: clientName || 'Citizen',
                                     text: '✅ Verified and Approved Photo Proof! Payment methods unlocked.',
                                     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                  }
-                                ]
-                              };
-                              setActiveWorkspaceOrder(updated);
-                              setWorkspaceStatusMsg({ text: '✅ Proof approved! Payment methods unlocked.', type: 'success' });
-                              if (soundAlertEnabled) playChime();
-
-                              try {
-                                const res = await fetch(`/api/orders/${activeWorkspaceOrder.id}/approve-proof`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' }
-                                });
-                                const data = await parseJsonResponse(res);
-                                if (data.success && data.order) {
-                                  setActiveWorkspaceOrder(data.order);
+                                  };
+                                  const serverMessages = Array.isArray(serverOrder.chatMessages) ? serverOrder.chatMessages : [];
+                                  setActiveWorkspaceOrder({
+                                    ...serverOrder,
+                                    isProofApprovedByClient: true,
+                                    chatMessages: serverMessages.length > (currentOrder.chatMessages?.length || 0)
+                                      ? serverMessages
+                                      : [...(currentOrder.chatMessages || []), approvalMessage]
+                                  });
                                   setPaymentIntentRefreshKey(key => key + 1);
+                                  setWorkspaceStatusMsg({ text: '✅ Proof approved! Payment methods unlocked.', type: 'success' });
+                                  if (soundAlertEnabled) playChime();
+                                } else {
+                                  setWorkspaceStatusMsg({ text: data.error || 'Could not approve proof. Please try again.', type: 'error' });
                                 }
                               } catch (err) {
                                 console.warn('Error approving proof:', err);
+                                setWorkspaceStatusMsg({ text: 'Network error while approving proof. Please try again.', type: 'error' });
+                              } finally {
+                                setIsApprovingProof(false);
+                                fetchAllData();
                               }
-                              fetchAllData();
                             }}
-                            className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition-all"
+                            disabled={isApprovingProof}
+                            className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                           >
-                            <CheckCircle className="w-4 h-4" />
-                            <span>👍 OK / Approve Proof & Unlock Payment Methods</span>
+                            {isApprovingProof ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                            <span>{isApprovingProof ? 'Approving…' : '👍 OK / Approve Proof & Unlock Payment Methods'}</span>
                           </button>
                         ) : (
                           <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs font-bold flex items-center gap-1.5">
@@ -11543,13 +11776,18 @@ export default function App() {
                       <p className="text-[11px] text-slate-400">Photo proof has not been uploaded yet.</p>
                       {activeRole !== 'client' ? (
                         <div className="space-y-2">
-                          <label className="w-full py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-black text-xs rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-1.5">
-                            <ImageIcon className="w-4 h-4" />
-                            <span>📸 Pick / Upload Form Photo Proof</span>
+                          <label className={`w-full py-2 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 ${
+                            isUploadingProof
+                              ? 'bg-slate-700 cursor-wait'
+                              : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 cursor-pointer'
+                          }`}>
+                            {isUploadingProof ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+                            <span>{isUploadingProof ? 'Uploading Photo Proof…' : '📸 Pick / Upload Form Photo Proof'}</span>
                             <input
                               type="file"
                               accept="image/*"
                               className="hidden"
+                              disabled={isUploadingProof}
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
@@ -11811,8 +12049,8 @@ export default function App() {
                       </a>
                     </div>
                   ) : activeRole !== 'client' ? (
-                    <label className={`flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl py-2.5 text-[11px] font-black text-white ${isUploadingFinalPdf ? 'bg-slate-700' : 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500'}`}>
-                      <FileUp className="h-4 w-4" />
+                    <label className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[11px] font-black text-white ${isUploadingFinalPdf ? 'bg-slate-700 cursor-wait' : 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 cursor-pointer'}`}>
+                      {isUploadingFinalPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
                       <span>{isUploadingFinalPdf ? 'Uploading PDF…' : '📄 Upload Final Completed Form PDF'}</span>
                       <input
                         type="file"
@@ -11969,8 +12207,10 @@ export default function App() {
                     </div>
                   ) : activeRole !== 'client' ? (
                     <button
-                      disabled={!activeWorkspaceOrder.isPaymentDoneInApp}
+                      disabled={!activeWorkspaceOrder.isPaymentDoneInApp || isDispatchingCredentials}
                       onClick={async () => {
+                        if (isDispatchingCredentials) return;
+                        setIsDispatchingCredentials(true);
                         try {
                           const res = await fetch(`/api/orders/${activeWorkspaceOrder.id}/dispatch-whatsapp`, {
                             method: 'POST'
@@ -11985,16 +12225,19 @@ export default function App() {
                           }
                         } catch (err) {
                           console.warn('Dispatch error:', err);
+                          setWorkspaceStatusMsg({ text: 'Network error while preparing credentials. Please try again.', type: 'error' });
+                        } finally {
+                          setIsDispatchingCredentials(false);
                         }
                       }}
-                      className={`w-full py-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition-all ${
+                      className={`w-full py-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
                         activeWorkspaceOrder.isPaymentDoneInApp
                           ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-emerald-600/20'
                           : 'bg-slate-800 text-slate-500 cursor-not-allowed'
                       }`}
                     >
-                      <Smartphone className="w-4 h-4" />
-                      <span>Send Credentials Direct to WhatsApp</span>
+                      {isDispatchingCredentials ? <Loader2 className="w-4 h-4 animate-spin" /> : <Smartphone className="w-4 h-4" />}
+                      <span>{isDispatchingCredentials ? 'Preparing credentials…' : 'Send Credentials Direct to WhatsApp'}</span>
                     </button>
                   ) : (
                     <p className="text-[10px] text-slate-500 italic text-center">
