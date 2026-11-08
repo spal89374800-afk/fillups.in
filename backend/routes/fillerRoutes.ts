@@ -170,7 +170,7 @@ fillerRouter.get('/filler/services', (_req, res) => {
 
 fillerRouter.post('/filler/services', requireAccount('filler'), (req, res) => {
   const account = getRequestAccount(req)!;
-  const { id, docName, price, govtFee, expertName, requirements, description, icon, scope, state } = req.body;
+  const { id, docName, price, govtFee, govtFeeByCategory, expertName, requirements, description, icon, scope, state } = req.body;
   if (!docName || !price) {
     return res.status(400).json({ success: false, error: 'Form Name and Price are required.' });
   }
@@ -193,6 +193,7 @@ fillerRouter.post('/filler/services', requireAccount('filler'), (req, res) => {
     docName,
     price: String(price),
     govtFee: govtFee !== undefined ? String(govtFee) : '',
+    govtFeeByCategory: govtFeeByCategory,
     expertName: expertName || account.name || 'Form Filler Expert',
     requirements: requirements || description || 'Aadhaar Card, Passport Photo & Marksheet',
     description: description || requirements || '',
@@ -247,7 +248,7 @@ fillerRouter.get('/filler/orders', requireAccount('filler'), (req, res) => {
  */
 async function createAndDispatchFormRequest(req: any, res: any, fallbackTitle: string) {
   const account = getRequestAccount(req)!;
-  const { formTitle, formDetails, formCategory, formRoll, clientName, clientPhone, clientEmail, district, city, amountPaid, govtFee, orderType } = req.body;
+  const { formTitle, formDetails, formCategory, formRoll, clientName, clientPhone, clientEmail, district, city, amountPaid, govtFee, applicantCategory, orderType } = req.body;
 
   const newBid = createBroadcastFormBid({
     formTitle: formTitle || fallbackTitle,
@@ -261,6 +262,7 @@ async function createAndDispatchFormRequest(req: any, res: any, fallbackTitle: s
     city: String(city || '').trim() || account.city || '',
     amountPaid: amountPaid || 150,
     govtFee: govtFee,
+    applicantCategory: applicantCategory,
     orderType: orderType || 'online_form_filling'
   });
   newBid.clientId = account.id;

@@ -9,6 +9,8 @@ import { LocationAutocomplete } from './components/LocationAutocomplete';
 import { StateSelect } from './components/StateSelect';
 import { AdminSecurityPanel } from './components/AdminSecurityPanel';
 import { GoogleSignInButton } from './components/GoogleSignInButton';
+import { GovtFeeCategoryFields, CategoryConfirmModal, GOVT_FEE_CATEGORIES, resolveCategoryGovtFee, normalizeGovtFeeByCategory, categoryLabel } from './components/GovtFeeCategory';
+import type { GovtFeeByCategory, GovtFeeCategoryKey, CategoryConfirmConfig } from './components/GovtFeeCategory';
 import TermsCitizen from './components/legal/TermsCitizen';
 import TermsJanSeva from './components/legal/TermsJanSeva';
 import TermsFormFiller from './components/legal/TermsFormFiller';
@@ -1219,6 +1221,21 @@ export default function App() {
   const [examApplicantName, setExamApplicantName] = useState('');
   const [examApplicantPhone, setExamApplicantPhone] = useState('');
   const [examApplicantEmail, setExamApplicantEmail] = useState('');
+  // Reservation category (Gen/OBC/SC/ST/EWS/Female/PwD) — decides the govt fee
+  // and is shared with the operator so they know which category to file.
+  const [examApplicantCategory, setExamApplicantCategory] = useState<GovtFeeCategoryKey>(() => {
+    try {
+      const saved = String(localStorage.getItem('client_category') || '').trim().toLowerCase();
+      return (GOVT_FEE_CATEGORIES.some(item => item.key === saved) ? saved : 'general') as GovtFeeCategoryKey;
+    } catch {
+      return 'general';
+    }
+  });
+  // Shared confirm popup used before any citizen request is dispatched.
+  const [categoryConfirm, setCategoryConfirm] = useState<CategoryConfirmConfig | null>(null);
+  const [categoryConfirmValue, setCategoryConfirmValue] = useState<GovtFeeCategoryKey>('general');
+  const [isCategoryConfirmBusy, setIsCategoryConfirmBusy] = useState(false);
+  const categoryConfirmHandlerRef = useRef<((category: GovtFeeCategoryKey, govtFee: number) => Promise<void> | void) | null>(null);
 
   // Option 4: Jan Seva Kendra Documents (PAN Card, Certificates, CSC Govt Docs)
   const [selectedJanSevaDoc, setSelectedJanSevaDoc] = useState('');
@@ -1444,6 +1461,7 @@ export default function App() {
   const [newFormDocName, setNewFormDocName] = useState('');
   const [newFormPrice, setNewFormPrice] = useState('');
   const [newFillerFormGovtFee, setNewFillerFormGovtFee] = useState('');
+  const [newFillerFormGovtFeeByCategory, setNewFillerFormGovtFeeByCategory] = useState<GovtFeeByCategory>({});
   const [newFillerFormState, setNewFillerFormState] = useState('');
   const [newFormExpertName, setNewFormExpertName] = useState('');
   const [newFormRequirements, setNewFormRequirements] = useState('');
@@ -1461,7 +1479,7 @@ export default function App() {
       return '';
     }
   });
-  const [customPricingList, setCustomPricingList] = useState<{ id: string; docName: string; price: string; govtFee?: string; cscFee?: string; feeName?: string; icon?: string; dept?: string; requirements?: string; scope?: 'district' | 'national' | 'online_form'; state?: string; operatorId?: string; operatorCscId?: string; operatorName?: string; operatorDistrict?: string; operatorCity?: string; operatorPhone?: string; serviceFee?: number }[]>(() => {
+  const [customPricingList, setCustomPricingList] = useState<{ id: string; docName: string; price: string; govtFee?: string; govtFeeByCategory?: GovtFeeByCategory; cscFee?: string; feeName?: string; icon?: string; dept?: string; requirements?: string; scope?: 'district' | 'national' | 'online_form'; state?: string; operatorId?: string; operatorCscId?: string; operatorName?: string; operatorDistrict?: string; operatorCity?: string; operatorPhone?: string; serviceFee?: number }[]>(() => {
     try {
       const saved = localStorage.getItem('fillup_custom_pricing');
       if (saved) {
@@ -1473,6 +1491,7 @@ export default function App() {
   });
   const [newDocName, setNewDocName] = useState('');
   const [newDocGovtFee, setNewDocGovtFee] = useState('');
+  const [newDocGovtFeeByCategory, setNewDocGovtFeeByCategory] = useState<GovtFeeByCategory>({});
   const [newDocCscFee, setNewDocCscFee] = useState('');
   const [newDocPrice, setNewDocPrice] = useState('');
   const [newDocRequirements, setNewDocRequirements] = useState('');
@@ -1481,8 +1500,9 @@ export default function App() {
   const [newDocState, setNewDocState] = useState('');
   const [newFormScope, setNewFormScope] = useState<'district' | 'national' | 'online_form'>('online_form');
   const [newVleFormGovtFee, setNewVleFormGovtFee] = useState('');
+  const [newVleFormGovtFeeByCategory, setNewVleFormGovtFeeByCategory] = useState<GovtFeeByCategory>({});
   const [newVleFormState, setNewVleFormState] = useState('');
-  const [vleFormFillingList, setVleFormFillingList] = useState<{ id: string; docName: string; price: string; govtFee?: string; feeName?: string; expertName?: string; requirements?: string; icon?: string; scope?: 'district' | 'national' | 'online_form'; state?: string }[]>(() => {
+  const [vleFormFillingList, setVleFormFillingList] = useState<{ id: string; docName: string; price: string; govtFee?: string; govtFeeByCategory?: GovtFeeByCategory; feeName?: string; expertName?: string; requirements?: string; icon?: string; scope?: 'district' | 'national' | 'online_form'; state?: string }[]>(() => {
     try {
       const saved = localStorage.getItem('fillup_vle_form_pricing');
       if (saved) {
@@ -3880,6 +3900,7 @@ export default function App() {
           docName: newFormDocName.trim(),
           price: newFormPrice.trim(),
           govtFee: newFillerFormGovtFee.trim(),
+          govtFeeByCategory: newFillerFormGovtFeeByCategory,
           state: formState,
           expertName: expName,
           requirements: reqs,
@@ -3906,6 +3927,7 @@ export default function App() {
         setNewFormPrice('');
         setNewFormRequirements('');
         setNewFillerFormGovtFee('');
+        setNewFillerFormGovtFeeByCategory({});
         setNewFillerFormState('');
         setNewFormIcon('');
         setNewFormExpertName('');
@@ -3921,6 +3943,7 @@ export default function App() {
         docName: newFormDocName.trim(),
         price: newFormPrice.trim(),
         govtFee: newFillerFormGovtFee.trim(),
+        govtFeeByCategory: newFillerFormGovtFeeByCategory,
         state: formState,
         expertName: expName,
         requirements: reqs,
@@ -3937,6 +3960,7 @@ export default function App() {
       setNewFormPrice('');
       setNewFormRequirements('');
       setNewFillerFormGovtFee('');
+      setNewFillerFormGovtFeeByCategory({});
       setNewFillerFormState('');
       setNewFormIcon('');
       setNewFormExpertName('');
@@ -3950,6 +3974,7 @@ export default function App() {
     setNewFormDocName(String(service.docName || ''));
     setNewFormPrice(String(service.price ?? ''));
     setNewFillerFormGovtFee(String(service.govtFee ?? ''));
+    setNewFillerFormGovtFeeByCategory(normalizeGovtFeeByCategory(service.govtFeeByCategory) || {});
     setNewFillerFormState(String(service.state || ''));
     setNewFormExpertName(String(service.expertName || ''));
     setNewFormRequirements(String(service.requirements || service.description || ''));
@@ -3963,6 +3988,7 @@ export default function App() {
     setNewFormDocName('');
     setNewFormPrice('');
     setNewFillerFormGovtFee('');
+    setNewFillerFormGovtFeeByCategory({});
     setNewFillerFormState('');
     setNewFormExpertName('');
     setNewFormRequirements('');
@@ -4057,8 +4083,8 @@ export default function App() {
 
   // Document pricing items ka `price` total hota hai (govt + service), jabki
   // order ke payment split me sirf service fee alag jaani chahiye.
-  const resolveCatalogFees = (service?: { price?: string | number; govtFee?: string | number; cscFee?: string | number } | null) => {
-    const govtFee = Math.max(0, Number(service?.govtFee) || 0);
+  const resolveCatalogFees = (service?: { price?: string | number; govtFee?: string | number; cscFee?: string | number; govtFeeByCategory?: GovtFeeByCategory } | null) => {
+    const govtFee = resolveCategoryGovtFee(service?.govtFeeByCategory, service?.govtFee, 'general');
     const totalPrice = Math.max(0, Number(service?.price) || 0);
     const explicitServiceFee = Number(service?.cscFee);
     const serviceFee = Number.isFinite(explicitServiceFee) && explicitServiceFee > 0
@@ -4082,6 +4108,42 @@ export default function App() {
     setStep('client_login');
   };
 
+  // Persist the chosen reservation category so the next request pre-selects it.
+  const rememberClientCategory = (category: GovtFeeCategoryKey) => {
+    setExamApplicantCategory(category);
+    try { localStorage.setItem('client_category', category); } catch {}
+  };
+
+  // Every citizen request passes through this confirm popup so the operator
+  // always receives the applicant category, and the govt fee is calculated
+  // from the selected category (Gen/OBC/SC/ST/EWS/Female/PwD).
+  const openCategoryConfirm = (
+    config: CategoryConfirmConfig,
+    handler: (category: GovtFeeCategoryKey, govtFee: number) => Promise<void> | void
+  ) => {
+    categoryConfirmHandlerRef.current = handler;
+    setCategoryConfirmValue(examApplicantCategory || 'general');
+    setCategoryConfirm(config);
+  };
+
+  const handleCategoryConfirm = async () => {
+    if (!categoryConfirm || isCategoryConfirmBusy) return;
+    const handler = categoryConfirmHandlerRef.current;
+    if (!handler) return;
+    const category = categoryConfirmValue;
+    const govtFee = resolveCategoryGovtFee(categoryConfirm.govtFeeByCategory, categoryConfirm.fallbackGovtFee, category);
+    rememberClientCategory(category);
+    setIsCategoryConfirmBusy(true);
+    try {
+      await handler(category, govtFee);
+    } catch (error) {
+      console.warn('Category confirm dispatch error:', error);
+    } finally {
+      setCategoryConfirm(null);
+      setIsCategoryConfirmBusy(false);
+    }
+  };
+
   // Submit Online Exam & Admission Form Filling (Option 3: NEET, JEE, Sarkari Exams)
   const handleExamFormSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -4096,74 +4158,91 @@ export default function App() {
       setStep('client_login');
       return;
     }
-    setIsSubmittingExamForm(true);
-    try {
-      const applicantName = (examApplicantName || clientName || '').trim();
-      const applicantPhone = (examApplicantPhone || clientPhone || '').replace(/\D/g, '').slice(-10);
-      const applicantEmail = (examApplicantEmail || clientEmail || '').trim();
-      const missingApplicantDetails = collectMissingFields([
-        { label: 'Applicant Name', ok: isNonEmpty(applicantName) },
-        { label: '10-Digit Mobile Number', ok: isValidMobile(applicantPhone) },
-        { label: 'Gmail / Email', ok: isValidEmail(applicantEmail) }
-      ]);
-      if (missingApplicantDetails.length > 0) {
-        setClientOrderSuccessMsg(requiredFieldsMessage(missingApplicantDetails));
-        return;
-      }
-      const matchedService = allPublishedForms.find(s => s.docName === examFormTitle);
-      const feeAmount = Number(matchedService?.price) || 150;
-      const govtFeeAmount = Number(matchedService?.govtFee) || 0;
 
-      const fullDetails = [
-        `Applicant Name: ${applicantName}`,
-        `Mobile: ${applicantPhone}`,
-        `Email: ${applicantEmail}`,
-        `Exam/Form: ${examFormTitle}`,
-        `Category/Stream: ${examFormCategory}`,
-        examFormRoll ? `Roll/Registration: ${examFormRoll}` : '',
-        examFormDesc ? `Details/Discription: ${examFormDesc}` : `Online application form request for ${examFormTitle}.`
-      ].filter(Boolean).join('\n');
-
-      const res = await fetchWithRetry('/api/bids/form-filling', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          formTitle: examFormTitle,
-          formDetails: fullDetails,
-          formCategory: examFormCategory,
-          formRoll: examFormRoll,
-          clientName: applicantName,
-          clientPhone: applicantPhone,
-          clientEmail: applicantEmail,
-          district: clientDistrictFilter || '',
-          city: clientCityFilter || '',
-          amountPaid: feeAmount,
-          govtFee: govtFeeAmount,
-          orderType: 'online_form_filling'
-        })
-      });
-      const data = await parseJsonResponse(res);
-      if (data.success) {
-        fetchAllData();
-        setExamFormDesc('');
-        setExamFormRoll('');
-        const successNotice = `✅ Successfully Submitted! "${examFormTitle}" request broadcasted to Jan Seva Kendras. Awaiting operator acceptance & live chat.`;
-        setClientOrderSuccessMsg(successNotice);
-        setWorkspaceStatusMsg({ text: '✅ Successfully Submitted! Awaiting Jan Seva Operator Acceptance.', type: 'success' });
-        showClientActiveOrders();
-        if (soundAlertEnabled) playChime();
-        refreshCitizenPageAfterSubmit(successNotice);
-      } else if (res.status === 401) {
-        recoverFromStaleSession();
-      } else {
-        setClientOrderSuccessMsg(`⚠️ ${data.error || 'Request could not be sent. Please try again.'}`);
-      }
-    } catch (err) {
-      console.warn('Exam form submit error:', err);
-      setClientOrderSuccessMsg('❌ Unable to submit the request right now. Please check your connection and try again.');
-    } finally {
-      setIsSubmittingExamForm(false);
+    const applicantName = (examApplicantName || clientName || '').trim();
+    const applicantPhone = (examApplicantPhone || clientPhone || '').replace(/\D/g, '').slice(-10);
+    const applicantEmail = (examApplicantEmail || clientEmail || '').trim();
+    const missingApplicantDetails = collectMissingFields([
+      { label: 'Applicant Name', ok: isNonEmpty(applicantName) },
+      { label: '10-Digit Mobile Number', ok: isValidMobile(applicantPhone) },
+      { label: 'Gmail / Email', ok: isValidEmail(applicantEmail) }
+    ]);
+    if (missingApplicantDetails.length > 0) {
+      setClientOrderSuccessMsg(requiredFieldsMessage(missingApplicantDetails));
+      return;
     }
+
+    const matchedService = allPublishedForms.find(s => s.docName === examFormTitle);
+    const feeAmount = Number(matchedService?.price) || 150;
+    const fallbackGovtFee = Number(matchedService?.govtFee) || 0;
+
+    openCategoryConfirm(
+      {
+        title: 'Confirm Your Request',
+        serviceName: examFormTitle,
+        operatorName: matchedService?.expertName,
+        govtFeeByCategory: matchedService?.govtFeeByCategory,
+        fallbackGovtFee,
+        serviceFee: feeAmount,
+        submitLabel: 'Confirm & Send'
+      },
+      async (category, govtFee) => {
+        setIsSubmittingExamForm(true);
+        try {
+          const fullDetails = [
+            `Applicant Name: ${applicantName}`,
+            `Mobile: ${applicantPhone}`,
+            `Email: ${applicantEmail}`,
+            `Reservation Category: ${categoryLabel(category)}`,
+            `Exam/Form: ${examFormTitle}`,
+            `Category/Stream: ${examFormCategory}`,
+            examFormRoll ? `Roll/Registration: ${examFormRoll}` : '',
+            examFormDesc ? `Details/Discription: ${examFormDesc}` : `Online application form request for ${examFormTitle}.`
+          ].filter(Boolean).join('\n');
+
+          const res = await fetchWithRetry('/api/bids/form-filling', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              formTitle: examFormTitle,
+              formDetails: fullDetails,
+              formCategory: examFormCategory,
+              formRoll: examFormRoll,
+              clientName: applicantName,
+              clientPhone: applicantPhone,
+              clientEmail: applicantEmail,
+              district: clientDistrictFilter || '',
+              city: clientCityFilter || '',
+              amountPaid: feeAmount,
+              govtFee,
+              applicantCategory: category,
+              orderType: 'online_form_filling'
+            })
+          });
+          const data = await parseJsonResponse(res);
+          if (data.success) {
+            fetchAllData();
+            setExamFormDesc('');
+            setExamFormRoll('');
+            const successNotice = `✅ Successfully Submitted! "${examFormTitle}" request broadcasted to Jan Seva Kendras. Awaiting operator acceptance & live chat.`;
+            setClientOrderSuccessMsg(successNotice);
+            setWorkspaceStatusMsg({ text: '✅ Successfully Submitted! Awaiting Jan Seva Operator Acceptance.', type: 'success' });
+            showClientActiveOrders();
+            if (soundAlertEnabled) playChime();
+            refreshCitizenPageAfterSubmit(successNotice);
+          } else if (res.status === 401) {
+            recoverFromStaleSession();
+          } else {
+            setClientOrderSuccessMsg(`⚠️ ${data.error || 'Request could not be sent. Please try again.'}`);
+          }
+        } catch (err) {
+          console.warn('Exam form submit error:', err);
+          setClientOrderSuccessMsg('❌ Unable to submit the request right now. Please check your connection and try again.');
+        } finally {
+          setIsSubmittingExamForm(false);
+        }
+      }
+    );
   };
 
   // Submit Jan Seva Kendra Document Making (Option 4: PAN Card, Domicile, Income, Caste)
@@ -4174,97 +4253,113 @@ export default function App() {
       setClientOrderSuccessMsg('⚠️ Please select or type the government document name first.');
       return;
     }
-    setIsSubmittingJanSevaDoc(true);
-    try {
-      const referenceValue = String(janSevaDocAadhaar || '').trim();
-      const referenceDigits = referenceValue.replace(/\D/g, '');
-      const mobileOverride = /^[6-9]\d{9}$/.test(referenceDigits) ? referenceDigits : '';
-      const applicantName = (janSevaDocApplicantName || clientName || '').trim();
-      const applicantPhone = mobileOverride || (clientPhone || '').replace(/\D/g, '').slice(-10);
-      const applicantEmail = (janSevaDocEmail || clientEmail || '').trim();
-      const missingApplicantDetails = collectMissingFields([
-        { label: 'Applicant Name', ok: isNonEmpty(applicantName) },
-        { label: '10-Digit Mobile Number', ok: isValidMobile(applicantPhone) },
-        { label: 'Gmail / Email', ok: isValidEmail(applicantEmail) }
-      ]);
-      if (missingApplicantDetails.length > 0) {
-        setClientOrderSuccessMsg(requiredFieldsMessage(missingApplicantDetails));
-        return;
-      }
-      const fullDetails = [
-        `Document: ${selectedJanSevaDoc}`,
-        `Applicant Name: ${applicantName}`,
-        referenceValue && referenceValue !== applicantPhone ? `Aadhaar / Reference: ${referenceValue}` : '',
-        `Mobile: ${applicantPhone}`,
-        `Email: ${applicantEmail}`,
-        janSevaDocUrgent ? 'Priority: Urgent Fast-Track Service' : 'Priority: Regular Service',
-        janSevaDocDetails ? `Special Notes: ${janSevaDocDetails}` : ''
-      ].filter(Boolean).join('\n');
-
-      const fallbackPrice = selectedJanSevaDoc.toLowerCase().includes('pan') ? 150 : (selectedJanSevaDoc.toLowerCase().includes('license') ? 250 : 100);
-      const matchedCatalogService = customPricingList.find(item => item.docName === selectedJanSevaDoc);
-      const { govtFee, serviceFee } = matchedCatalogService
-        ? resolveCatalogFees(matchedCatalogService)
-        : { govtFee: 0, serviceFee: fallbackPrice };
-
-      const res = await fetchWithRetry('/api/vle/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          serviceName: selectedJanSevaDoc,
-          formDetails: fullDetails,
-          orderType: 'vle_service',
-          clientName: applicantName,
-          clientPhone: applicantPhone,
-          clientEmail: applicantEmail,
-          district: clientDistrictFilter || '',
-          city: clientCityFilter || '',
-          amountPaid: serviceFee || fallbackPrice,
-          govtFee
-        })
-      });
-      const data = await parseJsonResponse(res);
-      if (data.success) {
-        if (data.order) {
-          setVleExclusiveOrders((orders: any[]) => [
-            data.order,
-            ...orders.filter(order => order.id !== data.order.id)
-          ]);
-        }
-        fetchAllData();
-        setJanSevaDocDetails('');
-        const successNotice = `✅ Application Submitted Successfully! ${selectedJanSevaDoc} application received. Ye ab "All Orders / Active Ongoing Orders" page par dikh raha hai — Jan Seva operator accept karte hi chat khul jayegi.`;
-        setClientOrderSuccessMsg(successNotice);
-        setWorkspaceStatusMsg({ text: '✅ Application Submitted Successfully! Awaiting Jan Seva Operator Acceptance.', type: 'success' });
-        if (soundAlertEnabled) playChime();
-        setOrderStatusFilter('all');
-        setClientPortalTab('orders');
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            document.getElementById('client-portal-top')?.scrollIntoView({
-              behavior: 'smooth',
-              block: 'start'
-            });
-          });
-        });
-        refreshCitizenPageAfterSubmit(successNotice);
-      } else if (res.status === 401) {
-        recoverFromStaleSession();
-      } else {
-        setClientOrderSuccessMsg(`⚠️ ${data.error || 'Request could not be sent. Please check your district and try again.'}`);
-      }
-    } catch (err) {
-      console.warn('Jan Seva doc submit error:', err);
-      setClientOrderSuccessMsg('❌ Unable to submit the request right now. Please try again.');
-    } finally {
-      setIsSubmittingJanSevaDoc(false);
+    const referenceValue = String(janSevaDocAadhaar || '').trim();
+    const referenceDigits = referenceValue.replace(/\D/g, '');
+    const mobileOverride = /^[6-9]\d{9}$/.test(referenceDigits) ? referenceDigits : '';
+    const applicantName = (janSevaDocApplicantName || clientName || '').trim();
+    const applicantPhone = mobileOverride || (clientPhone || '').replace(/\D/g, '').slice(-10);
+    const applicantEmail = (janSevaDocEmail || clientEmail || '').trim();
+    const missingApplicantDetails = collectMissingFields([
+      { label: 'Applicant Name', ok: isNonEmpty(applicantName) },
+      { label: '10-Digit Mobile Number', ok: isValidMobile(applicantPhone) },
+      { label: 'Gmail / Email', ok: isValidEmail(applicantEmail) }
+    ]);
+    if (missingApplicantDetails.length > 0) {
+      setClientOrderSuccessMsg(requiredFieldsMessage(missingApplicantDetails));
+      return;
     }
+
+    const fallbackPrice = selectedJanSevaDoc.toLowerCase().includes('pan') ? 150 : (selectedJanSevaDoc.toLowerCase().includes('license') ? 250 : 100);
+    const matchedCatalogService = customPricingList.find(item => item.docName === selectedJanSevaDoc);
+    const { govtFee: fallbackGovtFee, serviceFee } = matchedCatalogService
+      ? resolveCatalogFees(matchedCatalogService)
+      : { govtFee: 0, serviceFee: fallbackPrice };
+
+    openCategoryConfirm(
+      {
+        title: 'Confirm Document Request',
+        serviceName: selectedJanSevaDoc,
+        operatorName: matchedCatalogService?.operatorName,
+        govtFeeByCategory: matchedCatalogService?.govtFeeByCategory,
+        fallbackGovtFee,
+        serviceFee: serviceFee || fallbackPrice,
+        submitLabel: 'Confirm & Submit'
+      },
+      async (category, govtFee) => {
+        setIsSubmittingJanSevaDoc(true);
+        try {
+          const fullDetails = [
+            `Document: ${selectedJanSevaDoc}`,
+            `Applicant Name: ${applicantName}`,
+            `Reservation Category: ${categoryLabel(category)}`,
+            referenceValue && referenceValue !== applicantPhone ? `Aadhaar / Reference: ${referenceValue}` : '',
+            `Mobile: ${applicantPhone}`,
+            `Email: ${applicantEmail}`,
+            janSevaDocUrgent ? 'Priority: Urgent Fast-Track Service' : 'Priority: Regular Service',
+            janSevaDocDetails ? `Special Notes: ${janSevaDocDetails}` : ''
+          ].filter(Boolean).join('\n');
+
+          const res = await fetchWithRetry('/api/vle/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              serviceName: selectedJanSevaDoc,
+              formDetails: fullDetails,
+              orderType: 'vle_service',
+              clientName: applicantName,
+              clientPhone: applicantPhone,
+              clientEmail: applicantEmail,
+              district: clientDistrictFilter || '',
+              city: clientCityFilter || '',
+              amountPaid: serviceFee || fallbackPrice,
+              govtFee,
+              applicantCategory: category
+            })
+          });
+          const data = await parseJsonResponse(res);
+          if (data.success) {
+            if (data.order) {
+              setVleExclusiveOrders((orders: any[]) => [
+                data.order,
+                ...orders.filter(order => order.id !== data.order.id)
+              ]);
+            }
+            fetchAllData();
+            setJanSevaDocDetails('');
+            const successNotice = `✅ Application Submitted Successfully! ${selectedJanSevaDoc} application received. Ye ab "All Orders / Active Ongoing Orders" page par dikh raha hai — Jan Seva operator accept karte hi chat khul jayegi.`;
+            setClientOrderSuccessMsg(successNotice);
+            setWorkspaceStatusMsg({ text: '✅ Application Submitted Successfully! Awaiting Jan Seva Operator Acceptance.', type: 'success' });
+            if (soundAlertEnabled) playChime();
+            setOrderStatusFilter('all');
+            setClientPortalTab('orders');
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                document.getElementById('client-portal-top')?.scrollIntoView({
+                  behavior: 'smooth',
+                  block: 'start'
+                });
+              });
+            });
+            refreshCitizenPageAfterSubmit(successNotice);
+          } else if (res.status === 401) {
+            recoverFromStaleSession();
+          } else {
+            setClientOrderSuccessMsg(`⚠️ ${data.error || 'Request could not be sent. Please check your district and try again.'}`);
+          }
+        } catch (err) {
+          console.warn('Jan Seva doc submit error:', err);
+          setClientOrderSuccessMsg('❌ Unable to submit the request right now. Please try again.');
+        } finally {
+          setIsSubmittingJanSevaDoc(false);
+        }
+      }
+    );
   };
 
   // Dispatch direct order to specific operator (Rajesh / Anil) and instantly open communication panel
-  const handleDirectApply = async (targetVle: any) => {
+  const handleDirectApply = async (targetVle: any, serviceOverride?: any) => {
     if (directApplyVleId) return;
-    const targetService = searchQuery.trim() || 'Domicile / PAN Card Document';
+    const targetService = serviceOverride?.docName || searchQuery.trim() || 'Domicile / PAN Card Document';
     const applicantName = (clientName || '').trim();
     const applicantPhone = (clientPhone || '').replace(/\D/g, '').slice(-10);
     const applicantEmail = (clientEmail || '').trim();
@@ -4277,54 +4372,120 @@ export default function App() {
       setClientOrderSuccessMsg(requiredFieldsMessage(missingApplicantDetails));
       return;
     }
-    const matchingService = targetVle.pricingList?.find((p: any) =>
+    const matchingService = serviceOverride || targetVle.pricingList?.find((p: any) =>
       targetService.toLowerCase().includes(p.docName.toLowerCase()) || p.docName.toLowerCase().includes(targetService.toLowerCase())
     );
-    const { govtFee, serviceFee } = matchingService
+    const { govtFee: fallbackGovtFee, serviceFee } = matchingService
       ? resolveCatalogFees(matchingService)
       : { govtFee: 0, serviceFee: 150 };
     const finalAmount = serviceFee || 150;
 
-    setDirectApplyVleId(targetVle.id);
-    try {
-      const res = await fetchWithRetry('/api/vle/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          serviceName: `${targetService} (Assigned to ${targetVle.name})`,
-          clientName: applicantName,
-          clientPhone: applicantPhone,
-          clientEmail: applicantEmail,
-          district: clientDistrictFilter,
-          city: clientCityFilter,
-          amountPaid: finalAmount,
-          govtFee,
-          targetOperatorId: targetVle.id,
-          targetOperatorName: targetVle.name,
-          targetOperatorPhone: targetVle.phone,
-          targetOperatorEmail: targetVle.email
-        })
-      });
-      const data = await parseJsonResponse(res);
-      if (data.success) {
-        await fetchAllData();
-        const successNotice = `✅ Successfully Application Submitted! Direct request sent to ${targetVle.name}. Awaiting acceptance.`;
-        setClientOrderSuccessMsg(successNotice);
-        setWorkspaceStatusMsg({ text: '✅ Successfully Application Submitted! Awaiting acceptance.', type: 'success' });
-        showClientActiveOrders();
-        if (soundAlertEnabled) playChime();
-        refreshCitizenPageAfterSubmit(successNotice);
-      } else if (res.status === 401) {
-        recoverFromStaleSession();
-      } else {
-        setClientOrderSuccessMsg(data.error || 'This operator is not available in your district.');
+    openCategoryConfirm(
+      {
+        title: 'Confirm Request',
+        serviceName: targetService,
+        operatorName: targetVle.name,
+        govtFeeByCategory: matchingService?.govtFeeByCategory,
+        fallbackGovtFee,
+        serviceFee: finalAmount,
+        submitLabel: 'Confirm & Open Chat'
+      },
+      async (category, govtFee) => {
+        setDirectApplyVleId(targetVle.id);
+        try {
+          const res = await fetchWithRetry('/api/vle/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              serviceName: `${targetService} (Assigned to ${targetVle.name})`,
+              formDetails: `Service: ${targetService}\nReservation Category: ${categoryLabel(category)}`,
+              clientName: applicantName,
+              clientPhone: applicantPhone,
+              clientEmail: applicantEmail,
+              district: clientDistrictFilter,
+              city: clientCityFilter,
+              amountPaid: finalAmount,
+              govtFee,
+              applicantCategory: category,
+              targetOperatorId: targetVle.id,
+              targetOperatorName: targetVle.name,
+              targetOperatorPhone: targetVle.phone,
+              targetOperatorEmail: targetVle.email
+            })
+          });
+          const data = await parseJsonResponse(res);
+          if (data.success) {
+            await fetchAllData();
+            const successNotice = `✅ Successfully Application Submitted! Direct request sent to ${targetVle.name}. Awaiting acceptance.`;
+            setClientOrderSuccessMsg(successNotice);
+            setWorkspaceStatusMsg({ text: '✅ Successfully Application Submitted! Awaiting acceptance.', type: 'success' });
+            showClientActiveOrders();
+            if (soundAlertEnabled) playChime();
+            refreshCitizenPageAfterSubmit(successNotice);
+          } else if (res.status === 401) {
+            recoverFromStaleSession();
+          } else {
+            setClientOrderSuccessMsg(data.error || 'This operator is not available in your district.');
+          }
+        } catch (err) {
+          console.warn('Direct order dispatch warning:', err);
+          setClientOrderSuccessMsg('Unable to submit the request right now. Please try again.');
+        } finally {
+          setDirectApplyVleId(null);
+        }
       }
-    } catch (err) {
-      console.warn('Direct order dispatch warning:', err);
-      setClientOrderSuccessMsg('Unable to submit the request right now. Please try again.');
-    } finally {
-      setDirectApplyVleId(null);
-    }
+    );
+  };
+
+  // Citizen taps "Apply with <operator>" on a Jan Seva service card.
+  // Category confirm popup opens first, then the order is dispatched.
+  const handleCatalogServiceApply = (item: any) => {
+    const { govtFee: fallbackGovtFee, serviceFee } = resolveCatalogFees(item);
+    openCategoryConfirm(
+      {
+        title: 'Confirm Service Request',
+        serviceName: item.docName,
+        operatorName: item.operatorName,
+        govtFeeByCategory: item.govtFeeByCategory,
+        fallbackGovtFee,
+        serviceFee: serviceFee || 100,
+        submitLabel: 'Confirm & Open Chat'
+      },
+      async (category, govtFee) => {
+        try {
+          const res = await fetchWithRetry('/api/vle/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              serviceName: `${item.docName} - ${item.operatorName || 'Jan Seva Kendra'}`,
+              formDetails: `Service: ${item.docName}\nReservation Category: ${categoryLabel(category)}`,
+              serviceScope: item.scope || 'district',
+              targetOperatorId: item.operatorId,
+              targetOperatorName: item.operatorName,
+              targetOperatorPhone: item.operatorPhone,
+              targetOperatorEmail: item.operatorEmail,
+              amountPaid: serviceFee || 100,
+              govtFee,
+              applicantCategory: category
+            })
+          });
+          const data = await parseJsonResponse(res);
+          if (data.success) {
+            fetchAllData();
+            setActiveWorkspaceOrder(data.order);
+            const successNotice = `✅ Request for ${item.docName} dispatched to ${item.operatorName || 'Jan Seva Kendra'}! Workspace opened.`;
+            setClientOrderSuccessMsg(successNotice);
+            showClientActiveOrders();
+            refreshCitizenPageAfterSubmit(successNotice, data.order?.id);
+          } else {
+            setClientOrderSuccessMsg(data.error || 'No Jan Seva operator is available for this service.');
+          }
+        } catch (err) {
+          console.warn('Service dispatch error:', err);
+          setClientOrderSuccessMsg('Unable to submit this request right now. Please try again.');
+        }
+      }
+    );
   };
 
   // Save dynamic pricing configuration and navigate smoothly to Client Home Page Services
@@ -4340,6 +4501,7 @@ export default function App() {
           id: Date.now().toString(),
           docName: newDocName.trim(),
           govtFee: gFee,
+          govtFeeByCategory: newDocGovtFeeByCategory,
           cscFee: cFee,
           price: tot,
           feeName: newDocFeeName.trim(),
@@ -4351,6 +4513,7 @@ export default function App() {
         setCustomPricingList(listToSave);
         setNewDocName('');
         setNewDocGovtFee('');
+        setNewDocGovtFeeByCategory({});
         setNewDocCscFee('');
         setNewDocPrice('');
         setNewDocFeeName('');
@@ -7946,36 +8109,7 @@ export default function App() {
                           </div>
 
                           <button
-                            onClick={async () => {
-                              try {
-                                const { govtFee, serviceFee } = resolveCatalogFees(item);
-                                const res = await fetchWithRetry('/api/vle/orders', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    serviceName: `${item.docName} - ${item.operatorName || 'Jan Seva Kendra'}`,
-                                    serviceScope: item.scope || 'district',
-                                    targetOperatorId: item.operatorId,
-                                    amountPaid: serviceFee || 100,
-                                    govtFee
-                                  })
-                                });
-                                const data = await parseJsonResponse(res);
-                                if (data.success) {
-                                  fetchAllData();
-                                  setActiveWorkspaceOrder(data.order);
-                                  const successNotice = `✅ Request for ${item.docName} dispatched to ${item.operatorName || 'Jan Seva Kendra'}! Workspace opened.`;
-                                  setClientOrderSuccessMsg(successNotice);
-                                  showClientActiveOrders();
-                                  refreshCitizenPageAfterSubmit(successNotice, data.order?.id);
-                                } else {
-                                  setClientOrderSuccessMsg(data.error || 'No Jan Seva operator is available for this service.');
-                                }
-                              } catch (err) {
-                                console.warn('Service dispatch error:', err);
-                                setClientOrderSuccessMsg('Unable to submit this request right now. Please try again.');
-                              }
-                            }}
+                            onClick={() => handleCatalogServiceApply(item)}
                             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs font-black shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
                           >
                             <Send className="w-3.5 h-3.5" />
@@ -8260,7 +8394,7 @@ export default function App() {
               {/* Form Input Fields */}
               <form id="form-filling-input-form" onSubmit={handleExamFormSubmit} className="space-y-4">
                 {/* Applicant Contact Information Row */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 p-4 rounded-2xl bg-slate-950/70 border border-emerald-500/20">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 p-4 rounded-2xl bg-slate-950/70 border border-emerald-500/20">
                   <div className="space-y-1">
                     <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
                       <UserIcon className="w-3.5 h-3.5 text-emerald-400" />
@@ -8306,6 +8440,27 @@ export default function App() {
                       placeholder=""
                       className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                     />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Applicant Category (Gen / OBC / SC / ST) *</span>
+                    </label>
+                    <select
+                      required
+                      value={examApplicantCategory}
+                      onChange={(e) => {
+                        const next = e.target.value as GovtFeeCategoryKey;
+                        setExamApplicantCategory(next);
+                        try { localStorage.setItem('client_category', next); } catch {}
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
+                    >
+                      {GOVT_FEE_CATEGORIES.map(item => (
+                        <option key={item.key} value={item.key}>{item.label}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
@@ -8994,13 +9149,35 @@ export default function App() {
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
                   </div>
+
+                  {/* Applicant Reservation Category */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span className="text-amber-400 font-black">5.</span>
+                      <span>{t('Applicant Category *', 'आवेदक श्रेणी *')}</span>
+                    </label>
+                    <select
+                      required
+                      value={examApplicantCategory}
+                      onChange={(e) => {
+                        const next = e.target.value as GovtFeeCategoryKey;
+                        setExamApplicantCategory(next);
+                        try { localStorage.setItem('client_category', next); } catch {}
+                      }}
+                      className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold"
+                    >
+                      {GOVT_FEE_CATEGORIES.map(item => (
+                        <option key={item.key} value={item.key}>{item.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {/* Details / Discription */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-white flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
-                      <span className="text-amber-400 font-black">5.</span>
+                      <span className="text-amber-400 font-black">6.</span>
                       <span>{t('Application Details & Description *', 'दस्तावेज़ बनवाने का आवश्यक विवरण (विवरण दर्ज करें) *')}</span>
                     </span>
                     <span className="text-[11px] text-amber-400 font-medium">
@@ -10061,6 +10238,13 @@ export default function App() {
                            Total citizen pays = Govt Fee + Service Fee. Admin fee (17%) is carved out of the service fee; you keep 83%. No extra charge is added on top.
                          </div>
                       </div>
+                      <GovtFeeCategoryFields
+                        value={item.govtFeeByCategory}
+                        onChange={(next) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, govtFeeByCategory: next } : p))}
+                        t={t}
+                        accent="amber"
+                        fallbackFee={item.govtFee}
+                      />
                     </div>
                   ))}
                 </div>
@@ -10097,12 +10281,19 @@ export default function App() {
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 pr-9 py-2 text-xs text-white"
                     />
                   </div>
+                  <GovtFeeCategoryFields
+                    value={newDocGovtFeeByCategory}
+                    onChange={setNewDocGovtFeeByCategory}
+                    t={t}
+                    accent="amber"
+                    fallbackFee={newDocGovtFee}
+                  />
                   <button
                     onClick={() => {
                       if (!newDocName) return;
                       const tot = String((parseInt(newDocGovtFee) || 0) + (parseInt(newDocCscFee) || 0));
-                      setCustomPricingList([...customPricingList, { id: Date.now().toString(), docName: newDocName, govtFee: newDocGovtFee, cscFee: newDocCscFee, price: tot, feeName: newDocFeeName, requirements: newDocRequirements, scope: newDocScope, state: newDocState }]);
-                      setNewDocName(''); setNewDocGovtFee(''); setNewDocCscFee(''); setNewDocPrice(''); setNewDocFeeName(''); setNewDocRequirements(''); setNewDocState('');
+                      setCustomPricingList([...customPricingList, { id: Date.now().toString(), docName: newDocName, govtFee: newDocGovtFee, govtFeeByCategory: newDocGovtFeeByCategory, cscFee: newDocCscFee, price: tot, feeName: newDocFeeName, requirements: newDocRequirements, scope: newDocScope, state: newDocState }]);
+                      setNewDocName(''); setNewDocGovtFee(''); setNewDocGovtFeeByCategory({}); setNewDocCscFee(''); setNewDocPrice(''); setNewDocFeeName(''); setNewDocRequirements(''); setNewDocState('');
                     }}
                     className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
                   >
@@ -10224,6 +10415,13 @@ export default function App() {
                       <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] text-emerald-200">
                         Total citizen pays = this fee. Admin fee (17%) is carved out; you keep 83%.
                       </div>
+                      <GovtFeeCategoryFields
+                        value={item.govtFeeByCategory}
+                        onChange={(next) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, govtFeeByCategory: next } : p))}
+                        t={t}
+                        accent="emerald"
+                        fallbackFee={item.govtFee}
+                      />
                     </div>
                   ))}
                 </div>
@@ -10264,11 +10462,18 @@ export default function App() {
                     </select>
                   </div>
                   <input type="text" placeholder="Zaroori Documents..." value={newDocRequirements} onChange={(e) => setNewDocRequirements(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />
+                  <GovtFeeCategoryFields
+                    value={newVleFormGovtFeeByCategory}
+                    onChange={setNewVleFormGovtFeeByCategory}
+                    t={t}
+                    accent="emerald"
+                    fallbackFee={newVleFormGovtFee}
+                  />
                   <button
                     onClick={() => {
                       if (!newDocName || !newDocPrice) return;
-                      setVleFormFillingList([...vleFormFillingList, { id: 'vle-f-' + Date.now(), docName: newDocName, price: newDocPrice, govtFee: newVleFormGovtFee, feeName: newDocFeeName, requirements: newDocRequirements, icon: '📝', expertName: vleCenterName || vleName, scope: newFormScope, state: newVleFormState }]);
-                      setNewDocName(''); setNewDocPrice(''); setNewDocRequirements(''); setNewDocFeeName(''); setNewVleFormGovtFee(''); setNewVleFormState('');
+                      setVleFormFillingList([...vleFormFillingList, { id: 'vle-f-' + Date.now(), docName: newDocName, price: newDocPrice, govtFee: newVleFormGovtFee, govtFeeByCategory: newVleFormGovtFeeByCategory, feeName: newDocFeeName, requirements: newDocRequirements, icon: '📝', expertName: vleCenterName || vleName, scope: newFormScope, state: newVleFormState }]);
+                      setNewDocName(''); setNewDocPrice(''); setNewDocRequirements(''); setNewDocFeeName(''); setNewVleFormGovtFee(''); setNewVleFormGovtFeeByCategory({}); setNewVleFormState('');
                     }}
                     className="w-full py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-emerald-500/30"
                   >
@@ -10464,6 +10669,11 @@ export default function App() {
                           <div className="flex-1 min-w-0">
                             <h4 className="font-bold text-white text-sm truncate">{ord.formTitle || ord.serviceName}</h4>
                             <p className="text-xs text-slate-400">Citizen: {ord.clientName}</p>
+                            {ord.applicantCategory && (
+                              <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
+                                Category: {categoryLabel(ord.applicantCategory)}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="text-blue-400 font-mono font-bold text-sm">₹{ord.amountPaid}</span>
@@ -11258,6 +11468,13 @@ export default function App() {
                     />
                   </div>
                 </div>
+                <GovtFeeCategoryFields
+                  value={newFillerFormGovtFeeByCategory}
+                  onChange={setNewFillerFormGovtFeeByCategory}
+                  t={t}
+                  accent="emerald"
+                  fallbackFee={newFillerFormGovtFee}
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -11435,6 +11652,11 @@ export default function App() {
                     <div>
                       <h4 className="text-base font-bold text-white">{ord.formTitle || ord.serviceName}</h4>
                       <p className="text-xs text-slate-400 mt-1">Client: <b>{ord.clientName}</b> ({ord.clientPhone})</p>
+                      {ord.applicantCategory && (
+                        <span className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                          Category: {categoryLabel(ord.applicantCategory)}
+                        </span>
+                      )}
                       {ord.formDetails && (
                         <p className="text-xs text-blue-300 mt-2 bg-slate-950 p-3 rounded-xl font-mono border border-slate-800/80 leading-relaxed">
                           "{ord.formDetails}"
@@ -11564,6 +11786,9 @@ export default function App() {
                   </h3>
                   <p className="text-[11px] text-slate-400 truncate max-w-xs sm:max-w-md">
                     Citizen: <b>{activeWorkspaceOrder.clientName}</b> • Operator: <b>{activeWorkspaceOrder.acceptedByVleName || activeWorkspaceOrder.acceptedByFillerName || 'Digital Center Operator'}</b>
+                    {activeWorkspaceOrder.applicantCategory && (
+                      <> • Category: <b className="text-amber-300">{categoryLabel(activeWorkspaceOrder.applicantCategory)}</b></>
+                    )}
                   </p>
                 </div>
                 <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${isRealtimeConnected ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
@@ -12815,6 +13040,12 @@ export default function App() {
                       ) : (
                         <>
                           <div className="space-y-2 rounded-2xl border border-slate-700 bg-slate-950 p-4">
+                            {activeWorkspaceOrder.applicantCategory && (
+                              <div className="flex items-center justify-between gap-3 text-xs">
+                                <span className="text-slate-400">Applicant Category</span>
+                                <b className="text-amber-300">{categoryLabel(activeWorkspaceOrder.applicantCategory)}</b>
+                              </div>
+                            )}
                             <div className="flex items-center justify-between gap-3 text-xs">
                               <span className="text-slate-400">Government Fee</span>
                               <b className="font-mono text-white">₹{Number(activeWorkspaceOrder.govtFee || 0).toFixed(2)}</b>
@@ -12841,6 +13072,12 @@ export default function App() {
                       )
                     ) : (
                       <>
+                        {activeWorkspaceOrder.applicantCategory && (
+                          <div className="flex items-center justify-between rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
+                            <span className="text-[11px] font-bold text-amber-100">Citizen Category</span>
+                            <b className="text-xs font-black text-amber-300">{categoryLabel(activeWorkspaceOrder.applicantCategory)}</b>
+                          </div>
+                        )}
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <label className="space-y-1.5">
                             <span className="text-[11px] font-bold text-slate-300">Government Fee (₹)</span>
@@ -13544,6 +13781,20 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 💰 CITIZEN CATEGORY CONFIRM POPUP — every request passes through this */}
+      <CategoryConfirmModal
+        config={categoryConfirm}
+        category={categoryConfirmValue}
+        onCategoryChange={setCategoryConfirmValue}
+        busy={isCategoryConfirmBusy}
+        onCancel={() => {
+          if (isCategoryConfirmBusy) return;
+          setCategoryConfirm(null);
+        }}
+        onConfirm={handleCategoryConfirm}
+        t={t}
+      />
 
       {/* ZOOM PHOTO PROOF MODAL */}
       {zoomProofPhoto && (

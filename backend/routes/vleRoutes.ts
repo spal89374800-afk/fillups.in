@@ -336,7 +336,7 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
   const account = getRequestAccount(req)!;
   const {
     serviceName, formTitle, formDetails, formCategory, formRoll, orderType,
-    district, city, amountPaid, govtFee, targetOperatorId, targetOperatorName,
+    district, city, amountPaid, govtFee, applicantCategory, targetOperatorId, targetOperatorName,
     targetOperatorPhone, targetOperatorEmail
   } = req.body;
 
@@ -367,6 +367,7 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
       city: requestCity,
       amountPaid: amountPaid || 150,
       govtFee,
+      applicantCategory,
       orderType: orderType || 'online_form_filling'
     });
     broadcastBid.clientId = account.id;
@@ -498,6 +499,7 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
     status: 'pending',
     amountPaid: amountPaid || 150,
     govtFee: Math.max(0, Number(govtFee) || 0),
+    applicantCategory: String(applicantCategory || '').trim().toLowerCase() || undefined,
     createdAt: new Date().toISOString(),
     notificationsSent: { phone: false, email: false, routing },
     chatMessages: [],

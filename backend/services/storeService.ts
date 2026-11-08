@@ -13,6 +13,49 @@ import {
 } from '../models/index.ts';
 import { isMongoConnected, onMongoReady } from '../config/db.ts';
 
+// ========================================================
+// 💰 CATEGORY-WISE GOVERNMENT FEE (Gen / OBC / SC / ST / EWS / Female / PwD)
+// ========================================================
+// Ek hi form me har category ki government fee alag hoti hai. Expert/operator
+// ek baar table bhar deta hai, citizen apni category chunta hai aur usi ka
+// amount lagta hai. Purane forms (jinme table nahi hai) ke liye single
+// `govtFee` hi fallback rehta hai — isliye kuch bhi tootta nahi.
+export const GOVT_FEE_CATEGORY_KEYS = ['general', 'obc', 'sc', 'st', 'ews', 'female', 'pwd'] as const;
+export type GovtFeeCategoryKey = typeof GOVT_FEE_CATEGORY_KEYS[number];
+export type GovtFeeByCategory = Partial<Record<GovtFeeCategoryKey, string>>;
+
+export function normalizeGovtFeeByCategory(value: unknown): GovtFeeByCategory | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const clean: GovtFeeByCategory = {};
+  for (const key of GOVT_FEE_CATEGORY_KEYS) {
+    const raw = source[key];
+    if (raw === undefined || raw === null) continue;
+    const text = String(raw).trim();
+    if (!text) continue;
+    const num = Number(text);
+    if (!Number.isFinite(num) || num < 0) continue;
+    clean[key] = String(Math.round(num * 100) / 100);
+  }
+  return Object.keys(clean).length > 0 ? clean : undefined;
+}
+
+export function resolveCategoryGovtFee(
+  byCategory: unknown,
+  fallbackGovtFee: unknown,
+  category?: string
+): number {
+  const table = normalizeGovtFeeByCategory(byCategory);
+  const key = String(category || '').trim().toLowerCase();
+  if (table && key && table[key as GovtFeeCategoryKey] !== undefined) {
+    return Math.max(0, Number(table[key as GovtFeeCategoryKey]) || 0);
+  }
+  if (table && table.general !== undefined) {
+    return Math.max(0, Number(table.general) || 0);
+  }
+  return Math.max(0, Number(fallbackGovtFee) || 0);
+}
+
 export interface LiveCameraSession {
   token: string;
   orderId: string;
@@ -180,6 +223,7 @@ export interface FillerServiceItem {
   docName: string;
   price: string;
   govtFee?: string;
+  govtFeeByCategory?: GovtFeeByCategory;
   expertName: string;
   requirements: string;
   description?: string;
@@ -202,6 +246,7 @@ export function addOrUpdateFillerService(item: Partial<FillerServiceItem> & { do
     docName: item.docName,
     price: item.price,
     govtFee: item.govtFee !== undefined ? String(item.govtFee) : '',
+    govtFeeByCategory: normalizeGovtFeeByCategory(item.govtFeeByCategory),
     expertName: item.expertName || 'Form Filler Expert',
     requirements: item.requirements || 'Aadhaar Card, Photo, Marksheet & Category Details',
     description: item.description || item.requirements || '',
@@ -509,6 +554,7 @@ export function saveOperatorPricing(account: UserAccount, pricing: VleOperator['
     docName: String(item.docName || '').trim(),
     price: String(item.price ?? '').trim(),
     govtFee: item.govtFee !== undefined ? String(item.govtFee) : '',
+    govtFeeByCategory: normalizeGovtFeeByCategory((item as any).govtFeeByCategory),
     cscFee: item.cscFee !== undefined ? String(item.cscFee) : '',
     requirements: item.requirements || '',
     scope: item.scope === 'national' || item.scope === 'online_form' ? item.scope : 'district',
@@ -538,6 +584,7 @@ export function saveOperatorFormFilling(account: UserAccount, formFillingList: a
     docName: String(item.docName || '').trim(),
     price: String(item.price ?? '').trim(),
     govtFee: item.govtFee !== undefined ? String(item.govtFee) : '',
+    govtFeeByCategory: normalizeGovtFeeByCategory(item.govtFeeByCategory),
     feeName: item.feeName || '',
     requirements: item.requirements || '',
     icon: item.icon || '📝',
@@ -560,6 +607,7 @@ export interface OperatorCatalogItem {
   price: string;
   serviceFee: number;
   govtFee?: string;
+  govtFeeByCategory?: GovtFeeByCategory;
   cscFee?: string;
   requirements?: string;
   scope: ServiceScope;
@@ -600,6 +648,7 @@ export function getPublicOperatorCatalog(account?: UserAccount): OperatorCatalog
         price: String(item.price ?? ''),
         serviceFee,
         govtFee: item.govtFee !== undefined ? String(item.govtFee) : '',
+        govtFeeByCategory: normalizeGovtFeeByCategory((item as any).govtFeeByCategory),
         cscFee: item.cscFee !== undefined ? String(item.cscFee) : '',
         requirements: item.requirements || '',
         scope: item.scope || (item.docName ? 'district' : 'national'),
@@ -956,6 +1005,7 @@ export function createBroadcastFormBid(data: {
   city?: string;
   amountPaid?: number;
   govtFee?: number;
+  applicantCategory?: string;
   orderType?: 'online_form_filling' | 'custom_form';
 }) {
   const bidId = 'BID-FORM-' + Math.floor(1000 + Math.random() * 9000);
@@ -983,6 +1033,7 @@ export function createBroadcastFormBid(data: {
     status: 'pending',
     amountPaid: data.amountPaid || 150,
     govtFee: Math.max(0, Number(data.govtFee) || 0),
+    applicantCategory: String(data.applicantCategory || '').trim().toLowerCase() || undefined,
     createdAt: now.toISOString(),
     notificationsSent: {
       phone: false,

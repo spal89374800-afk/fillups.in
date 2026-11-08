@@ -82,6 +82,7 @@ export interface VleOrder {
   acceptedByFillerName?: string;
   amountPaid: number;
   govtFee?: number;
+  applicantCategory?: string;
   feesApprovalRequired?: boolean;
   feesSetAt?: string;
   feesSetByRole?: 'jan_seva_vle' | 'form_filler_expert';
@@ -146,6 +147,7 @@ export interface FillerOrder {
   acceptedByVleName?: string;
   amountPaid: number;
   govtFee?: number;
+  applicantCategory?: string;
   feesApprovalRequired?: boolean;
   feesSetAt?: string;
   feesSetByRole?: 'jan_seva_vle' | 'form_filler_expert';
@@ -202,6 +204,7 @@ export interface VleOperator {
     docName: string;
     price: string;
     govtFee?: string;
+    govtFeeByCategory?: Record<string, string>;
     cscFee?: string;
     requirements?: string;
     scope?: ServiceScope;
@@ -215,6 +218,7 @@ export interface VleOperator {
     docName: string;
     price: string;
     govtFee?: string;
+    govtFeeByCategory?: Record<string, string>;
     requirements?: string;
     expertName?: string;
     icon?: string;
