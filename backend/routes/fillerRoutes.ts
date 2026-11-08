@@ -12,7 +12,8 @@ import {
   normalizeEmail,
   getBidLimitStatus,
   recordBidAccepted,
-  persistOrder
+  persistOrder,
+  persistToMongo
 } from '../services/storeService.ts';
 import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } from '../services/orderDispatchService.ts';
 import { emitOrderUpdate } from '../services/realtimeService.ts';
@@ -94,6 +95,71 @@ fillerRouter.post('/filler/login', (req, res) => {
     message: '✅ Form Expert Operator Logged in successfully (Permanent Account Retention Active).',
     token: registeredAccount.token,
     user: registeredAccount
+  });
+});
+
+// ========================================================
+// ✍️ FORM EXPERT PROFILE & LOCATION UPDATE
+// ========================================================
+// Same behaviour as the Jan Seva Kendra profile: the expert's own details are
+// saved on the account and persisted to MongoDB, so any device (and the
+// published-form screen) can reuse them without asking again.
+fillerRouter.post('/filler/profile', requireAccount('filler'), async (req, res) => {
+  const account = getRequestAccount(req)!;
+  const name = String(req.body?.name || '').trim().slice(0, 60);
+  const phone = String(req.body?.phone || '').replace(/\D/g, '').slice(-10);
+  const email = String(req.body?.email || '').trim().toLowerCase().slice(0, 80);
+  const state = String(req.body?.state || '').trim().slice(0, 60);
+  const district = String(req.body?.district || '').trim().slice(0, 60);
+  const city = String(req.body?.city || '').trim().slice(0, 60);
+  const photoUrl = typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
+
+  if (!name || !state || !district || !city) {
+    return res.status(400).json({ success: false, error: 'Expert name, state, district and city are required.' });
+  }
+  if (!/^[6-9]\d{9}$/.test(phone)) {
+    return res.status(400).json({ success: false, error: 'Enter a valid 10-digit Indian mobile number.' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ success: false, error: 'Enter a valid Gmail/email address.' });
+  }
+  if (photoUrl && photoUrl.length > 3_000_000) {
+    return res.status(413).json({ success: false, error: 'Profile photo is too large. Please choose a smaller image.' });
+  }
+  if (photoUrl.startsWith('data:') && !isRasterImageDataUrl(photoUrl)) {
+    return res.status(400).json({ success: false, error: 'Profile photo must be a JPG, PNG or WebP image.' });
+  }
+
+  // Never let one expert take over another expert's login identity.
+  const conflict = userAccountsStore.find(other =>
+    other !== account &&
+    other.role === 'filler' &&
+    (
+      other.phone.replace(/\D/g, '').slice(-10) === phone ||
+      (!!email && other.email.trim().toLowerCase() === email)
+    )
+  );
+  if (conflict) {
+    return res.status(409).json({
+      success: false,
+      error: 'This mobile number or Gmail is already registered with another Form Expert account.'
+    });
+  }
+
+  account.name = name;
+  account.phone = phone;
+  account.email = email;
+  account.state = state;
+  account.district = district;
+  account.city = city;
+  account.photoUrl = photoUrl;
+
+  await persistToMongo('userAccount', account);
+
+  return res.json({
+    success: true,
+    message: '✅ Form Expert profile & location saved successfully.',
+    user: account
   });
 });
 

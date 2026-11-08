@@ -1330,6 +1330,13 @@ export default function App() {
       return '';
     }
   });
+  const [fillerPhotoUrl, setFillerPhotoUrl] = useState(() => {
+    try {
+      return localStorage.getItem('filler_photo_url') || '';
+    } catch {
+      return '';
+    }
+  });
 
   const [fillerOtpSent, setFillerOtpSent] = useState(false);
   const [fillerMobileOtpCode, setFillerMobileOtpCode] = useState('');
@@ -2381,6 +2388,132 @@ export default function App() {
     }
   };
 
+  // =====================================================================
+  // ✍️ FORM EXPERT PROFILE & LOCATION (same pattern as Jan Seva Kendra)
+  // =====================================================================
+  // Expert apni details ek hi jagah save karta hai. Save hone ke baad ye
+  // values dashboard, form publishing aur receipts me use hoti hain, aur
+  // naye device par backend se wapas aa jati hain.
+  const [isFillerDetailsModalOpen, setIsFillerDetailsModalOpen] = useState(false);
+  const [fillerEditName, setFillerEditName] = useState(fillerName);
+  const [fillerEditPhone, setFillerEditPhone] = useState(fillerPhone);
+  const [fillerEditEmail, setFillerEditEmail] = useState(fillerEmail);
+  const [fillerEditStateValue, setFillerEditStateValue] = useState(fillerState);
+  const [fillerEditDistrict, setFillerEditDistrict] = useState(fillerDistrict);
+  const [fillerEditCity, setFillerEditCity] = useState(fillerCity);
+  const [fillerEditPhotoUrl, setFillerEditPhotoUrl] = useState(fillerPhotoUrl);
+  const [isSavingFillerDetails, setIsSavingFillerDetails] = useState(false);
+  const [fillerSaveError, setFillerSaveError] = useState('');
+
+  // Sync the edit form whenever the modal opens.
+  useEffect(() => {
+    if (isFillerDetailsModalOpen) {
+      setFillerEditName(fillerName);
+      setFillerEditPhone(fillerPhone);
+      setFillerEditEmail(fillerEmail);
+      setFillerEditStateValue(fillerState);
+      setFillerEditDistrict(fillerDistrict);
+      setFillerEditCity(fillerCity);
+      setFillerEditPhotoUrl(fillerPhotoUrl);
+      setFillerSaveError('');
+    }
+  }, [isFillerDetailsModalOpen]);
+
+  const saveFillerDetails = async () => {
+    if (isSavingFillerDetails) return;
+    const cleanName = fillerEditName.trim();
+    const cleanPhone = fillerEditPhone.replace(/\D/g, '').slice(-10);
+    const cleanEmail = fillerEditEmail.trim().toLowerCase();
+    const cleanState = fillerEditStateValue.trim();
+    const cleanDistrict = fillerEditDistrict.trim();
+    const cleanCity = fillerEditCity.trim();
+    const cleanPhoto = fillerEditPhotoUrl.trim();
+
+    const missing = collectMissingFields([
+      { label: 'Expert Name', ok: isNonEmpty(cleanName) },
+      { label: '10-Digit Mobile Number', ok: isValidMobile(cleanPhone) },
+      { label: 'Gmail / Email', ok: isValidEmail(cleanEmail) },
+      { label: 'State / UT', ok: isNonEmpty(cleanState) },
+      { label: 'District', ok: isNonEmpty(cleanDistrict) },
+      { label: 'City / Tehsil', ok: isNonEmpty(cleanCity) }
+    ]);
+    if (missing.length > 0) {
+      setFillerSaveError(requiredFieldsMessage(missing));
+      return;
+    }
+
+    setIsSavingFillerDetails(true);
+    setFillerSaveError('');
+    try {
+      const response = await fetchWithRetry('/api/filler/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: cleanName,
+          phone: cleanPhone,
+          email: cleanEmail,
+          state: cleanState,
+          district: cleanDistrict,
+          city: cleanCity,
+          photoUrl: cleanPhoto
+        })
+      });
+      const data = await parseJsonResponse(response);
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Could not save profile details. Please try again.');
+      }
+
+      const savedUser = data.user || {};
+      const resolvedName = String(savedUser.name || cleanName).trim();
+      const resolvedPhone = String(savedUser.phone || cleanPhone).replace(/\D/g, '').slice(-10);
+      const resolvedEmail = String(savedUser.email || cleanEmail).trim().toLowerCase();
+      const resolvedState = String(savedUser.state || cleanState).trim();
+      const resolvedDistrict = String(savedUser.district || cleanDistrict).trim();
+      const resolvedCity = String(savedUser.city || cleanCity).trim();
+      const resolvedPhoto = String(savedUser.photoUrl ?? cleanPhoto).trim();
+
+      setFillerName(resolvedName);
+      setFillerPhone(resolvedPhone);
+      setFillerEmail(resolvedEmail);
+      setFillerState(resolvedState);
+      setFillerDistrict(resolvedDistrict);
+      setFillerCity(resolvedCity);
+      setFillerPhotoUrl(resolvedPhoto);
+
+      try {
+        localStorage.setItem('filler_operator_name', resolvedName);
+        localStorage.setItem('filler_phone', resolvedPhone);
+        localStorage.setItem('filler_email', resolvedEmail);
+        localStorage.setItem('filler_state', resolvedState);
+        localStorage.setItem('filler_district', resolvedDistrict);
+        localStorage.setItem('filler_city', resolvedCity);
+        if (resolvedPhoto) localStorage.setItem('filler_photo_url', resolvedPhoto);
+        else localStorage.removeItem('filler_photo_url');
+      } catch {}
+
+      const session = readStoredSession();
+      writeStoredSession({
+        role: 'form_filler',
+        name: resolvedName,
+        phone: resolvedPhone,
+        email: resolvedEmail,
+        state: resolvedState,
+        district: resolvedDistrict,
+        city: resolvedCity,
+        token: session?.token,
+        loggedInAt: session?.loggedInAt || Date.now()
+      });
+
+      setIsFillerDetailsModalOpen(false);
+      showSaveToast('✅ Form Expert details saved successfully!');
+      void fetchAllData();
+    } catch (error) {
+      setFillerSaveError(error instanceof Error ? error.message : 'Could not save profile details. Please try again.');
+    } finally {
+      setIsSavingFillerDetails(false);
+    }
+  };
+
   // Multiple files staging for bulk upload (asli File objects — upload par server ko bhejenge)
   const [stagedFiles, setStagedFiles] = useState<{ name: string; type: 'pdf' | 'jpg' | 'png'; size: string; file: File }[]>([]);
 
@@ -2475,6 +2608,8 @@ export default function App() {
           if (accountState) setFillerState(accountState);
           if (accountDistrict) setFillerDistrict(accountDistrict);
           if (accountCity) setFillerCity(accountCity);
+          const accountPhoto = String(account.photoUrl || '').trim();
+          if (accountPhoto) setFillerPhotoUrl(accountPhoto);
         }
       }
 
@@ -3723,7 +3858,16 @@ export default function App() {
       return;
     }
 
-    const expName = newFormExpertName.trim() || fillerName || 'Form Filler Expert';
+    // Expert name and state always come from the saved Expert Details profile,
+    // so they never have to be typed again for each form.
+    if (!fillerName.trim() || !fillerState.trim()) {
+      setFillerNotificationMsg('⚠️ Pehle "Expert Details" save karo (naam, mobile, state, district, city). Uske baad form publish hoga.');
+      setIsFillerDetailsModalOpen(true);
+      return;
+    }
+
+    const expName = fillerName.trim() || 'Form Filler Expert';
+    const formState = fillerState.trim();
     const reqs = newFormRequirements.trim() || 'Aadhaar Card, Passport Photo, Marksheets & Category Certificate';
     const wasEditing = Boolean(editingFillerServiceId);
 
@@ -3736,7 +3880,7 @@ export default function App() {
           docName: newFormDocName.trim(),
           price: newFormPrice.trim(),
           govtFee: newFillerFormGovtFee.trim(),
-          state: newFillerFormState,
+          state: formState,
           expertName: expName,
           requirements: reqs,
           description: reqs,
@@ -3777,7 +3921,7 @@ export default function App() {
         docName: newFormDocName.trim(),
         price: newFormPrice.trim(),
         govtFee: newFillerFormGovtFee.trim(),
-        state: newFillerFormState,
+        state: formState,
         expertName: expName,
         requirements: reqs,
         icon: newFormIcon || '📝'
@@ -4434,6 +4578,7 @@ export default function App() {
     const accountDistrict = sameAsStateValue(rawAccountDistrict, accountState) ? '' : rawAccountDistrict;
     const rawAccountCity = String(savedUser.city || fillerCity || '').trim();
     const accountCity = sameAsStateValue(rawAccountCity, accountState) ? '' : rawAccountCity;
+    const accountPhoto = String(savedUser.photoUrl || '').trim();
 
     if (resolvedName) setFillerName(resolvedName);
     if (resolvedPhone) setFillerPhone(resolvedPhone);
@@ -4441,6 +4586,7 @@ export default function App() {
     if (accountState) setFillerState(accountState);
     if (accountDistrict) setFillerDistrict(accountDistrict);
     if (accountCity) setFillerCity(accountCity);
+    if (accountPhoto) setFillerPhotoUrl(accountPhoto);
 
     localStorage.setItem('filler_operator_name', resolvedName || fillerName);
     localStorage.setItem('filler_phone', resolvedPhone || fillerPhone);
@@ -4448,6 +4594,9 @@ export default function App() {
     if (accountState) localStorage.setItem('filler_state', accountState);
     if (accountDistrict) localStorage.setItem('filler_district', accountDistrict);
     if (accountCity) localStorage.setItem('filler_city', accountCity);
+    if (accountPhoto) {
+      try { localStorage.setItem('filler_photo_url', accountPhoto); } catch {}
+    }
     writeStoredSession({
       role: 'form_filler',
       name: resolvedName || fillerName,
@@ -10843,6 +10992,54 @@ export default function App() {
                 )}
               </h2>
             </div>
+            <button
+              type="button"
+              onClick={() => setIsFillerDetailsModalOpen(true)}
+              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>{t('Expert Details', 'विशेषज्ञ विवरण')}</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Compact Expert Profile Card — full editor opens in the modal */}
+          <div className="min-w-0 bg-slate-900 rounded-3xl border border-slate-800 p-4 sm:p-6 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                {fillerPhotoUrl ? (
+                  <img
+                    src={fillerPhotoUrl}
+                    alt="Form Expert"
+                    className="w-14 h-14 rounded-2xl object-cover border-2 border-emerald-500/50 bg-slate-800 shrink-0"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                    <UserCheck className="w-6 h-6" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-black text-white truncate">
+                    {fillerName || t('Form Expert Name', 'फॉर्म विशेषज्ञ का नाम')}
+                  </h3>
+                  <p className="text-xs text-slate-400 truncate">
+                    {[fillerPhone, fillerEmail].filter(Boolean).join(' • ') || t('Mobile & email not set', 'मोबाइल व ईमेल सेट नहीं है')}
+                  </p>
+                  <p className="text-[11px] text-slate-500 flex items-center gap-1 truncate">
+                    <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span>{[fillerCity, fillerDistrict, fillerState].filter(Boolean).join(', ') || t('Location not set', 'स्थान सेट नहीं है')}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFillerDetailsModalOpen(true)}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 hover:border-emerald-700 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>{t('Profile & Location', 'प्रोफ़ाइल और स्थान')}</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-800 bg-slate-950/70 p-2">
@@ -11006,7 +11203,7 @@ export default function App() {
                     Create New Application Form (Form Creation &amp; Pricing)
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Set form name, expert name, pricing and required documents list — once published, this will instantly appear in the Citizen Dashboard.
+                    Set form name, pricing and required documents list — once published, this will instantly appear in the Citizen Dashboard. Your expert name and state come from your saved Expert Details.
                   </p>
                 </div>
               </div>
@@ -11082,7 +11279,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-white flex items-center gap-1.5">
                     <span className="text-emerald-400 font-black">2a.</span>
@@ -11102,45 +11299,17 @@ export default function App() {
                   </div>
                   <p className="text-[10px] text-slate-500">Government fee is shown separately from your service fee.</p>
                 </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <span className="text-emerald-400 font-black">2b.</span>
-                    <span>Service State / UT</span>
-                  </label>
-                  <StateSelect
-                    value={newFillerFormState}
-                    onChange={setNewFillerFormState}
-                    options={INDIAN_STATES}
-                    emptyLabel="All India (visible everywhere)"
-                    ariaLabel="Service State / UT"
-                    className="w-full px-4 pr-10 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* 3. Form Expert Name */}
-                <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <span className="text-emerald-400 font-black">3.</span>
-                    <span>Form Expert Name *</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={60}
-                    value={newFormExpertName || fillerName}
-                    onChange={(e) => setNewFormExpertName(e.target.value)}
-                    placeholder="Enter expert name"
-                    className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-slate-500"
-                  />
-                </div>
+              <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 px-3.5 py-2.5 text-[11px] leading-relaxed text-emerald-200/90">
+                ℹ️ Expert name and service state are taken from your saved <b>Expert Details</b> — update them once from the dashboard and every new form uses them automatically.
+              </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Category / Icon */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <span className="text-emerald-400 font-black">4.</span>
+                    <span className="text-emerald-400 font-black">3.</span>
                     <span>Category Icon</span>
                   </label>
                   <select
@@ -11158,10 +11327,10 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 5. Description: Required Documents to Fill this Form */}
+              {/* 4. Description: Required Documents to Fill this Form */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span className="text-emerald-400 font-black">5.</span>
+                  <span className="text-emerald-400 font-black">4.</span>
                   <span>Description: Required Documents List (Documents Needed to Apply) *</span>
                 </label>
                 <textarea
@@ -13166,6 +13335,253 @@ export default function App() {
                 >
                   {isSavingKendraDetails ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                   <span>{isSavingKendraDetails ? t('Saving…', 'सुरक्षित हो रहा है…') : t('Save Details', 'विवरण सुरक्षित करें')}</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ✍️ FORM EXPERT PROFILE & LOCATION MODAL */}
+      {isFillerDetailsModalOpen && (
+        <div className="fixed inset-0 z-[75] bg-black/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="glass-window w-full max-w-lg rounded-3xl p-5 sm:p-7 shadow-2xl relative space-y-5 animate-in zoom-in-95 my-auto max-h-[90vh] overflow-y-auto">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                    <span>{t('Form Expert Details', 'फॉर्म विशेषज्ञ विवरण')}</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    {t('These details appear on your published forms, applications and citizen receipts.', 'ये विवरण आपके प्रकाशित फॉर्म, आवेदन और ग्राहक रसीद पर दिखाई देंगे।')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  className="glass-control-btn text-emerald-300"
+                  title="Toggle Fullscreen"
+                >
+                  {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsFillerDetailsModalOpen(false)}
+                  className="glass-control-btn glass-control-btn-close text-rose-300"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Info Notice */}
+            <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2.5 text-xs text-emerald-200">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+              <div>
+                {t(
+                  'Save your name and location once — every new form you publish will use these details automatically.',
+                  'अपना नाम और स्थान एक बार सुरक्षित करें — आपके द्वारा प्रकाशित हर नए फॉर्म में यही विवरण स्वतः उपयोग होगा।'
+                )}
+              </div>
+            </div>
+
+            {/* Input Fields */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{t('Expert Name', 'विशेषज्ञ का नाम')}</span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={60}
+                    value={fillerEditName}
+                    onChange={e => setFillerEditName(e.target.value.slice(0, 60))}
+                    placeholder="Your full name"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-emerald-500 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{t('10-Digit Mobile Number', '10 अंकों का मोबाइल नंबर')}</span>
+                  </label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={fillerEditPhone}
+                    onChange={e => setFillerEditPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="9876543210"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-mono focus:border-emerald-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-rose-400" />
+                  <span>{t('Gmail / Email Address', 'जीमेल / ईमेल पता')}</span>
+                </label>
+                <input
+                  type="email"
+                  maxLength={80}
+                  value={fillerEditEmail}
+                  onChange={e => setFillerEditEmail(e.target.value.slice(0, 80))}
+                  placeholder="name@gmail.com"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-emerald-500 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{t('State / UT', 'राज्य / केंद्र शासित प्रदेश')}</span>
+                </label>
+                <StateSelect
+                  value={fillerEditStateValue}
+                  onChange={(val) => {
+                    setFillerEditStateValue(val);
+                    if (sameAsStateValue(fillerEditDistrict, val)) setFillerEditDistrict('');
+                    if (sameAsStateValue(fillerEditCity, val)) setFillerEditCity('');
+                  }}
+                  options={INDIAN_STATES}
+                  emptyLabel={t('Select State / UT', 'राज्य / केंद्र शासित प्रदेश चुनें')}
+                  ariaLabel="State / UT"
+                  className="w-full px-3.5 pr-9 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-emerald-500 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{t('District', 'जिला')}</span>
+                  </label>
+                  <LocationAutocomplete
+                    value={fillerEditDistrict}
+                    onChange={val => setFillerEditDistrict(val.slice(0, 40))}
+                    preferType="district"
+                    state={fillerEditStateValue}
+                    placeholder="e.g. Lucknow"
+                    wrapperClassName="w-full"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-emerald-500 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{t('City / Tehsil', 'शहर / तहसील')}</span>
+                  </label>
+                  <LocationAutocomplete
+                    value={fillerEditCity}
+                    onChange={val => setFillerEditCity(val.slice(0, 40))}
+                    preferType="city"
+                    state={fillerEditStateValue}
+                    placeholder="e.g. Sadar"
+                    wrapperClassName="w-full"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-emerald-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{t('Profile Photo', 'प्रोफ़ाइल फोटो')}</span>
+                  </label>
+                  {fillerEditPhotoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setFillerEditPhotoUrl('')}
+                      className="text-[11px] text-rose-400 hover:text-rose-300 underline font-medium cursor-pointer"
+                    >
+                      Remove Photo
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  {fillerEditPhotoUrl ? (
+                    <img
+                      src={fillerEditPhotoUrl}
+                      alt="Expert preview"
+                      className="w-14 h-14 rounded-2xl object-cover border-2 border-emerald-500/50 shadow-md bg-slate-800 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl border border-slate-700 bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
+                      <Camera className="w-5 h-5" />
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="user"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 2 * 1024 * 1024) {
+                        setFillerSaveError('Photo 2MB se chhoti honi chahiye. Kripya chhoti image chunein.');
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        if (event.target?.result) {
+                          setFillerEditPhotoUrl(event.target.result as string);
+                          setFillerSaveError('');
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                    className="block flex-1 min-w-0 text-xs text-slate-300 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-600 hover:file:bg-emerald-500 file:text-white file:cursor-pointer file:shadow-md bg-slate-950 border border-slate-700 rounded-xl cursor-pointer p-1.5 focus:border-emerald-500 outline-none transition-all"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  {t('Camera or gallery se JPG / PNG / WebP photo upload karein (max 2MB).', 'कैमरा या गैलरी से JPG / PNG / WebP फोटो अपलोड करें (max 2MB)।')}
+                </p>
+              </div>
+
+              {fillerSaveError && (
+                <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">
+                  {fillerSaveError}
+                </p>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800">
+              <span className="text-[11px] text-slate-400">
+                {t('✨ Saved details are used automatically in new forms.', '✨ सुरक्षित विवरण नए फॉर्म में स्वतः उपयोग होगा।')}
+              </span>
+              <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsFillerDetailsModalOpen(false)}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  {t('Cancel', 'रद्द करें')}
+                </button>
+                <button
+                  type="button"
+                  onClick={saveFillerDetails}
+                  disabled={isSavingFillerDetails}
+                  className="w-full sm:w-auto px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isSavingFillerDetails ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  <span>{isSavingFillerDetails ? t('Saving…', 'सुरक्षित हो रहा है…') : t('Save Details', 'विवरण सुरक्षित करें')}</span>
                 </button>
               </div>
             </div>
