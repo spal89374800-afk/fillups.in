@@ -10992,54 +10992,6 @@ export default function App() {
                 )}
               </h2>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsFillerDetailsModalOpen(true)}
-              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-              <span>{t('Expert Details', 'विशेषज्ञ विवरण')}</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Compact Expert Profile Card — full editor opens in the modal */}
-          <div className="min-w-0 bg-slate-900 rounded-3xl border border-slate-800 p-4 sm:p-6 shadow-xl">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                {fillerPhotoUrl ? (
-                  <img
-                    src={fillerPhotoUrl}
-                    alt="Form Expert"
-                    className="w-14 h-14 rounded-2xl object-cover border-2 border-emerald-500/50 bg-slate-800 shrink-0"
-                  />
-                ) : (
-                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                    <UserCheck className="w-6 h-6" />
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <h3 className="text-sm sm:text-base font-black text-white truncate">
-                    {fillerName || t('Form Expert Name', 'फॉर्म विशेषज्ञ का नाम')}
-                  </h3>
-                  <p className="text-xs text-slate-400 truncate">
-                    {[fillerPhone, fillerEmail].filter(Boolean).join(' • ') || t('Mobile & email not set', 'मोबाइल व ईमेल सेट नहीं है')}
-                  </p>
-                  <p className="text-[11px] text-slate-500 flex items-center gap-1 truncate">
-                    <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
-                    <span>{[fillerCity, fillerDistrict, fillerState].filter(Boolean).join(', ') || t('Location not set', 'स्थान सेट नहीं है')}</span>
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsFillerDetailsModalOpen(true)}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 hover:border-emerald-700 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-                <span>{t('Profile & Location', 'प्रोफ़ाइल और स्थान')}</span>
-              </button>
-            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-800 bg-slate-950/70 p-2">
@@ -11063,6 +11015,14 @@ export default function App() {
               className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${fillerDashboardTab === 'payments' ? 'bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
             >
               <CreditCard className="h-4 w-4" /> {t('Payments & Payouts', 'भुगतान और राशि निकासी')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFillerDetailsModalOpen(true)}
+              className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold text-slate-400 hover:bg-white/5 hover:text-white transition"
+              title={t('Profile & Location', 'प्रोफ़ाइल और स्थान')}
+            >
+              <UserCheck className="h-4 w-4" /> {t('Profile & Location', 'प्रोफ़ाइल और स्थान')}
             </button>
           </div>
 
@@ -11297,12 +11257,7 @@ export default function App() {
                       className="w-full pl-8 pr-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono font-bold"
                     />
                   </div>
-                  <p className="text-[10px] text-slate-500">Government fee is shown separately from your service fee.</p>
                 </div>
-              </div>
-
-              <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 px-3.5 py-2.5 text-[11px] leading-relaxed text-emerald-200/90">
-                ℹ️ Expert name and service state are taken from your saved <b>Expert Details</b> — update them once from the dashboard and every new form uses them automatically.
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
