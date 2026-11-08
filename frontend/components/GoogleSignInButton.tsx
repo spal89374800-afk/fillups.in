@@ -15,7 +15,7 @@ export function GoogleSignInButton({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const callbackRef = useRef(onCredential);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'hidden'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'failed' | 'not-configured'>('loading');
 
   useEffect(() => {
     callbackRef.current = onCredential;
@@ -25,16 +25,16 @@ export function GoogleSignInButton({
     const element = containerRef.current;
     if (!element) return;
     let cancelled = false;
-    void renderGoogleButton(element, credential => callbackRef.current(credential)).then(ok => {
+    void renderGoogleButton(element, credential => callbackRef.current(credential)).then(result => {
       if (cancelled) return;
-      setStatus(ok ? 'ready' : 'hidden');
+      setStatus(result);
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (status === 'hidden') return null;
+  if (status === 'not-configured') return null;
 
   return (
     <div className="pt-1">
@@ -43,15 +43,21 @@ export function GoogleSignInButton({
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">or</span>
         <span className="h-px flex-1 bg-white/10" />
       </div>
-      <div className="relative w-full flex justify-center min-h-[44px]">
-        {status === 'loading' && (
-          <div className="absolute inset-0 rounded-xl bg-white/[0.06] animate-pulse" />
-        )}
-        <div
-          ref={containerRef}
-          className={`w-full flex justify-center ${disabled ? 'pointer-events-none opacity-60' : ''}`}
-        />
-      </div>
+      {status === 'failed' ? (
+        <p className="py-2 text-center text-[11px] font-medium leading-snug text-amber-400/90">
+          Google sign-in is unavailable right now. Please use the Gmail OTP option.
+        </p>
+      ) : (
+        <div className="relative w-full flex justify-center min-h-[44px]">
+          {status === 'loading' && (
+            <div className="absolute inset-0 rounded-xl bg-white/[0.06] animate-pulse" />
+          )}
+          <div
+            ref={containerRef}
+            className={`w-full flex justify-center ${disabled ? 'pointer-events-none opacity-60' : ''}`}
+          />
+        </div>
+      )}
       <p className="mt-1.5 text-center text-[10px] leading-snug text-slate-500">
         Google verifies your Gmail only. Mobile number and address details are still required.
       </p>

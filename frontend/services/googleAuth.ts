@@ -56,38 +56,56 @@ function loadGoogleScript(): Promise<void> {
       resolve();
       return;
     }
+
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (ok) resolve();
+      else reject(new Error('Google sign-in could not be loaded.'));
+    };
+    // Never leave the UI stuck on the skeleton if the script hangs.
+    window.setTimeout(() => finish(false), 12000);
+
     const existing = document.querySelector<HTMLScriptElement>(`script[src="${GSI_SCRIPT_SRC}"]`);
     if (existing) {
-      existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error('Google sign-in could not be loaded.')), { once: true });
+      if (window.google?.accounts?.id) {
+        finish(true);
+        return;
+      }
+      existing.addEventListener('load', () => finish(true), { once: true });
+      existing.addEventListener('error', () => finish(false), { once: true });
       return;
     }
     const script = document.createElement('script');
     script.src = GSI_SCRIPT_SRC;
     script.async = true;
     script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Google sign-in could not be loaded.'));
+    script.onload = () => finish(true);
+    script.onerror = () => finish(false);
     document.head.appendChild(script);
   });
   return scriptPromise;
 }
 
+export type GoogleButtonResult = 'ready' | 'not-configured' | 'failed';
+
 /**
  * Google ka official button render karta hai.
- * @returns `true` agar button render hua, `false` agar Google configured nahi hai.
+ * - 'not-configured' → server par GOOGLE_CLIENT_ID nahi hai (button hide karo)
+ * - 'failed'         → configured hai par render nahi hua (warning + fallback)
  */
 export async function renderGoogleButton(
   container: HTMLElement,
   onCredential: (credential: string) => void
-): Promise<boolean> {
+): Promise<GoogleButtonResult> {
   try {
     const clientId = await getGoogleClientId();
-    if (!clientId) return false;
+    if (!clientId) return 'not-configured';
 
     await loadGoogleScript();
     const accountsId = window.google?.accounts?.id;
-    if (!accountsId) return false;
+    if (!accountsId) return 'failed';
 
     accountsId.initialize({
       client_id: clientId,
@@ -110,9 +128,22 @@ export async function renderGoogleButton(
       logo_alignment: 'left',
       width
     });
-    return true;
+
+    // GSI kabhi silently fail hota hai (galat origin / galat client type).
+    // Us case me button ka iframe DOM me aata hi nahi — detect karke saaf
+    // warning do, taaki "or ke neeche kuch nahi" wali confusion na rahe.
+    if (!container.querySelector('iframe')) {
+      console.warn(
+        '[googleAuth] Google ne sign-in button render nahi kiya. ' +
+        'Google Cloud Console → Credentials → OAuth 2.0 Client ID (Web application) → ' +
+        'Authorized JavaScript origins me ye exact origin add karo: ' +
+        window.location.origin
+      );
+      return 'failed';
+    }
+    return 'ready';
   } catch (error) {
     console.warn('[googleAuth] Google button could not be rendered:', error);
-    return false;
+    return 'failed';
   }
 }
