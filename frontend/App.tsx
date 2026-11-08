@@ -1568,6 +1568,16 @@ export default function App() {
     satisfactionRate: '—'
   });
   const [, setRecentDeliveries] = useState<any[]>([]);
+  // 0 is a valid stat value, so we must never show "0" before the first
+  // successful dashboard response. Skeleton first, then "—" if the backend
+  // stays unreachable (e.g. Render free-tier cold start).
+  const [platformStatsState, setPlatformStatsState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPlatformStatsState(prev => (prev === 'loading' ? 'unavailable' : prev));
+    }, 20000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // --- INTERACTIVE ORDER WORKSPACE STATE ---
   const [activeWorkspaceOrder, setActiveWorkspaceOrder] = useState<any | null>(null);
@@ -2385,10 +2395,12 @@ export default function App() {
     return () => clearInterval(timer);
   }, [callingState]);
 
-  // Safe JSON fetcher that won't throw unhandled errors during server restarts or transient offline states
+  // Safe JSON fetcher that won't throw unhandled errors during server restarts or transient offline states.
+  // Uses the shared API client so a static frontend host (the `-1` deploy) automatically
+  // falls back to the real backend instead of silently returning null.
   const safeFetchJson = async (url: string) => {
     try {
-      const res = await fetch(url);
+      const res = await fetchWithRetry(url);
       if (!res.ok) return null;
       return await parseJsonResponse(res);
     } catch {
@@ -2505,6 +2517,7 @@ export default function App() {
         if (statsJson !== null) {
           setPlatformStats(prev => (JSON.stringify(prev) === statsJson ? prev : dashboardData.stats));
         }
+        setPlatformStatsState('ready');
         if (dashboardData.recentDeliveries) {
           const deliveriesJson = takeServerSnapshot(deliveriesSnapRef, dashboardData.recentDeliveries);
           if (deliveriesJson !== null) {
@@ -4655,6 +4668,27 @@ export default function App() {
     }
   };
 
+  // Live platform stats: show the real number only once loaded.
+  const statValue = (value: number) => {
+    if (platformStatsState === 'ready') return value;
+    if (platformStatsState === 'unavailable') {
+      return (
+        <span
+          className="text-slate-400"
+          title="Live stats could not be loaded right now. They refresh automatically."
+        >
+          —
+        </span>
+      );
+    }
+    return (
+      <span
+        className="inline-block h-7 w-12 rounded-lg bg-white/10 animate-pulse align-middle"
+        aria-label="Loading live stats"
+      />
+    );
+  };
+
   return (
     <LocalizedTree language={lang}>
     <div className={`min-h-screen flex flex-col font-['Inter',sans-serif] w-full max-w-full box-border transition-colors duration-200 ${
@@ -5024,7 +5058,7 @@ export default function App() {
 
                 <div className="relative z-10">
                   <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-cyan-50 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] group-hover:from-white group-hover:to-cyan-200 transition-colors">
-                    {platformStats.activeUsers}
+                    {statValue(platformStats.activeUsers)}
                   </div>
                   <p className="text-xs font-bold text-slate-200 mt-1 drop-shadow-sm">
                     {t('Active Citizens & Users', 'सक्रिय नागरिक एवं उपभोक्ता')}
@@ -5084,7 +5118,7 @@ export default function App() {
 
                 <div className="relative z-10">
                   <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-emerald-50 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] group-hover:from-white group-hover:to-emerald-200 transition-colors">
-                    {platformStats.totalTrustedFormsFilled}
+                    {statValue(platformStats.totalTrustedFormsFilled)}
                   </div>
                   <p className="text-xs font-bold text-slate-200 mt-1 drop-shadow-sm">
                     {t('Successfully Submitted Forms', 'सफलतापूर्वक पूर्ण सेवाएं')}
@@ -5155,7 +5189,7 @@ export default function App() {
 
                 <div className="relative z-10">
                   <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-amber-50 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] group-hover:from-white group-hover:to-amber-200 transition-colors">
-                    {platformStats.activeVles}
+                    {statValue(platformStats.activeVles)}
                   </div>
                   <p className="text-xs font-bold text-slate-200 mt-1 drop-shadow-sm">
                     {t('Active Jan Seva Kendras', 'सक्रिय जन सेवा केंद्र')}
@@ -5214,7 +5248,7 @@ export default function App() {
 
                 <div className="relative z-10">
                   <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-purple-50 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] group-hover:from-white group-hover:to-purple-200 transition-colors">
-                    {platformStats.activeOperators}
+                    {statValue(platformStats.activeOperators)}
                   </div>
                   <p className="text-xs font-bold text-slate-200 mt-1 drop-shadow-sm">
                     {t('Connected Members', 'सत्यापित ऑपरेटर सदस्य')}
