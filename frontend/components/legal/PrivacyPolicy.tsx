@@ -108,7 +108,7 @@ export default function PrivacyPolicy({ onBack, language = 'EN' }: PrivacyPolicy
             <div className="space-y-3 text-slate-300 leading-relaxed">
               <p>You may contact us regarding your data or privacy concerns:</p>
               <p><strong className="text-white">Email:</strong> supportfillup.in@gmail.com</p>
-              <p><strong className="text-white">Phone:</strong> +91 98765 43210</p>
+              <p className="text-sm text-slate-400">We aim to respond to all support and privacy requests within 24–48 hours.</p>
             </div>
           </section>
 

@@ -13757,13 +13757,6 @@ export default function App() {
             {/* Contact Info */}
             <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
               <a
-                href="tel:+919876543210"
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all"
-              >
-                <Phone className="w-3.5 h-3.5 text-cyan-400" />
-                <span>+91 98765 43210</span>
-              </a>
-              <a
                 href="mailto:supportfillup.in@gmail.com"
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all"
               >
