@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { OAuth2Client } from 'google-auth-library';
 import { saveOrUpdateUserAccount, userAccountsStore } from '../services/storeService.ts';
 import { readEnvValue } from '../env.ts';
 import { getRequestAccount } from '../middleware/securityMiddleware.ts';
@@ -21,6 +22,10 @@ authRouter.get('/auth/public-config', (_req, res) => {
     readEnvValue('SENDGRID_API_KEY')
   );
   const smtpConfigured = Boolean(readEnvValue('SMTP_USER') && readEnvValue('SMTP_PASS'));
+  // A Google OAuth Client ID is public information (it is sent to the browser
+  // by Google's own script), so it is safe to expose here. The secret, if any,
+  // is never sent to the client.
+  const googleClientId = readEnvValue('GOOGLE_CLIENT_ID') || null;
   res.json({
     success: true,
     turnstileSiteKey: getTurnstileSiteKey() || null,
@@ -28,7 +33,9 @@ authRouter.get('/auth/public-config', (_req, res) => {
     // Booleans only — never expose keys or credentials.
     emailConfigured: httpsEmailConfigured || smtpConfigured,
     httpsEmailConfigured,
-    smtpConfigured
+    smtpConfigured,
+    googleClientId,
+    googleEnabled: Boolean(googleClientId)
   });
 });
 
@@ -150,6 +157,104 @@ export function consumeOtpVerification(target: unknown, token: unknown, role: 'c
   delete verifiedOtpGrants[token];
   return true;
 }
+
+// ========================================================
+// 🔐 GOOGLE SIGN-IN (additional verification option)
+// ========================================================
+// OTP flow bilkul waise hi chalta rahega. Ye endpoint Google ka ID token
+// server-side verify karta hai aur usi `verifiedOtpGrants` store me ek
+// short-lived grant daal deta hai, jise existing /auth/login,
+// /vle/login, /vle/register, /filler/login aur /filler/register endpoints
+// bina kisi badlav ke consume kar lete hain.
+//
+// Isse saara purana validation/duplicate/operator-creation logic reuse hota
+// hai — Google sirf email verify karta hai, baaki fields compulsory rehti hain.
+let googleOAuthClient: OAuth2Client | null = null;
+
+authRouter.post('/auth/google', async (req, res) => {
+  try {
+    const clientId = readEnvValue('GOOGLE_CLIENT_ID');
+    if (!clientId) {
+      return res.status(503).json({
+        success: false,
+        error: 'Google sign-in is not configured on this server. Please use the Gmail OTP option.'
+      });
+    }
+
+    const credential = typeof req.body?.credential === 'string' ? req.body.credential.trim() : '';
+    if (!credential) {
+      return res.status(400).json({ success: false, error: 'Google credential is required.' });
+    }
+
+    const roleInput = req.body?.role;
+    const userRole: 'client' | 'vle' | 'filler' | null =
+      roleInput === 'vle' ? 'vle' : roleInput === 'filler' ? 'filler' : roleInput === 'client' ? 'client' : null;
+    if (!userRole) {
+      return res.status(400).json({ success: false, error: 'Choose a valid account type.' });
+    }
+
+    // Phone is only saved (never verified by SMS), exactly like the OTP flow.
+    // Google verifies the email; the mobile number stays a stored detail.
+    const enteredDigits = String(req.body?.target || '').replace(/\D/g, '');
+    const phone = enteredDigits.length === 12 && enteredDigits.startsWith('91')
+      ? enteredDigits.slice(2)
+      : enteredDigits;
+    if (!/^[6-9]\d{9}$/.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Enter a valid 10-digit Indian mobile number before continuing with Google.'
+      });
+    }
+
+    // 🛡️ Brute-force / abuse guard (same buckets as OTP verification).
+    const clientIp = resolveClientIp(req);
+    const verifyGuard = checkOtpVerifyLimits({ phone, ip: clientIp });
+    if (!verifyGuard.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: verifyGuard.message,
+        reason: verifyGuard.reason,
+        retryAfterMinutes: verifyGuard.retryAfterMinutes
+      });
+    }
+    registerOtpVerify({ phone, ip: clientIp });
+
+    if (!googleOAuthClient) googleOAuthClient = new OAuth2Client();
+    const ticket = await googleOAuthClient.verifyIdToken({ idToken: credential, audience: clientId });
+    const payload = ticket.getPayload();
+    const email = String(payload?.email || '').trim().toLowerCase();
+    if (!payload || !email || payload.email_verified !== true) {
+      return res.status(401).json({
+        success: false,
+        error: 'Google account email could not be verified. Please choose a verified Gmail account.'
+      });
+    }
+
+    const verificationToken = randomBytes(32).toString('hex');
+    verifiedOtpGrants[verificationToken] = {
+      target: phone,
+      email,
+      role: userRole,
+      expiresAt: Date.now() + 5 * 60 * 1000
+    };
+
+    console.log(`[auth/google] verified ${email} for role=${userRole} phone=${phone}`);
+    return res.json({
+      success: true,
+      verified: true,
+      verificationToken,
+      email,
+      name: payload?.name || '',
+      picture: payload?.picture || ''
+    });
+  } catch (error) {
+    console.error('[auth/google] verification failed:', error);
+    return res.status(401).json({
+      success: false,
+      error: 'Google sign-in could not be verified. Please try again or use the Gmail OTP option.'
+    });
+  }
+});
 
 authRouter.post('/auth/send-otp', async (req, res) => {
   try {

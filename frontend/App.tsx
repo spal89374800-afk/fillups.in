@@ -8,6 +8,7 @@ import { PayoutSettingsPanel } from './components/PayoutSettingsPanel';
 import { LocationAutocomplete } from './components/LocationAutocomplete';
 import { StateSelect } from './components/StateSelect';
 import { AdminSecurityPanel } from './components/AdminSecurityPanel';
+import { GoogleSignInButton } from './components/GoogleSignInButton';
 import TermsCitizen from './components/legal/TermsCitizen';
 import TermsJanSeva from './components/legal/TermsJanSeva';
 import TermsFormFiller from './components/legal/TermsFormFiller';
@@ -4300,6 +4301,360 @@ export default function App() {
     setIsWorkspaceHeaderHidden(true);
   };
 
+  // =====================================================================
+  // 🔐 GOOGLE SIGN-IN (additional option — OTP flow is untouched)
+  // =====================================================================
+  // Google sirf Gmail verify karta hai. Login ke baaki saare compulsory
+  // fields (name, mobile, state, district, city, CSC ID) waise hi required
+  // hain. Backend Google token verify karke ek short-lived verification
+  // grant deta hai, jise purane login/register endpoints consume karte hain.
+
+  const applyClientLoginResult = (loginData: any) => {
+    const savedUser = loginData.user || {};
+    const resolvedName = String(savedUser.name || clientName || '').trim();
+    const resolvedPhone = String(savedUser.phone || clientPhone || '').replace(/\D/g, '').slice(-10);
+    const resolvedEmail = String(savedUser.email || clientEmail || '').trim().toLowerCase();
+    const resolvedState = String(savedUser.state || clientState || '').trim();
+    const rawDistrict = String(savedUser.district || clientDistrictFilter || '').trim();
+    const resolvedDistrict = sameAsStateValue(rawDistrict, resolvedState) ? '' : rawDistrict;
+    const rawCity = String(savedUser.city || clientCityFilter || '').trim();
+    const resolvedCity = sameAsStateValue(rawCity, resolvedState) ? '' : rawCity;
+
+    if (resolvedName) setClientName(resolvedName);
+    if (resolvedPhone) setClientPhone(resolvedPhone);
+    if (resolvedEmail) setClientEmail(resolvedEmail);
+    if (resolvedState) setClientState(resolvedState);
+    if (resolvedDistrict) setClientDistrictFilter(resolvedDistrict);
+    if (resolvedCity) setClientCityFilter(resolvedCity);
+
+    localStorage.setItem('client_name', resolvedName || clientName);
+    localStorage.setItem('client_phone', resolvedPhone || clientPhone);
+    localStorage.setItem('client_email', resolvedEmail || clientEmail);
+    localStorage.setItem('client_state', resolvedState || clientState);
+    if (resolvedDistrict) localStorage.setItem('client_district', resolvedDistrict);
+    if (resolvedCity) localStorage.setItem('client_city', resolvedCity);
+    writeStoredSession({
+      role: 'client',
+      name: resolvedName || clientName,
+      phone: resolvedPhone || clientPhone,
+      email: resolvedEmail || clientEmail,
+      state: resolvedState || clientState,
+      district: resolvedDistrict || clientDistrictFilter,
+      city: resolvedCity || clientCityFilter,
+      token: loginData.token,
+      loggedInAt: Date.now()
+    });
+    setIsClientLoggedIn(true);
+    setActiveRole('client');
+    setPendingRole('client');
+    setLegalAccepted(false);
+    try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
+    setShowLegalModal(true);
+  };
+
+  const applyVleLoginResult = (loginData: any, refreshData = false) => {
+    const savedAccount = loginData.user || {};
+    const savedOperator = loginData.operator || loginData.vle || {};
+    const resolvedName = String(savedAccount.name || savedOperator.name || vleName || '').trim();
+    const resolvedCenter = String(savedAccount.centerName || savedOperator.centerName || vleCenterName || '').trim();
+    const resolvedCsc = String(savedAccount.cscId || savedOperator.cscId || vleId || '').trim();
+    const resolvedPhone = String(savedAccount.phone || savedOperator.phone || vlePhone || '').replace(/\D/g, '').slice(-10);
+    const resolvedEmail = String(savedAccount.email || savedOperator.email || vleEmail || '').trim().toLowerCase();
+    const accountState = String(savedAccount.state || savedOperator.state || vleState || '').trim();
+    const rawAccountDistrict = String(savedAccount.district || savedOperator.district || vleDistrict || '').trim();
+    const accountDistrict = sameAsStateValue(rawAccountDistrict, accountState) ? '' : rawAccountDistrict;
+    const rawAccountCity = String(savedAccount.city || savedOperator.city || vleCity || '').trim();
+    const accountCity = sameAsStateValue(rawAccountCity, accountState) ? '' : rawAccountCity;
+    const accountPhoto = String(savedAccount.photoUrl || savedOperator.photoUrl || '').trim();
+    const savedPricing = savedOperator.pricingList;
+
+    if (resolvedName) setVleName(resolvedName);
+    if (resolvedCenter) setVleCenterName(resolvedCenter);
+    if (resolvedCsc) setVleId(resolvedCsc);
+    if (resolvedPhone) setVlePhone(resolvedPhone);
+    if (resolvedEmail) setVleEmail(resolvedEmail);
+    if (accountState) setVleState(accountState);
+    if (accountDistrict) setVleDistrict(accountDistrict);
+    if (accountCity) setVleCity(accountCity);
+    if (Array.isArray(savedPricing) && savedPricing.length > 0) setCustomPricingList(savedPricing);
+    if (accountPhoto) setVlePhotoUrl(accountPhoto);
+
+    localStorage.setItem('vle_operator_name', resolvedName || vleName);
+    localStorage.setItem('vle_center_name', resolvedCenter || vleCenterName);
+    localStorage.setItem('vle_csc_id', resolvedCsc || vleId);
+    localStorage.setItem('vle_phone', resolvedPhone || vlePhone);
+    localStorage.setItem('vle_email', resolvedEmail || vleEmail);
+    if (accountState) localStorage.setItem('vle_state', accountState);
+    if (accountDistrict) localStorage.setItem('vle_district', accountDistrict);
+    if (accountCity) localStorage.setItem('vle_city', accountCity);
+    if (accountPhoto) {
+      try { localStorage.setItem('vle_photo_url', accountPhoto); } catch {}
+    }
+    writeStoredSession({
+      role: 'vle',
+      name: resolvedName || vleName,
+      phone: resolvedPhone || vlePhone,
+      email: resolvedEmail || vleEmail,
+      state: accountState || vleState,
+      district: accountDistrict || vleDistrict,
+      city: accountCity || vleCity,
+      cscId: resolvedCsc || vleId,
+      token: loginData.token,
+      loggedInAt: Date.now()
+    });
+    setIsVleLoggedIn(true);
+    setActiveRole('vle');
+    setPendingRole('vle');
+    setLegalAccepted(false);
+    try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
+    setShowLegalModal(true);
+    if (refreshData) void fetchAllData();
+  };
+
+  const applyFillerLoginResult = (loginData: any) => {
+    const savedUser = loginData.user || {};
+    const resolvedName = String(savedUser.name || fillerName || '').trim();
+    const resolvedPhone = String(savedUser.phone || fillerPhone || '').replace(/\D/g, '').slice(-10);
+    const resolvedEmail = String(savedUser.email || fillerEmail || '').trim().toLowerCase();
+    const accountState = String(savedUser.state || fillerState || '').trim();
+    const rawAccountDistrict = String(savedUser.district || fillerDistrict || '').trim();
+    const accountDistrict = sameAsStateValue(rawAccountDistrict, accountState) ? '' : rawAccountDistrict;
+    const rawAccountCity = String(savedUser.city || fillerCity || '').trim();
+    const accountCity = sameAsStateValue(rawAccountCity, accountState) ? '' : rawAccountCity;
+
+    if (resolvedName) setFillerName(resolvedName);
+    if (resolvedPhone) setFillerPhone(resolvedPhone);
+    if (resolvedEmail) setFillerEmail(resolvedEmail);
+    if (accountState) setFillerState(accountState);
+    if (accountDistrict) setFillerDistrict(accountDistrict);
+    if (accountCity) setFillerCity(accountCity);
+
+    localStorage.setItem('filler_operator_name', resolvedName || fillerName);
+    localStorage.setItem('filler_phone', resolvedPhone || fillerPhone);
+    localStorage.setItem('filler_email', resolvedEmail || fillerEmail);
+    if (accountState) localStorage.setItem('filler_state', accountState);
+    if (accountDistrict) localStorage.setItem('filler_district', accountDistrict);
+    if (accountCity) localStorage.setItem('filler_city', accountCity);
+    writeStoredSession({
+      role: 'form_filler',
+      name: resolvedName || fillerName,
+      phone: resolvedPhone || fillerPhone,
+      email: resolvedEmail || fillerEmail,
+      state: accountState || fillerState,
+      district: accountDistrict || fillerDistrict,
+      city: accountCity || fillerCity,
+      token: loginData.token,
+      loggedInAt: Date.now()
+    });
+    setIsFormFillerLoggedIn(true);
+    setActiveRole('form_filler');
+    setPendingRole('form_filler');
+    setLegalAccepted(false);
+    try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
+    setShowLegalModal(true);
+    setFillerOtpSent(false);
+    setFillerMobileOtpCode('');
+  };
+
+  // Google credential ko backend par verify karo → short-lived grant milta hai.
+  const requestGoogleGrant = async (credential: string, target: string, role: 'client' | 'vle' | 'filler') => {
+    const googleResponse = await fetchWithRetry('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential, target, role })
+    });
+    const googleData = await parseJsonResponse(googleResponse);
+    if (!googleResponse.ok || !googleData.success || !googleData.verificationToken) {
+      throw new Error(googleData.error || 'Google verification failed. Please try again.');
+    }
+    const email = String(googleData.email || '').trim().toLowerCase();
+    if (!email) {
+      throw new Error('Google account did not return a verified email address.');
+    }
+    return { email, verificationToken: String(googleData.verificationToken) };
+  };
+
+  const handleClientGoogleCredential = async (credential: string) => {
+    if (isClientAuthBusy) return;
+    setClientAuthError('');
+    const missing = collectMissingFields([
+      { label: 'Full Name', ok: isNonEmpty(clientName) },
+      { label: '10-Digit Mobile Number', ok: isValidMobile(clientPhone) },
+      { label: 'State / UT', ok: isNonEmpty(clientState) },
+      { label: 'District', ok: isNonEmpty(clientDistrictFilter) },
+      { label: 'City / Tehsil', ok: isNonEmpty(clientCityFilter) }
+    ]);
+    if (missing.length > 0) {
+      setClientAuthError(requiredFieldsMessage(missing));
+      return;
+    }
+    setIsClientAuthBusy(true);
+    try {
+      const { email, verificationToken } = await requestGoogleGrant(credential, clientPhone, 'client');
+      setClientEmail(email);
+      const loginResponse = await fetchWithRetry('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: clientName,
+          phone: clientPhone,
+          email,
+          state: clientState,
+          district: clientDistrictFilter,
+          city: clientCityFilter,
+          role: 'client',
+          verificationToken
+        })
+      });
+      const loginData = await parseJsonResponse(loginResponse);
+      if (!loginResponse.ok || !loginData.success) {
+        throw new Error(loginData.error || 'Login failed after Google verification. Please try again.');
+      }
+      applyClientLoginResult(loginData);
+    } catch (error) {
+      setClientAuthError(error instanceof Error ? error.message : 'Google login failed. Please try again.');
+    } finally {
+      setIsClientAuthBusy(false);
+    }
+  };
+
+  const handleVleGoogleCredential = async (credential: string) => {
+    if (isVleAuthBusy) return;
+    setVleAuthError('');
+    const missing = collectMissingFields([
+      { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
+      { label: 'Operator Name', ok: isNonEmpty(vleName) },
+      { label: '10-Digit Mobile Number', ok: isValidMobile(vlePhone) }
+    ]);
+    if (missing.length > 0) {
+      setVleAuthError(requiredFieldsMessage(missing));
+      return;
+    }
+    setIsVleAuthBusy(true);
+    try {
+      const { email, verificationToken } = await requestGoogleGrant(credential, vlePhone, 'vle');
+      setVleEmail(email);
+      const loginResponse = await fetchWithRetry('/api/vle/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cscId: vleId,
+          name: vleName,
+          phone: vlePhone,
+          email,
+          state: vleState,
+          district: vleDistrict,
+          city: vleCity,
+          verificationToken
+        })
+      });
+      const loginData = await parseJsonResponse(loginResponse);
+      if (!loginResponse.ok || !loginData.success) {
+        throw new Error(loginData.error || 'Operator login failed. Please try again.');
+      }
+      applyVleLoginResult(loginData);
+    } catch (error) {
+      setVleAuthError(error instanceof Error ? error.message : 'Google login failed. Please try again.');
+    } finally {
+      setIsVleAuthBusy(false);
+    }
+  };
+
+  const handleVleRegisterGoogleCredential = async (credential: string) => {
+    if (verifyingGovt) return;
+    setVleAuthError('');
+    const missing = collectMissingFields([
+      { label: 'Operator Name', ok: isNonEmpty(vleName) },
+      { label: 'Jan Seva Kendra / Center Name', ok: isNonEmpty(vleCenterName) },
+      { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
+      { label: 'State / UT', ok: isNonEmpty(vleState) },
+      { label: 'District', ok: isNonEmpty(vleDistrict) },
+      { label: 'City / Tehsil', ok: isNonEmpty(vleCity) },
+      { label: '10-Digit Mobile Number', ok: isValidMobile(vlePhone) }
+    ]);
+    if (missing.length > 0) {
+      setVleAuthError(requiredFieldsMessage(missing));
+      return;
+    }
+    setVerifyingGovt(true);
+    try {
+      const { email, verificationToken } = await requestGoogleGrant(credential, vlePhone, 'vle');
+      setVleEmail(email);
+      const registerResponse = await fetchWithRetry('/api/vle/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: vleName,
+          centerName: vleCenterName,
+          cscId: vleId,
+          phone: vlePhone,
+          email,
+          state: vleState,
+          district: vleDistrict,
+          city: vleCity,
+          verificationToken
+        })
+      });
+      const registerData = await parseJsonResponse(registerResponse);
+      if (!registerResponse.ok || !registerData.success) {
+        throw new Error(registerData.error || 'Could not register this operator with Google.');
+      }
+      applyVleLoginResult(registerData, true);
+    } catch (error) {
+      setVleAuthError(error instanceof Error ? error.message : 'Google registration failed. Please try again.');
+    } finally {
+      setVerifyingGovt(false);
+    }
+  };
+
+  const handleFillerGoogleCredential = async (credential: string) => {
+    if (isFillerAuthBusy) return;
+    setFillerAuthError('');
+    setFillerAuthNotice('');
+    const missing = collectMissingFields([
+      { label: 'Expert Name', ok: isNonEmpty(fillerName) },
+      { label: '10-Digit Mobile Number', ok: isValidMobile(fillerPhone) },
+      ...(isFillerRegistering ? [
+        { label: 'State / UT', ok: isNonEmpty(fillerState) },
+        { label: 'District', ok: isNonEmpty(fillerDistrict) },
+        { label: 'City / Tehsil', ok: isNonEmpty(fillerCity) }
+      ] : [])
+    ]);
+    if (missing.length > 0) {
+      setFillerAuthError(requiredFieldsMessage(missing));
+      return;
+    }
+    setIsFillerAuthBusy(true);
+    try {
+      const { email, verificationToken } = await requestGoogleGrant(credential, fillerPhone, 'filler');
+      setFillerEmail(email);
+      const endpoint = isFillerRegistering ? '/api/filler/register' : '/api/filler/login';
+      const loginResponse = await fetchWithRetry(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: fillerName,
+          phone: fillerPhone,
+          email,
+          state: fillerState,
+          district: fillerDistrict,
+          city: fillerCity,
+          verificationToken
+        })
+      });
+      const loginData = await parseJsonResponse(loginResponse);
+      if (!loginResponse.ok || !loginData.success) {
+        throw new Error(loginData.error || 'Form Filler login failed. Please try again.');
+      }
+      if (isFillerRegistering) setFillerAuthNotice('');
+      applyFillerLoginResult(loginData);
+    } catch (error) {
+      setFillerAuthError(error instanceof Error ? error.message : 'Google login failed. Please try again.');
+    } finally {
+      setIsFillerAuthBusy(false);
+    }
+  };
+
   return (
     <LocalizedTree language={lang}>
     <div className={`min-h-screen flex flex-col font-['Inter',sans-serif] w-full max-w-full box-border transition-colors duration-200 ${
@@ -6163,6 +6518,11 @@ export default function App() {
                       <ArrowRight className="w-4 h-4 text-white group-hover/btn:translate-x-1 transition-transform" />
                     </button>
                   </div>
+
+                  <GoogleSignInButton
+                    onCredential={handleClientGoogleCredential}
+                    disabled={isClientAuthBusy}
+                  />
                 </form>
               ) : (
                 <form id="client-otp-verify-form" onSubmit={async (e) => {
@@ -8745,6 +9105,11 @@ export default function App() {
                     <Lock className="w-4 h-4" />
                     <span>{isVleAuthBusy ? 'Sending code…' : 'Send Verification Code & Login'}</span>
                   </button>
+
+                  <GoogleSignInButton
+                    onCredential={handleVleGoogleCredential}
+                    disabled={isVleAuthBusy}
+                  />
                 </form>
               ) : (
                 <form id="vle-otp-verify-form" onSubmit={async (e) => {
@@ -9124,6 +9489,11 @@ export default function App() {
                 >
                   {verifyingGovt ? 'Sending code…' : 'Send Verification Code'}
                 </button>
+
+                <GoogleSignInButton
+                  onCredential={handleVleRegisterGoogleCredential}
+                  disabled={verifyingGovt}
+                />
               </form>
             ) : (
               <form id="vle-register-otp-verify-form" onSubmit={async (e) => {
@@ -10220,6 +10590,11 @@ export default function App() {
                     <Lock className="w-4 h-4" />
                     <span>{isFillerAuthBusy ? 'Sending code…' : isFillerRegistering ? 'Send Code & Register' : 'Send Code & Access Hub'}</span>
                   </button>
+
+                  <GoogleSignInButton
+                    onCredential={handleFillerGoogleCredential}
+                    disabled={isFillerAuthBusy}
+                  />
                 </form>
               ) : (
                 <form id="filler-otp-verify-form" onSubmit={async (e) => {
