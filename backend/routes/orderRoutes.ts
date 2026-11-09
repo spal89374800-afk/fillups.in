@@ -135,8 +135,8 @@ orderRouter.post('/orders/:id/upload-completed-form', async (req, res) => {
     return res.status(400).json({ success: false, error: 'The uploaded file is not a real PDF.' });
   }
   const approxBytes = Math.floor(base64.replace(/\s+/g, '').length * 0.75);
-  if (approxBytes > 8 * 1024 * 1024) {
-    return res.status(413).json({ success: false, error: 'PDF is too large. Maximum allowed size is 8 MB.' });
+  if (approxBytes > 10 * 1024 * 1024) {
+    return res.status(413).json({ success: false, error: 'PDF is too large. Maximum allowed size is 10 MB.' });
   }
 
   const order = found.order;

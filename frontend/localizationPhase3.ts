@@ -102,7 +102,7 @@ export const phase3HindiTranslations: Record<string, string> = {
   [`This order is already completed.`]: `यह अनुरोध पहले ही पूरा हो चुका है।`,
   [`Upload a valid PDF file (data:application/pdf;base64,...).`]: `मान्य PDF फ़ाइल अपलोड करें (data:application/pdf;base64,...)।`,
   [`The uploaded file is not a real PDF.`]: `अपलोड की गई फ़ाइल असली PDF नहीं है।`,
-  [`PDF is too large. Maximum allowed size is 8 MB.`]: `PDF बहुत बड़ी है। अधिकतम अनुमत आकार 8 MB है।`,
+  [`PDF is too large. Maximum allowed size is 10 MB.`]: `PDF बहुत बड़ी है। अधिकतम अनुमत आकार 10 MB है।`,
   [`📄 Final completed form PDF uploaded. Payment confirm hone par order complete ho jaayega.`]: `📄 अंतिम पूर्ण फॉर्म PDF अपलोड हो गई। भुगतान की पुष्टि होते ही अनुरोध पूरा हो जाएगा।`,
   [`You do not have access to this document.`]: `आपके पास इस दस्तावेज़ तक पहुँच नहीं है।`,
   [`No completed form PDF uploaded yet.`]: `अभी कोई पूर्ण फॉर्म PDF अपलोड नहीं हुई है।`,
