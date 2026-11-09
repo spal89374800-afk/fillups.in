@@ -121,8 +121,8 @@ orderRouter.post('/orders/:id/upload-completed-form', async (req, res) => {
   if (!accountIsAssignedOperator(found.order, getRequestAccount(req))) {
     return res.status(403).json({ success: false, error: 'Only the assigned operator can upload the completed form PDF.' });
   }
-  if (found.order.status === 'completed') {
-    return res.status(409).json({ success: false, error: 'This order is already completed.' });
+  if (found.order.status === 'cancelled' || found.order.status === 'expired') {
+    return res.status(409).json({ success: false, error: 'This order is closed. Final PDF can no longer be uploaded.' });
   }
 
   const pdfDataUrl = typeof req.body?.pdfDataUrl === 'string' ? req.body.pdfDataUrl : '';
@@ -148,6 +148,20 @@ orderRouter.post('/orders/:id/upload-completed-form', async (req, res) => {
   order.completedFormPdfUrl = pdfDataUrl;
   order.completedFormPdfName = rawName.toLowerCase().endsWith('.pdf') ? rawName : `${rawName}.pdf`;
   order.completedFormUploadedAt = new Date().toISOString();
+
+  // Order pehle se complete hai to sirf latest PDF save karo. Status, payment,
+  // completedAt aur 7-day deletion clock bilkul nahi badalna chahiye.
+  if (order.status === 'completed') {
+    emitOrderUpdate(order);
+    await persistOrder(order);
+    return res.json({
+      success: true,
+      completed: true,
+      message: '📄 Final PDF updated. Order completed hi rahega.',
+      order
+    });
+  }
+
   order.chatMessages = Array.isArray(order.chatMessages) ? order.chatMessages : [];
   order.chatMessages.push({
     id: 'm-final-pdf-' + Date.now(),

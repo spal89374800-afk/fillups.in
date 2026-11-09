@@ -864,6 +864,8 @@ export default function App() {
   // Whole-workspace drag state so a file can be dropped anywhere.
   const [isDraggingOverWorkspace, setIsDraggingOverWorkspace] = useState(false);
   const [isDraggingOverProof, setIsDraggingOverProof] = useState(false);
+  // Final PDF card drag state so a downloaded PDF can be dropped straight there.
+  const [isDraggingOverFinalPdf, setIsDraggingOverFinalPdf] = useState(false);
   // Chat photo picked (drag on desktop / long-press on mobile) to become proof.
   const [draggedChatImageUrl, setDraggedChatImageUrl] = useState<string | null>(null);
   const [pendingProofChatImage, setPendingProofChatImage] = useState<string | null>(null);
@@ -965,6 +967,45 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  // Final PDF upload — button aur drag-drop dono isi function ko call karte hain.
+  const uploadFinalPdfFile = async (file: File) => {
+    if (!activeWorkspaceOrder || isUploadingFinalPdf) return;
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setWorkspaceStatusMsg({ text: 'Please choose a real PDF file.', type: 'error' });
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setWorkspaceStatusMsg({ text: 'PDF is too large. Maximum 8 MB allowed.', type: 'error' });
+      return;
+    }
+    setIsUploadingFinalPdf(true);
+    try {
+      const pdfDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Could not read the PDF file.'));
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch(`/api/orders/${activeWorkspaceOrder.id}/upload-completed-form`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdfDataUrl, fileName: file.name })
+      });
+      const data = await parseJsonResponse(res);
+      if (data.success && data.order) {
+        setActiveWorkspaceOrder(data.order);
+        fetchAllData();
+        setWorkspaceStatusMsg({ text: data.message || 'Final PDF uploaded.', type: 'success' });
+      } else {
+        setWorkspaceStatusMsg({ text: data.error || 'Failed to upload final PDF.', type: 'error' });
+      }
+    } catch (err) {
+      setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'Network error uploading PDF.', type: 'error' });
+    } finally {
+      setIsUploadingFinalPdf(false);
+    }
+  };
+
   // Use an image that already exists in chat as the photo proof.
   const setProofFromChatImage = async (url: string) => {
     try {
@@ -1006,12 +1047,14 @@ export default function App() {
     if (outside || (next && !e.currentTarget.contains(next))) {
       setIsDraggingOverWorkspace(false);
       setIsDraggingOverProof(false);
+      setIsDraggingOverFinalPdf(false);
     }
   };
   const handleWorkspaceDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOverWorkspace(false);
     setIsDraggingOverProof(false);
+    setIsDraggingOverFinalPdf(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       attachFilesToChat(Array.from(e.dataTransfer.files));
     }
@@ -1066,6 +1109,41 @@ export default function App() {
         uploadPhotoProofFile(file);
       }
     }
+  };
+
+  // --- Final PDF card drop zone (downloaded PDF ko seedha yahan drop karo) ---
+  const handleFinalPdfDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activeRole === 'client' || isUploadingFinalPdf) return;
+    setIsDraggingOverFinalPdf(true);
+    setIsDraggingOverWorkspace(true);
+  };
+  const handleFinalPdfDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = e.relatedTarget as Node | null;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const outside =
+      e.clientX <= rect.left || e.clientX >= rect.right ||
+      e.clientY <= rect.top || e.clientY >= rect.bottom;
+    if (outside || (next && !e.currentTarget.contains(next))) {
+      setIsDraggingOverFinalPdf(false);
+      if (outside) setIsDraggingOverWorkspace(false);
+    }
+  };
+  const handleFinalPdfDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOverFinalPdf(false);
+    setIsDraggingOverWorkspace(false);
+    if (isUploadingFinalPdf) return;
+    if (activeRole === 'client') {
+      setWorkspaceStatusMsg({ text: 'Final PDF sirf assigned operator upload kar sakta hai.', type: 'error' });
+      return;
+    }
+    const file = e.dataTransfer.files?.[0];
+    if (file) void uploadFinalPdfFile(file);
   };
 
   // Touch-friendly fallback for in-app drag: long-press a chat image, then tap
@@ -11972,12 +12050,12 @@ export default function App() {
               onDragLeave={handleWorkspaceDragLeave}
               onDrop={handleWorkspaceDrop}
             >
-              {isDraggingOverWorkspace && !isDraggingOverChat && !isDraggingOverProof && (
+              {isDraggingOverWorkspace && !isDraggingOverChat && !isDraggingOverProof && !isDraggingOverFinalPdf && (
                 <div className="pointer-events-none absolute inset-0 z-[60] flex flex-col items-center justify-center gap-2 bg-blue-950/70 p-6 text-center text-white backdrop-blur-sm">
                   <FileUp className="h-10 w-10 animate-bounce text-cyan-300" />
                   <p className="text-sm font-black">📥 Yahan drop karein</p>
                   <p className="max-w-xs text-[11px] font-medium text-blue-100">
-                    Chat ke liye file attach hogi. Photo Proof card par drop karein to proof set hoga.
+                    Chat ke liye file attach hogi. Photo Proof card par drop karein to proof set hoga. Final PDF card par drop karein to PDF upload hoga.
                   </p>
                 </div>
               )}
@@ -12802,7 +12880,14 @@ export default function App() {
                 )}
                 </div>
 
-                <div className={`${mobileWorkspacePanel === 'pdf' ? 'block' : 'hidden'} md:block`}>
+                <div
+                  className={`${mobileWorkspacePanel === 'pdf' ? 'block' : 'hidden'} md:block rounded-2xl transition-all ${
+                    isDraggingOverFinalPdf ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : ''
+                  }`}
+                  onDragOver={handleFinalPdfDragOver}
+                  onDragLeave={handleFinalPdfDragLeave}
+                  onDrop={handleFinalPdfDrop}
+                >
                 {/* Stage 3.5: Final completed form PDF (completion = payment + this PDF) */}
                 <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-2 shadow-md">
                   <h4 className="flex items-center gap-1.5 text-xs font-bold text-white">
@@ -12810,69 +12895,74 @@ export default function App() {
                     <span>Final Completed Form PDF</span>
                   </h4>
                   {activeWorkspaceOrder.completedFormPdfUrl ? (
-                    <div className="space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
-                      <p className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-200">
-                        <CheckCircle className="h-3.5 w-3.5" />
-                        <span>{activeWorkspaceOrder.completedFormPdfName || 'Completed_Form.pdf'} uploaded</span>
-                      </p>
-                      <a
-                        href={`/api/orders/${activeWorkspaceOrder.id}/completed-form?authToken=${encodeURIComponent(readStoredSession()?.token || '')}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-2 text-[11px] font-bold text-white hover:bg-emerald-500"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        <span>Download Completed Form PDF</span>
-                      </a>
+                    <div className="space-y-2">
+                      <div className="space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+                        <p className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-200">
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          <span>{activeWorkspaceOrder.completedFormPdfName || 'Completed_Form.pdf'} uploaded</span>
+                        </p>
+                        <a
+                          href={`/api/orders/${activeWorkspaceOrder.id}/completed-form?authToken=${encodeURIComponent(readStoredSession()?.token || '')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-2 text-[11px] font-bold text-white hover:bg-emerald-500"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          <span>Download Completed Form PDF</span>
+                        </a>
+                      </div>
+                      {activeRole !== 'client' && (
+                        <label className={`flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed py-2.5 text-[11px] font-black transition-colors ${
+                          isUploadingFinalPdf
+                            ? 'border-slate-700 bg-slate-800 text-slate-400 cursor-wait'
+                            : isDraggingOverFinalPdf
+                              ? 'border-emerald-400 bg-emerald-500/20 text-emerald-100 cursor-copy'
+                              : 'border-emerald-500/40 bg-slate-950 text-emerald-200 hover:bg-emerald-500/10 cursor-pointer'
+                        }`}>
+                          {isUploadingFinalPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
+                          <span>{isUploadingFinalPdf ? 'Uploading PDF…' : isDraggingOverFinalPdf ? '📥 PDF yahan drop karein' : '📥 Naya PDF drop karein ya choose karein'}</span>
+                          <input
+                            type="file"
+                            accept="application/pdf,.pdf"
+                            className="hidden"
+                            disabled={isUploadingFinalPdf}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) void uploadFinalPdfFile(file);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      )}
                     </div>
                   ) : activeRole !== 'client' ? (
-                    <label className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[11px] font-black text-white ${isUploadingFinalPdf ? 'bg-slate-700 cursor-wait' : 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 cursor-pointer'}`}>
-                      {isUploadingFinalPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-                      <span>{isUploadingFinalPdf ? 'Uploading PDF…' : '📄 Upload Final Completed Form PDF'}</span>
+                    <label className={`flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed py-3 text-[11px] font-black text-white transition-colors ${
+                      isUploadingFinalPdf
+                        ? 'border-slate-700 bg-slate-800 cursor-wait'
+                        : isDraggingOverFinalPdf
+                          ? 'border-emerald-300 bg-emerald-500/20 cursor-copy'
+                          : 'border-emerald-500/40 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 cursor-pointer'
+                    }`}>
+                      <span className="flex items-center gap-1.5">
+                        {isUploadingFinalPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
+                        <span>{isUploadingFinalPdf ? 'Uploading PDF…' : isDraggingOverFinalPdf ? '📥 PDF yahan drop karein' : '📄 Final PDF upload karein'}</span>
+                      </span>
+                      {!isUploadingFinalPdf && !isDraggingOverFinalPdf && (
+                        <span className="text-[10px] font-semibold text-emerald-100/80">
+                          File yahan drag-drop karein ya click karke choose karein
+                        </span>
+                      )}
                       <input
                         type="file"
                         accept="application/pdf,.pdf"
                         className="hidden"
                         disabled={isUploadingFinalPdf}
                         onClick={(e) => e.stopPropagation()}
-                        onChange={async (e) => {
+                        onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (!file) return;
-                          if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-                            setWorkspaceStatusMsg({ text: 'Please choose a real PDF file.', type: 'error' });
-                            return;
-                          }
-                          if (file.size > 8 * 1024 * 1024) {
-                            setWorkspaceStatusMsg({ text: 'PDF is too large. Maximum 8 MB allowed.', type: 'error' });
-                            return;
-                          }
-                          setIsUploadingFinalPdf(true);
-                          try {
-                            const pdfDataUrl = await new Promise<string>((resolve, reject) => {
-                              const reader = new FileReader();
-                              reader.onload = () => resolve(reader.result as string);
-                              reader.onerror = () => reject(new Error('Could not read the PDF file.'));
-                              reader.readAsDataURL(file);
-                            });
-                            const res = await fetch(`/api/orders/${activeWorkspaceOrder.id}/upload-completed-form`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ pdfDataUrl, fileName: file.name })
-                            });
-                            const data = await parseJsonResponse(res);
-                            if (data.success && data.order) {
-                              setActiveWorkspaceOrder(data.order);
-                              fetchAllData();
-                              setWorkspaceStatusMsg({ text: data.message || 'Final PDF uploaded.', type: 'success' });
-                            } else {
-                              setWorkspaceStatusMsg({ text: data.error || 'Failed to upload final PDF.', type: 'error' });
-                            }
-                          } catch (err) {
-                            setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'Network error uploading PDF.', type: 'error' });
-                          } finally {
-                            setIsUploadingFinalPdf(false);
-                            e.target.value = '';
-                          }
+                          if (file) void uploadFinalPdfFile(file);
+                          e.target.value = '';
                         }}
                       />
                     </label>
