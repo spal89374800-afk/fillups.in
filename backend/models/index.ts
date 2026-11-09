@@ -156,6 +156,24 @@ const AdminUpiSettingSchema = new Schema({
   payeeName: String
 }, { timestamps: true, strict: false });
 
+// Anonymized financial record kept after an order is deleted by the 7-day
+// retention sweep. No name, phone, address, chat, documents or UTR.
+const OrderArchiveSchema = new Schema({
+  id: { type: String, unique: true, index: true },
+  orderType: String,
+  serviceName: String,
+  formTitle: String,
+  amountPaid: Number,
+  govtFee: Number,
+  adminCommission: Number,
+  operatorShare: Number,
+  status: String,
+  createdAt: String,
+  completedAt: String,
+  cancelledAt: String,
+  deletedAt: String
+}, { strict: false });
+
 export const UserAccountModel = mongoose.models.UserAccount || model('UserAccount', UserAccountSchema);
 export const VleOperatorModel = mongoose.models.VleOperator || model('VleOperator', VleOperatorSchema);
 export const FillerExpertModel = mongoose.models.FillerExpert || model('FillerExpert', FillerExpertSchema);
@@ -166,3 +184,4 @@ export const GlobalPricingModel = mongoose.models.GlobalPricing || model('Global
 export const AdminPaymentLedgerModel = mongoose.models.AdminPaymentLedger || model('AdminPaymentLedger', AdminPaymentLedgerSchema);
 export const PayoutProfileModel = mongoose.models.PayoutProfile || model('PayoutProfile', PayoutProfileSchema);
 export const AdminUpiSettingModel = mongoose.models.AdminUpiSetting || model('AdminUpiSetting', AdminUpiSettingSchema);
+export const OrderArchiveModel = mongoose.models.OrderArchive || model('OrderArchive', OrderArchiveSchema);

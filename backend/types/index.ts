@@ -70,7 +70,7 @@ export interface VleOrder {
   targetOperatorName?: string;
   targetOperatorPhone?: string;
   targetOperatorEmail?: string;
-  status: 'pending' | 'accepted' | 'proof_submitted' | 'paid' | 'completed';
+  status: 'pending' | 'accepted' | 'proof_submitted' | 'paid' | 'completed' | 'cancelled' | 'expired';
   acceptedById?: string;
   acceptedByName?: string;
   acceptedByRole?: 'jan_seva_vle' | 'form_filler_expert';
@@ -117,6 +117,10 @@ export interface VleOrder {
   review?: string;
   ratedAt?: string;
   completedAt?: string;
+  /** Last human activity — inactivity ke baad order auto-cancel hota hai. */
+  lastActivityAt?: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
 }
 
 export interface FillerOrder {
@@ -135,7 +139,7 @@ export interface FillerOrder {
   district?: string;
   city?: string;
   availableOperatorIds?: string[];
-  status: 'pending' | 'accepted' | 'proof_submitted' | 'paid' | 'completed';
+  status: 'pending' | 'accepted' | 'proof_submitted' | 'paid' | 'completed' | 'cancelled' | 'expired';
   acceptedById?: string;
   acceptedByName?: string;
   acceptedByRole?: 'jan_seva_vle' | 'form_filler_expert';
@@ -182,6 +186,10 @@ export interface FillerOrder {
   review?: string;
   ratedAt?: string;
   completedAt?: string;
+  /** Last human activity — inactivity ke baad order auto-cancel hota hai. */
+  lastActivityAt?: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
 }
 
 export interface OperatorSuspensionEntry {

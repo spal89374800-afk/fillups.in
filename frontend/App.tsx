@@ -8189,12 +8189,16 @@ export default function App() {
                           ord.status === 'paid' ? 'bg-blue-500/20 text-blue-300' :
                           ord.status === 'proof_submitted' ? 'bg-purple-500/20 text-purple-300 animate-pulse' :
                           ord.status === 'accepted' ? 'bg-sky-500/20 text-sky-300' :
+                          ord.status === 'cancelled' ? 'bg-rose-500/20 text-rose-300' :
+                          ord.status === 'expired' ? 'bg-slate-700/40 text-slate-300' :
                           'bg-blue-500/20 text-blue-300'
                         }`}>
                           {ord.status === 'completed' ? '✅ Completed (credentials ready)' :
                            ord.status === 'paid' ? '💳 Paid (Awaiting Delivery)' :
                            ord.status === 'proof_submitted' ? '📸 Photo Proof Ready to Verify' :
                            ord.status === 'accepted' ? '⚡ Operator Assigned' :
+                           ord.status === 'cancelled' ? '🚫 Cancelled' :
+                           ord.status === 'expired' ? '⌛ Expired' :
                            '⏳ Pending Operator'}
                         </span>
                       </div>

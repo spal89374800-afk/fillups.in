@@ -10,7 +10,8 @@ import {
   GlobalPricingModel,
   AdminPaymentLedgerModel,
   PayoutProfileModel,
-  AdminUpiSettingModel
+  AdminUpiSettingModel,
+  OrderArchiveModel
 } from '../models/index.ts';
 import { isMongoConnected, onMongoReady } from '../config/db.ts';
 
@@ -493,6 +494,9 @@ export async function persistToMongo(collection: string, doc: any) {
         break;
       case 'adminUpiSetting':
         await AdminUpiSettingModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
+        break;
+      case 'orderArchive':
+        await OrderArchiveModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
       default:
         break;
@@ -1279,8 +1283,16 @@ export function recordOfflineEmail(account?: UserAccount): void {
 }
 
 // Broadcast orders live in BOTH stores, so persist to both collections.
-export async function persistOrder(order: any): Promise<void> {
+export async function persistOrder(order: any, options: { touchActivity?: boolean } = {}): Promise<void> {
   if (!order?.id) return;
+  // Har persist = activity, par sirf active orders ke liye. Terminal order ka
+  // deletion clock completedAt/cancelledAt se chalta hai, isliye use touch nahi karte.
+  // Background cleanup (document purge) activity ko touch nahi karta, warna
+  // dead order bhi hamesha active dikhega.
+  const touchActivity = options.touchActivity !== false;
+  if (touchActivity && !isTerminalOrderStatus(order.status)) {
+    order.lastActivityAt = new Date().toISOString();
+  }
   const inVle = vleOrdersStore.some(item => item.id === order.id);
   const inFiller = fillerOrdersStore.some(item => item.id === order.id);
   if (inVle) await persistToMongo('vleOrder', order);
@@ -1292,6 +1304,77 @@ export async function persistOrder(order: any): Promise<void> {
       await persistToMongo('vleOrder', order);
     }
   }
+}
+
+// ========================================================
+// 🧹 ORDER RETENTION (7-day delete + anonymized archive)
+// ========================================================
+export const TERMINAL_ORDER_STATUSES = new Set(['completed', 'cancelled', 'expired']);
+
+export function isTerminalOrderStatus(status: unknown): boolean {
+  return TERMINAL_ORDER_STATUSES.has(String(status || ''));
+}
+
+export interface OrderArchive {
+  id: string;
+  orderType?: string;
+  serviceName?: string;
+  formTitle?: string;
+  amountPaid: number;
+  govtFee: number;
+  adminCommission: number;
+  operatorShare: number;
+  status: string;
+  createdAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  deletedAt: string;
+}
+
+export async function archiveOrderSummary(entry: OrderArchive): Promise<void> {
+  await persistToMongo('orderArchive', entry);
+}
+
+export function dropPendingMongoWritesForOrder(orderId: string): void {
+  if (!orderId) return;
+  pendingMongoWrites.delete(`vleOrder:${orderId}`);
+  pendingMongoWrites.delete(`fillerOrder:${orderId}`);
+}
+
+export async function deleteOrderFromMongo(orderId: string): Promise<boolean> {
+  if (!orderId || !isMongoConnected()) return false;
+  try {
+    await Promise.all([
+      (VleOrderModel as any).deleteOne({ id: orderId }),
+      (FillerOrderModel as any).deleteOne({ id: orderId })
+    ]);
+    // Reconnect par purani queued write order ko wapas na le aaye.
+    dropPendingMongoWritesForOrder(orderId);
+    return true;
+  } catch (error) {
+    console.error('[Retention] Order delete failed:', error);
+    return false;
+  }
+}
+
+export function removeOrdersFromStores(orderIds: Set<string>): void {
+  if (!orderIds.size) return;
+  vleOrdersStore = vleOrdersStore.filter(order => !orderIds.has(order.id));
+  fillerOrdersStore = fillerOrdersStore.filter(order => !orderIds.has(order.id));
+  for (let index = liveCameraSessionsStore.length - 1; index >= 0; index -= 1) {
+    if (orderIds.has(liveCameraSessionsStore[index].orderId)) {
+      liveCameraSessionsStore.splice(index, 1);
+    }
+  }
+}
+
+export function anonymizeAdminLedgerForOrder(orderId: string): void {
+  const entry = adminPaymentLedgerStore.find(item => item.orderId === orderId);
+  if (!entry) return;
+  entry.clientName = 'Deleted';
+  entry.clientPhone = '';
+  entry.note = entry.note || 'Order deleted after 7-day retention window';
+  void persistToMongo('ledger', entry).catch(() => {});
 }
 
 export async function persistAccount(account?: UserAccount): Promise<void> {
