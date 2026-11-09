@@ -24,7 +24,10 @@ import {
   persistToMongo,
   matchesAnyOperatorId,
   normalizeLocation,
-  locationMatches
+  locationMatches,
+  isOperatorSuspended,
+  isAccountSuspended,
+  suspensionReasonFor
 } from '../services/storeService.ts';
 import { VleOperator, VleOrder, ServiceScope } from '../types/index.ts';
 import { consumeOtpVerification } from './authRoutes.ts';
@@ -584,10 +587,11 @@ vleRouter.post('/vle/orders/:id/accept', requireAccount('vle'), async (req, res)
   if (!operator) {
     return res.status(403).json({ success: false, error: 'A registered Jan Seva operator account is required to accept requests.' });
   }
-  if (operator.bidsSuspended) {
+  if (isOperatorSuspended(operator) || isAccountSuspended(account)) {
     return res.status(403).json({
       success: false,
-      error: '🚫 BIDS SUSPENDED: Your account has been blocked from accepting bids because an in-app payment was bypassed.'
+      bidsSuspended: true,
+      error: `🚫 BIDS SUSPENDED: ${suspensionReasonFor(operator.bidsSuspended ? operator : account)}`
     });
   }
   if (!isOrderVisibleToAccount(order, account)) {

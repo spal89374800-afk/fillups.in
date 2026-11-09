@@ -184,6 +184,15 @@ export interface FillerOrder {
   completedAt?: string;
 }
 
+export interface OperatorSuspensionEntry {
+  action: 'suspend' | 'unsuspend' | 'auto-expired';
+  reason: string;
+  days?: number;
+  note?: string;
+  at: string;
+  by?: string;
+}
+
 export interface VleOperator {
   id: string;
   name: string;
@@ -198,6 +207,10 @@ export interface VleOperator {
   role?: 'vle' | 'filler';
   status: 'Online' | 'Busy';
   bidsSuspended?: boolean;
+  bidsSuspendedAt?: string;
+  bidsSuspendedReason?: string;
+  bidsSuspendedUntil?: string;
+  suspensionHistory?: OperatorSuspensionEntry[];
   complianceScore: number;
   pricingList: {
     id: string;

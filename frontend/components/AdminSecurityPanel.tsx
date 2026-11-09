@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ShieldAlert, ShieldCheck, Ban, RefreshCw, Globe2, Server, Activity, Lock, Unlock, CreditCard, Save, Trash2, BookOpen, CheckCircle, XCircle, Building2 } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, Ban, RefreshCw, Globe2, Server, Activity, Lock, Unlock, CreditCard, Save, Trash2, BookOpen, CheckCircle, XCircle, Building2, Users, UserX, UserCheck, Search, Clock } from 'lucide-react';
 import { fetchWithRetry, parseJsonResponse } from '../services/apiClient';
 import { LocalizedTree, type AppLanguage } from '../localization';
 
@@ -57,7 +57,47 @@ interface AdminUpiSettings {
   source: string;
 }
 
+interface OperatorSuspensionEntry {
+  action: 'suspend' | 'unsuspend' | 'auto-expired';
+  reason: string;
+  days?: number;
+  note?: string;
+  at: string;
+  by?: string;
+}
+
+interface AdminOperatorView {
+  id: string;
+  accountId?: string;
+  name: string;
+  centerName?: string;
+  cscId: string;
+  role: 'vle' | 'filler';
+  district: string;
+  city: string;
+  state?: string;
+  phone: string;
+  email?: string;
+  status: string;
+  complianceScore: number;
+  bidsSuspended: boolean;
+  bidsSuspendedAt?: string;
+  bidsSuspendedReason?: string;
+  bidsSuspendedUntil?: string;
+  suspensionHistory: OperatorSuspensionEntry[];
+  activeBidCount: number;
+}
+
 const TOKEN_STORAGE_KEY = 'digiseva_admin_token';
+
+const SUSPENSION_REASON_PRESETS = [
+  'In-app payment bypass — client ne direct UPI/WhatsApp se paisa diya',
+  'Chat me phone/UPI share karke platform se bahar payment maanga',
+  'Fake / galat document ya PDF upload kiya',
+  'Order accept karke abandon kiya (client ko wait karaya)',
+  'Verified client complaint (screenshot/proof ke saath)',
+  'Fake payment screenshot / UTR mismatch'
+];
 
 const getStoredToken = () => {
   if (typeof window === 'undefined') return '';
@@ -84,11 +124,26 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   const [ledger, setLedger] = useState<any[]>([]);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerNote, setLedgerNote] = useState('');
+  const [operators, setOperators] = useState<AdminOperatorView[]>([]);
+  const [operatorsLoading, setOperatorsLoading] = useState(false);
+  const [operatorSearch, setOperatorSearch] = useState('');
+  const [suspendTarget, setSuspendTarget] = useState<AdminOperatorView | null>(null);
+  const [suspendReason, setSuspendReason] = useState('');
+  const [suspendDays, setSuspendDays] = useState('7');
+  const [suspendNote, setSuspendNote] = useState('');
+  const [suspendBusy, setSuspendBusy] = useState(false);
+  const [historyTarget, setHistoryTarget] = useState<AdminOperatorView | null>(null);
+
+  const authHeaders = useMemo<Record<string, string>>(() => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['x-admin-token'] = token;
+    return headers;
+  }, [token]);
 
   const loadLedger = async () => {
     setLedgerLoading(true);
     try {
-      const res = await fetchWithRetry('/api/admin/payments/ledger');
+      const res = await fetchWithRetry('/api/admin/payments/ledger', { headers: authHeaders });
       const data = await parseJsonResponse(res);
       if (data.success && Array.isArray(data.ledger)) setLedger(data.ledger);
     } catch {}
@@ -99,7 +154,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
     try {
       await fetchWithRetry(`/api/admin/payments/ledger/${id}/status`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({ status, note: ledgerNote })
       });
       setLedgerNote('');
@@ -107,11 +162,70 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
     } catch {}
   };
 
-  const authHeaders = useMemo<Record<string, string>>(() => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['x-admin-token'] = token;
-    return headers;
-  }, [token]);
+  const loadOperators = useCallback(async (search = '') => {
+    setOperatorsLoading(true);
+    try {
+      const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+      const res = await fetchWithRetry(`/api/admin/operators${query}`, { headers: authHeaders });
+      const data = await parseJsonResponse(res);
+      if (res.ok && data.success && Array.isArray(data.operators)) {
+        setOperators(data.operators as AdminOperatorView[]);
+      }
+    } catch {}
+    setOperatorsLoading(false);
+  }, [authHeaders]);
+
+  const handleSuspend = async () => {
+    if (!suspendTarget) return;
+    if (!suspendReason.trim()) {
+      setMessage({ text: 'Suspension reason likhna zaroori hai (proof-based action).', type: 'error' });
+      return;
+    }
+    setSuspendBusy(true);
+    try {
+      const res = await fetchWithRetry(`/api/admin/operators/${encodeURIComponent(suspendTarget.id)}/suspend`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          reason: suspendReason.trim(),
+          days: Number(suspendDays) || 0,
+          note: suspendNote.trim()
+        })
+      });
+      const data = await parseJsonResponse(res);
+      if (!res.ok || !data.success) throw new Error(data.error || 'Could not suspend the operator.');
+      setMessage({ text: data.message || 'Operator suspended.', type: 'ok' });
+      setSuspendTarget(null);
+      setSuspendReason('');
+      setSuspendNote('');
+      setSuspendDays('7');
+      await loadOperators(operatorSearch);
+    } catch (error) {
+      setMessage({ text: error instanceof Error ? error.message : 'Could not suspend the operator.', type: 'error' });
+    } finally {
+      setSuspendBusy(false);
+    }
+  };
+
+  const handleUnsuspend = async (operator: AdminOperatorView) => {
+    setSuspendBusy(true);
+    try {
+      const res = await fetchWithRetry(`/api/admin/operators/${encodeURIComponent(operator.id)}/unsuspend`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ reason: 'Admin review ke baad suspension hataayi gayi.' })
+      });
+      const data = await parseJsonResponse(res);
+      if (!res.ok || !data.success) throw new Error(data.error || 'Could not unsuspend the operator.');
+      setMessage({ text: data.message || 'Operator unsuspended.', type: 'ok' });
+      setHistoryTarget(null);
+      await loadOperators(operatorSearch);
+    } catch (error) {
+      setMessage({ text: error instanceof Error ? error.message : 'Could not unsuspend the operator.', type: 'error' });
+    } finally {
+      setSuspendBusy(false);
+    }
+  };
 
   const loadData = useCallback(async () => {
     if (!token.trim()) {
@@ -166,6 +280,10 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   useEffect(() => {
     if (token) void loadData();
   }, [token, loadData]);
+
+  useEffect(() => {
+    if (token) void loadOperators('');
+  }, [token, loadOperators]);
 
   const handleSaveToken = () => {
     const clean = tokenInput.trim();
@@ -434,6 +552,291 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
               <span className="text-[10px] font-mono text-slate-500">
                 Current: {govtUpiSettings.upiId || '(not set)'} • source: {govtUpiSettings.source}
               </span>
+            </div>
+          </div>
+        )}
+
+        {/* 🚫 Operator Management — list, suspend, unsuspend, audit trail */}
+        <div className="rounded-2xl border border-white/10 bg-[#0A1020]/80 p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-cyan-300" />
+              <div>
+                <h2 className="text-sm font-black text-white">Operator Management</h2>
+                <p className="text-[11px] text-slate-400">Suspend / unsuspend bids with proof-based reason &amp; audit trail.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-rose-300">
+                {operators.filter(item => item.bidsSuspended).length} suspended
+              </span>
+              <button
+                onClick={() => void loadOperators(operatorSearch)}
+                disabled={operatorsLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] border border-white/10 text-xs text-slate-300 hover:bg-white/[0.12] disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${operatorsLoading ? 'animate-spin' : ''}`} /> Refresh
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+              <input
+                value={operatorSearch}
+                onChange={event => setOperatorSearch(event.target.value)}
+                onKeyDown={event => { if (event.key === 'Enter') void loadOperators(operatorSearch); }}
+                placeholder="Search by name, CSC ID, phone, email, district…"
+                className="w-full h-10 pl-9 pr-3 rounded-xl bg-[#090F1D] border border-white/10 text-xs text-white outline-none focus:border-cyan-400/70"
+              />
+            </div>
+            <button
+              onClick={() => void loadOperators(operatorSearch)}
+              disabled={operatorsLoading}
+              className="h-10 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold transition disabled:opacity-50"
+            >
+              Search
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[11px]">
+              <thead className="text-slate-400 uppercase tracking-wider">
+                <tr className="border-b border-white/10">
+                  <th className="py-2 pr-3">Operator</th>
+                  <th className="py-2 pr-3">Contact</th>
+                  <th className="py-2 pr-3">Location</th>
+                  <th className="py-2 pr-3">Active</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {operators.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-6 text-center text-slate-500">
+                      {operatorsLoading ? 'Loading operators…' : 'No operators found.'}
+                    </td>
+                  </tr>
+                )}
+                {operators.map(operator => (
+                  <tr key={operator.id + (operator.accountId || '')} className="border-b border-white/5 align-top">
+                    <td className="py-2 pr-3">
+                      <p className="font-bold text-white">{operator.centerName || operator.name}</p>
+                      <p className="text-[10px] text-slate-400">
+                        {operator.name} • {operator.cscId || operator.id}
+                        <span className={`ml-1.5 px-1.5 py-0.5 rounded font-bold ${operator.role === 'filler' ? 'bg-violet-500/20 text-violet-200' : 'bg-cyan-500/20 text-cyan-200'}`}>
+                          {operator.role === 'filler' ? 'Form Expert' : 'Jan Seva'}
+                        </span>
+                      </p>
+                    </td>
+                    <td className="py-2 pr-3 text-slate-300">
+                      <p className="font-mono">{operator.phone || '-'}</p>
+                      <p className="text-[10px] text-slate-500 truncate max-w-[160px]" title={operator.email}>{operator.email || '-'}</p>
+                    </td>
+                    <td className="py-2 pr-3 text-slate-300">
+                      <p>{operator.city || '-'}</p>
+                      <p className="text-[10px] text-slate-500">{operator.district}{operator.state ? `, ${operator.state}` : ''}</p>
+                    </td>
+                    <td className="py-2 pr-3 font-mono text-cyan-300">{operator.activeBidCount}</td>
+                    <td className="py-2 pr-3 max-w-[220px]">
+                      {operator.bidsSuspended ? (
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-200 border border-rose-400/30 font-bold">
+                            <UserX className="w-3 h-3" /> Suspended
+                          </span>
+                          <p className="text-[10px] text-rose-200/80 break-words" title={operator.bidsSuspendedReason}>{operator.bidsSuspendedReason || 'No reason recorded.'}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {operator.bidsSuspendedUntil
+                              ? `Until ${new Date(operator.bidsSuspendedUntil).toLocaleString()}`
+                              : 'Permanent'}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-200 border border-emerald-400/20 font-bold">
+                          <UserCheck className="w-3 h-3" /> Active
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {operator.bidsSuspended ? (
+                          <button
+                            onClick={() => void handleUnsuspend(operator)}
+                            disabled={suspendBusy}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-[10px] font-bold hover:bg-emerald-500/25 disabled:opacity-50"
+                          >
+                            <UserCheck className="w-3 h-3" /> Unsuspend
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSuspendTarget(operator);
+                              setSuspendReason('');
+                              setSuspendNote('');
+                              setSuspendDays('7');
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-500/15 border border-rose-400/30 text-rose-200 text-[10px] font-bold hover:bg-rose-500/25"
+                          >
+                            <UserX className="w-3 h-3" /> Suspend
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setHistoryTarget(operator)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.06] border border-white/10 text-slate-300 text-[10px] font-bold hover:bg-white/[0.12]"
+                        >
+                          <Clock className="w-3 h-3" /> History
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Suspend modal */}
+        {suspendTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 overflow-y-auto">
+            <div className="w-full max-w-lg rounded-2xl border border-rose-500/30 bg-[#0A1020] p-5 space-y-4 my-auto">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-black text-white">Suspend Operator</h3>
+                  <p className="text-[11px] text-slate-400">{suspendTarget.centerName || suspendTarget.name} • {suspendTarget.cscId || suspendTarget.id}</p>
+                </div>
+                <button onClick={() => setSuspendTarget(null)} className="text-slate-400 hover:text-white text-xs font-bold">✕</button>
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-bold text-slate-300">Reason (proof-based) *</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {SUSPENSION_REASON_PRESETS.map(preset => (
+                    <button
+                      key={preset}
+                      onClick={() => setSuspendReason(preset)}
+                      className={`text-left text-[10px] px-2 py-1 rounded-lg border transition ${
+                        suspendReason === preset
+                          ? 'bg-rose-500/20 border-rose-400/50 text-rose-100'
+                          : 'bg-white/[0.04] border-white/10 text-slate-300 hover:bg-white/[0.08]'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  value={suspendReason}
+                  onChange={event => setSuspendReason(event.target.value)}
+                  rows={2}
+                  placeholder="Ya apna reason likhein…"
+                  className="w-full px-3 py-2 rounded-xl bg-[#090F1D] border border-white/10 text-xs text-white outline-none focus:border-rose-400/70"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-bold text-slate-300">Duration</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'Permanent', value: '0' },
+                    { label: '7 days', value: '7' },
+                    { label: '15 days', value: '15' },
+                    { label: '30 days', value: '30' }
+                  ].map(option => (
+                    <button
+                      key={option.value}
+                      onClick={() => setSuspendDays(option.value)}
+                      className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold transition ${
+                        suspendDays === option.value
+                          ? 'bg-rose-500/20 border-rose-400/50 text-rose-100'
+                          : 'bg-white/[0.04] border-white/10 text-slate-300 hover:bg-white/[0.08]'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-500">Temporary suspension khud expire ho jaati hai. Permanent sirf admin unsuspend kar sakta hai.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-bold text-slate-300">Note (optional)</p>
+                <input
+                  value={suspendNote}
+                  onChange={event => setSuspendNote(event.target.value)}
+                  placeholder="Order ID, proof reference, complaint details…"
+                  className="w-full h-9 px-3 rounded-xl bg-[#090F1D] border border-white/10 text-xs text-white outline-none focus:border-rose-400/70"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setSuspendTarget(null)} className="px-4 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/[0.12]">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleSuspend()}
+                  disabled={suspendBusy || !suspendReason.trim()}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white text-xs font-bold transition disabled:opacity-50"
+                >
+                  <UserX className="w-3.5 h-3.5" /> {suspendBusy ? 'Suspending…' : 'Confirm Suspend'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* History modal */}
+        {historyTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 overflow-y-auto">
+            <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0A1020] p-5 space-y-3 my-auto">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-black text-white">Suspension History</h3>
+                  <p className="text-[11px] text-slate-400">{historyTarget.centerName || historyTarget.name} • {historyTarget.cscId || historyTarget.id}</p>
+                </div>
+                <button onClick={() => setHistoryTarget(null)} className="text-slate-400 hover:text-white text-xs font-bold">✕</button>
+              </div>
+              {historyTarget.suspensionHistory.length === 0 ? (
+                <p className="text-[11px] text-slate-500">No suspension history yet.</p>
+              ) : (
+                <ul className="space-y-2 max-h-[60vh] overflow-y-auto">
+                  {[...historyTarget.suspensionHistory].reverse().map((entry, index) => (
+                    <li key={`${entry.at}-${index}`} className="rounded-xl border border-white/10 bg-[#090F1D] p-3 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                          entry.action === 'suspend'
+                            ? 'bg-rose-500/20 text-rose-200 border border-rose-400/30'
+                            : entry.action === 'unsuspend'
+                              ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/20'
+                              : 'bg-amber-500/15 text-amber-200 border border-amber-400/20'
+                        }`}>
+                          {entry.action === 'suspend' ? 'Suspended' : entry.action === 'unsuspend' ? 'Unsuspended' : 'Auto-expired'}
+                        </span>
+                        <span className="text-[10px] text-slate-500">{new Date(entry.at).toLocaleString()}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300">{entry.reason}</p>
+                      {entry.days ? <p className="text-[10px] text-slate-400">Duration: {entry.days} day(s)</p> : null}
+                      {entry.note ? <p className="text-[10px] text-slate-400">Note: {entry.note}</p> : null}
+                      {entry.by ? <p className="text-[10px] text-slate-500">By: {entry.by}</p> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setHistoryTarget(null)} className="px-4 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/[0.12]">
+                  Close
+                </button>
+                {historyTarget.bidsSuspended && (
+                  <button
+                    onClick={() => void handleUnsuspend(historyTarget)}
+                    disabled={suspendBusy}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition disabled:opacity-50"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" /> Unsuspend
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

@@ -9,7 +9,7 @@ import {
   getSecuritySummary,
   unblockIp
 } from '../middleware/botShieldMiddleware.ts';
-import { getAdminPaymentLedger, updateAdminPaymentLedgerStatus } from '../services/storeService.ts';
+import { getAdminPaymentLedger, updateAdminPaymentLedgerStatus, listOperatorsForAdmin, suspendOperatorByIdentifier, unsuspendOperatorByIdentifier } from '../services/storeService.ts';
 
 export const adminSecurityRouter = Router();
 
@@ -119,6 +119,59 @@ adminSecurityRouter.post('/admin/payments/ledger/:id/status', (req, res) => {
   const updated = updateAdminPaymentLedgerStatus(req.params.id, status, typeof req.body?.note === 'string' ? req.body.note.trim() : undefined);
   if (!updated) return res.status(404).json({ success: false, error: 'Ledger entry not found.' });
   res.json({ success: true, message: `Admin payment marked ${status}.`, entry: updated });
+});
+
+// ========================================================
+// 🚫 OPERATOR MANAGEMENT (suspend / unsuspend + audit trail)
+// ========================================================
+// Suspension proof-based hai: admin reason deta hai (optional days). Temporary
+// suspension khud expire ho jaati hai, permanent sirf admin unsuspend kar sakta hai.
+adminSecurityRouter.get('/admin/operators', (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const search = typeof req.query.search === 'string' ? req.query.search : '';
+  const operators = listOperatorsForAdmin(search);
+  res.json({
+    success: true,
+    count: operators.length,
+    suspendedCount: operators.filter(item => item.bidsSuspended).length,
+    operators
+  });
+});
+
+adminSecurityRouter.post('/admin/operators/:id/suspend', async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) {
+    return res.status(400).json({ success: false, error: 'A suspension reason is required (proof-based action).' });
+  }
+  const days = Number(req.body?.days) || 0;
+  if (!Number.isFinite(days) || days < 0 || days > 3650) {
+    return res.status(400).json({ success: false, error: 'Suspension days must be between 0 (permanent) and 3650.' });
+  }
+  const updated = await suspendOperatorByIdentifier(req.params.id, {
+    reason,
+    days,
+    note: typeof req.body?.note === 'string' ? req.body.note : undefined,
+    by: typeof req.body?.adminName === 'string' ? req.body.adminName : 'Admin'
+  });
+  if (!updated) return res.status(404).json({ success: false, error: 'Operator not found.' });
+  res.json({
+    success: true,
+    message: days > 0
+      ? `⏸️ Operator suspended for ${days} day(s). Bids will resume automatically after the period.`
+      : '⛔ Operator suspended permanently. Only an admin can unsuspend.',
+    operator: updated
+  });
+});
+
+adminSecurityRouter.post('/admin/operators/:id/unsuspend', async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const updated = await unsuspendOperatorByIdentifier(req.params.id, {
+    reason: typeof req.body?.reason === 'string' ? req.body.reason : undefined,
+    by: typeof req.body?.adminName === 'string' ? req.body.adminName : 'Admin'
+  });
+  if (!updated) return res.status(404).json({ success: false, error: 'Operator not found.' });
+  res.json({ success: true, message: '✅ Operator unsuspended. They can accept bids again.', operator: updated });
 });
 
 // ========================================================

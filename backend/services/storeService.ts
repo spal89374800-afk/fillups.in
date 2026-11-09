@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { AdminPaymentLedgerEntry, AdminPaymentLedgerStatus, VleOperator, VleOrder, FillerOrder, ServiceScope } from '../types/index.ts';
+import { AdminPaymentLedgerEntry, AdminPaymentLedgerStatus, VleOperator, VleOrder, FillerOrder, ServiceScope, OperatorSuspensionEntry } from '../types/index.ts';
 import {
   UserAccountModel,
   VleOperatorModel,
@@ -103,6 +103,12 @@ export interface UserAccount {
   offlineEmailPaused?: boolean;
   lastSeenOnlineAt?: string;
   lastSeenOfflineAt?: string;
+  // Admin suspension (bid accept block + audit trail)
+  bidsSuspended?: boolean;
+  bidsSuspendedAt?: string;
+  bidsSuspendedReason?: string;
+  bidsSuspendedUntil?: string;
+  suspensionHistory?: OperatorSuspensionEntry[];
 }
 
 export let userAccountsStore: UserAccount[] = [];
@@ -542,6 +548,280 @@ export function findVleOperatorForAccount(account?: UserAccount): VleOperator | 
   );
 }
 
+// Same matching, but includes Form Filler experts (role === 'filler').
+export function findOperatorRecordForAccount(account?: UserAccount): VleOperator | undefined {
+  if (!account) return undefined;
+  return vleListStore.find(operator =>
+    (account.cscId && operator.cscId === account.cscId) ||
+    (account.phone && normalizePhone(operator.phone) === normalizePhone(account.phone)) ||
+    (account.email && normalizeEmail(operator.email) === normalizeEmail(account.email))
+  );
+}
+
+// =========================================================================
+// 🚫 OPERATOR SUSPENSION (admin controlled bid block + audit trail)
+// =========================================================================
+// Suspension proof-based hoti hai: admin reason + optional days deta hai.
+// Temporary suspension `bidsSuspendedUntil` se khud expire ho jaati hai,
+// permanent suspension ka koi expiry nahi hota (sirf admin unsuspend karega).
+
+export interface AdminOperatorView {
+  id: string;
+  accountId?: string;
+  name: string;
+  centerName?: string;
+  cscId: string;
+  role: 'vle' | 'filler';
+  district: string;
+  city: string;
+  state?: string;
+  phone: string;
+  email?: string;
+  status: string;
+  complianceScore: number;
+  bidsSuspended: boolean;
+  bidsSuspendedAt?: string;
+  bidsSuspendedReason?: string;
+  bidsSuspendedUntil?: string;
+  suspensionHistory: OperatorSuspensionEntry[];
+  activeBidCount: number;
+}
+
+type SuspensionTarget = { operator?: VleOperator; account?: UserAccount };
+
+function findOperatorByIdentifierRaw(identifier: string): VleOperator | undefined {
+  const key = String(identifier || '').trim().toLowerCase();
+  if (!key) return undefined;
+  const phoneKey = normalizePhone(key);
+  return vleListStore.find(operator => {
+    const values = [
+      operator.id,
+      operator.cscId,
+      operator.phone,
+      normalizePhone(operator.phone),
+      operator.email,
+      normalizeEmail(operator.email)
+    ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    return values.some(value => value.trim().toLowerCase() === key) ||
+      (phoneKey.length === 10 && normalizePhone(operator.phone) === phoneKey);
+  });
+}
+
+function findAccountByIdentifierRaw(identifier: string): UserAccount | undefined {
+  const key = String(identifier || '').trim().toLowerCase();
+  if (!key) return undefined;
+  const phoneKey = normalizePhone(key);
+  return userAccountsStore.find(account => {
+    if (account.role !== 'vle' && account.role !== 'filler') return false;
+    const values = [
+      account.id,
+      account.cscId,
+      account.phone,
+      normalizePhone(account.phone),
+      account.email,
+      normalizeEmail(account.email)
+    ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    return values.some(value => value.trim().toLowerCase() === key) ||
+      (phoneKey.length === 10 && normalizePhone(account.phone) === phoneKey);
+  });
+}
+
+function resolveSuspensionTarget(identifier: string): SuspensionTarget | undefined {
+  const operator = findOperatorByIdentifierRaw(identifier);
+  const account = (operator ? findAccountForOperator(operator) : undefined) || findAccountByIdentifierRaw(identifier);
+  if (!operator && !account) return undefined;
+  return { operator, account };
+}
+
+function suspensionSourceOf(target: SuspensionTarget): (VleOperator | UserAccount) | undefined {
+  return target.operator || target.account;
+}
+
+function appendSuspensionHistory(source: VleOperator | UserAccount, entry: OperatorSuspensionEntry): void {
+  const history = Array.isArray(source.suspensionHistory) ? source.suspensionHistory : [];
+  source.suspensionHistory = [...history, entry].slice(-60);
+}
+
+async function persistSuspensionTarget(target: SuspensionTarget): Promise<void> {
+  if (target.operator) await persistToMongo('vleOperator', target.operator);
+  if (target.account) await persistToMongo('userAccount', target.account);
+}
+
+function applySuspensionExpiry(source?: VleOperator | UserAccount | null): boolean {
+  if (!source?.bidsSuspended) return false;
+  const untilMs = source.bidsSuspendedUntil ? new Date(source.bidsSuspendedUntil).getTime() : NaN;
+  if (!Number.isFinite(untilMs) || untilMs > Date.now()) return true;
+  // Temporary suspension ka time poora ho gaya — auto unsuspend.
+  source.bidsSuspended = false;
+  source.bidsSuspendedAt = undefined;
+  source.bidsSuspendedReason = undefined;
+  source.bidsSuspendedUntil = undefined;
+  appendSuspensionHistory(source, {
+    action: 'auto-expired',
+    reason: 'Temporary suspension period ended automatically.',
+    at: new Date().toISOString()
+  });
+  return false;
+}
+
+export function isOperatorSuspended(operator?: VleOperator | null): boolean {
+  const wasSuspended = !!operator?.bidsSuspended;
+  const suspended = applySuspensionExpiry(operator);
+  if (operator && wasSuspended && !suspended) {
+    void persistToMongo('vleOperator', operator).catch(() => {});
+  }
+  return suspended;
+}
+
+export function isAccountSuspended(account?: UserAccount | null): boolean {
+  const wasSuspended = !!account?.bidsSuspended;
+  const suspended = applySuspensionExpiry(account);
+  if (account && wasSuspended && !suspended) {
+    void persistToMongo('userAccount', account).catch(() => {});
+  }
+  return suspended;
+}
+
+export function suspensionReasonFor(source?: VleOperator | UserAccount): string {
+  const reason = String(source?.bidsSuspendedReason || '').trim();
+  return reason || 'Admin ne aapka bid lena suspend kiya hai.';
+}
+
+function buildAdminOperatorView(target: SuspensionTarget): AdminOperatorView | undefined {
+  const { operator, account } = target;
+  const source = suspensionSourceOf(target);
+  if (!source) return undefined;
+  const suspended = applySuspensionExpiry(operator) || applySuspensionExpiry(account);
+  return {
+    id: operator?.id || account?.id || '',
+    accountId: account?.id,
+    name: operator?.name || account?.name || 'Operator',
+    centerName: operator?.centerName || account?.centerName,
+    cscId: operator?.cscId || account?.cscId || '',
+    role: operator?.role === 'filler' || account?.role === 'filler' ? 'filler' : 'vle',
+    district: operator?.district || account?.district || '',
+    city: operator?.city || account?.city || '',
+    state: operator?.state || account?.state,
+    phone: operator?.phone || account?.phone || '',
+    email: operator?.email || account?.email,
+    status: operator?.status || 'Online',
+    complianceScore: Number(operator?.complianceScore ?? 100),
+    bidsSuspended: suspended,
+    bidsSuspendedAt: source.bidsSuspendedAt,
+    bidsSuspendedReason: source.bidsSuspendedReason,
+    bidsSuspendedUntil: source.bidsSuspendedUntil,
+    suspensionHistory: Array.isArray(source.suspensionHistory) ? source.suspensionHistory : [],
+    activeBidCount: account ? activeBidCountForAccount(account) : 0
+  };
+}
+
+export function listOperatorsForAdmin(search = ''): AdminOperatorView[] {
+  const query = String(search || '').trim().toLowerCase();
+  const targets: SuspensionTarget[] = [];
+  const seenAccounts = new Set<string>();
+
+  for (const operator of vleListStore) {
+    const account = findAccountForOperator(operator);
+    if (account) seenAccounts.add(account.id);
+    targets.push({ operator, account });
+  }
+  // Form Filler experts live only in the account store — include them too.
+  for (const account of userAccountsStore) {
+    if (account.role !== 'filler' || seenAccounts.has(account.id)) continue;
+    targets.push({ account });
+  }
+
+  const views = targets
+    .map(target => {
+      const source = suspensionSourceOf(target);
+      const wasSuspended = !!source?.bidsSuspended;
+      const view = buildAdminOperatorView(target);
+      // Agar temporary suspension isi load par expire hui, DB me bhi save karo.
+      if (view && wasSuspended && !view.bidsSuspended) {
+        void persistSuspensionTarget(target).catch(() => {});
+      }
+      return view;
+    })
+    .filter((view): view is AdminOperatorView => !!view);
+
+  const filtered = query
+    ? views.filter(view =>
+        [view.id, view.accountId, view.name, view.centerName, view.cscId, view.phone, view.email, view.district, view.city, view.state]
+          .filter(Boolean)
+          .some(value => String(value).toLowerCase().includes(query))
+      )
+    : views;
+
+  return filtered.sort((a, b) => {
+    if (a.bidsSuspended !== b.bidsSuspended) return a.bidsSuspended ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+export function getAdminOperator(identifier: string): AdminOperatorView | undefined {
+  const target = resolveSuspensionTarget(identifier);
+  if (!target) return undefined;
+  const view = buildAdminOperatorView(target);
+  if (view && (target.operator || target.account)) {
+    void persistSuspensionTarget(target).catch(() => {});
+  }
+  return view;
+}
+
+export async function suspendOperatorByIdentifier(
+  identifier: string,
+  options: { reason: string; days?: number; note?: string; by?: string }
+): Promise<AdminOperatorView | undefined> {
+  const target = resolveSuspensionTarget(identifier);
+  if (!target) return undefined;
+  const reason = String(options.reason || '').trim() || 'Admin action';
+  const days = Math.max(0, Math.floor(Number(options.days) || 0));
+  const now = new Date();
+  const until = days > 0 ? new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString() : undefined;
+  const entry: OperatorSuspensionEntry = {
+    action: 'suspend',
+    reason,
+    days: days || undefined,
+    note: String(options.note || '').trim() || undefined,
+    at: now.toISOString(),
+    by: String(options.by || '').trim() || undefined
+  };
+  for (const source of [target.operator, target.account]) {
+    if (!source) continue;
+    source.bidsSuspended = true;
+    source.bidsSuspendedAt = now.toISOString();
+    source.bidsSuspendedReason = reason;
+    source.bidsSuspendedUntil = until;
+    appendSuspensionHistory(source, entry);
+  }
+  await persistSuspensionTarget(target);
+  return buildAdminOperatorView(target);
+}
+
+export async function unsuspendOperatorByIdentifier(
+  identifier: string,
+  options: { reason?: string; by?: string } = {}
+): Promise<AdminOperatorView | undefined> {
+  const target = resolveSuspensionTarget(identifier);
+  if (!target) return undefined;
+  const entry: OperatorSuspensionEntry = {
+    action: 'unsuspend',
+    reason: String(options.reason || '').trim() || 'Suspension lifted by admin.',
+    at: new Date().toISOString(),
+    by: String(options.by || '').trim() || undefined
+  };
+  for (const source of [target.operator, target.account]) {
+    if (!source) continue;
+    source.bidsSuspended = false;
+    source.bidsSuspendedAt = undefined;
+    source.bidsSuspendedReason = undefined;
+    source.bidsSuspendedUntil = undefined;
+    appendSuspensionHistory(source, entry);
+  }
+  await persistSuspensionTarget(target);
+  return buildAdminOperatorView(target);
+}
+
 export function getOperatorPricing(account?: UserAccount): VleOperator['pricingList'] {
   if (!account) return [];
   const operator = findVleOperatorForAccount(account);
@@ -794,16 +1074,15 @@ export function getBidLimitStatus(account?: UserAccount): {
     return { allowed: false, reason: 'Registered operator account required.', activeCount: 0, dailyCount: 0 };
   }
   resetBidWindowsIfNeeded(account);
-  if (account.role === 'vle') {
-    const operator = findVleOperatorForAccount(account);
-    if (operator?.bidsSuspended) {
-      return {
-        allowed: false,
-        reason: '🚫 BIDS SUSPENDED: In-app payment bypass ki wajah se aapka bid lena band hai.',
-        activeCount: activeBidCountForAccount(account),
-        dailyCount: Math.max(0, Number(account.bidsAcceptedToday) || 0)
-      };
-    }
+  const operator = findVleOperatorForAccount(account) || findOperatorRecordForAccount(account);
+  const suspended = isAccountSuspended(account) || isOperatorSuspended(operator);
+  if (suspended) {
+    return {
+      allowed: false,
+      reason: `🚫 BIDS SUSPENDED: ${suspensionReasonFor(account.bidsSuspended ? account : operator)}`,
+      activeCount: activeBidCountForAccount(account),
+      dailyCount: Math.max(0, Number(account.bidsAcceptedToday) || 0)
+    };
   }
   const activeCount = activeBidCountForAccount(account);
   const dailyCount = Math.max(0, Number(account.bidsAcceptedToday) || 0);
