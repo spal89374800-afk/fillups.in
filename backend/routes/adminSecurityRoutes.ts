@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { getAdminToken } from '../env.ts';
-import { clearAdminUpi, clearGovtUpi, getAdminUpi, getAdminUpiSource, getGovtUpi, getGovtUpiSource, setAdminUpi, setGovtUpi } from '../services/pricingService.ts';
+import { clearAdminUpi, getAdminUpi, getAdminUpiSource, setAdminUpi } from '../services/pricingService.ts';
 import {
   blockIp,
   getBlockedIps,
@@ -219,47 +219,6 @@ adminSecurityRouter.post('/admin/settings/upi', (req, res) => {
   });
 });
 
-// ========================================================
-// 🏛️ GOVERNMENT FEE UPI (global fallback)
-// ========================================================
-// Operator ne per-order govt UPI/QR set na kiya ho to ye global UPI use hoti hai.
-// Server restart ke bina set/clear kar sakte hain — bilkul Admin Fee UPI ki tarah.
-adminSecurityRouter.get('/admin/settings/govt-upi', (req, res) => {
-  if (!requireAdminToken(req, res)) return;
-  const govt = getGovtUpi();
-  res.json({
-    success: true,
-    settings: {
-      upiId: govt.upiId,
-      payeeName: govt.payeeName,
-      source: getGovtUpiSource()
-    }
-  });
-});
-
-adminSecurityRouter.post('/admin/settings/govt-upi', (req, res) => {
-  if (!requireAdminToken(req, res)) return;
-  const upiId = String(req.body?.upiId || '').trim().toLowerCase();
-  const payeeName = String(req.body?.payeeName || '').trim();
-
-  if (!upiId) {
-    clearGovtUpi();
-    const govt = getGovtUpi();
-    return res.json({
-      success: true,
-      message: 'Government UPI cleared. The server .env.local value (if any) will be used instead.',
-      settings: { upiId: govt.upiId, payeeName: govt.payeeName, source: getGovtUpiSource() }
-    });
-  }
-  if (!/^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/.test(upiId)) {
-    return res.status(400).json({ success: false, error: 'Enter a valid UPI ID, such as name@bank.' });
-  }
-
-  setGovtUpi(upiId, payeeName);
-  const govt = getGovtUpi();
-  return res.json({
-    success: true,
-    message: '✅ Government UPI saved. The Government Fee QR will now show this UPI ID to citizens.',
-    settings: { upiId: govt.upiId, payeeName: govt.payeeName, source: getGovtUpiSource() }
-  });
-});
+// 🏛️ Government UPI is intentionally NOT configurable globally anymore.
+// The assigned operator sets it per order (order.govtUpiId / order.govtQrImage)
+// and it is deleted automatically when the order completes.

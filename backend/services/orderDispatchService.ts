@@ -201,6 +201,11 @@ export async function maybeCompleteOrder(order: any): Promise<boolean> {
   order.status = 'completed';
   order.completedAt = new Date().toISOString();
   order.freedAt = order.completedAt;
+  // 🔒 Government UPI/QR sirf order complete hone tak rakho. Complete hote hi
+  // clear kar do taaki payment details system me zyada der na rahein.
+  order.govtUpiId = '';
+  order.govtUpiName = '';
+  order.govtQrImage = '';
   order.chatMessages = Array.isArray(order.chatMessages) ? order.chatMessages : [];
   order.chatMessages.push({
     id: 'm-complete-' + Date.now(),

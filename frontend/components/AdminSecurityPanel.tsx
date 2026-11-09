@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ShieldAlert, ShieldCheck, Ban, RefreshCw, Globe2, Server, Activity, Lock, Unlock, CreditCard, Save, Trash2, BookOpen, CheckCircle, XCircle, Building2, Users, UserX, UserCheck, Search, Clock } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, Ban, RefreshCw, Globe2, Server, Activity, Lock, Unlock, CreditCard, Save, Trash2, BookOpen, CheckCircle, XCircle, Users, UserX, UserCheck, Search, Clock } from 'lucide-react';
 import { fetchWithRetry, parseJsonResponse } from '../services/apiClient';
 import { LocalizedTree, type AppLanguage } from '../localization';
 
@@ -117,10 +117,6 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   const [upiInput, setUpiInput] = useState('');
   const [upiNameInput, setUpiNameInput] = useState('');
   const [isSavingUpi, setIsSavingUpi] = useState(false);
-  const [govtUpiSettings, setGovtUpiSettings] = useState<AdminUpiSettings | null>(null);
-  const [govtUpiInput, setGovtUpiInput] = useState('');
-  const [govtUpiNameInput, setGovtUpiNameInput] = useState('');
-  const [isSavingGovtUpi, setIsSavingGovtUpi] = useState(false);
   const [ledger, setLedger] = useState<any[]>([]);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerNote, setLedgerNote] = useState('');
@@ -239,17 +235,15 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
       if (verdictFilter !== 'ALL') query.set('verdict', verdictFilter);
       if (countryFilter.trim()) query.set('country', countryFilter.trim());
 
-      const [summaryResponse, logResponse, upiResponse, govtUpiResponse] = await Promise.all([
+      const [summaryResponse, logResponse, upiResponse] = await Promise.all([
         fetchWithRetry('/api/admin/security/summary', { headers: authHeaders }),
         fetchWithRetry(`/api/admin/security/log?${query.toString()}`, { headers: authHeaders }),
-        fetchWithRetry('/api/admin/settings/upi', { headers: authHeaders }),
-        fetchWithRetry('/api/admin/settings/govt-upi', { headers: authHeaders })
+        fetchWithRetry('/api/admin/settings/upi', { headers: authHeaders })
       ]);
 
       const summaryData = await parseJsonResponse(summaryResponse);
       const logData = await parseJsonResponse(logResponse);
       const upiData = await parseJsonResponse(upiResponse);
-      const govtUpiData = await parseJsonResponse(govtUpiResponse);
 
       if (!summaryResponse.ok || !summaryData.success) {
         throw new Error(summaryData.error || 'Could not load the security summary.');
@@ -264,11 +258,6 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
         setUpiSettings(upiData.settings as AdminUpiSettings);
         setUpiInput(upiData.settings?.upiId || '');
         setUpiNameInput(upiData.settings?.payeeName || '');
-      }
-      if (govtUpiResponse.ok && govtUpiData.success) {
-        setGovtUpiSettings(govtUpiData.settings as AdminUpiSettings);
-        setGovtUpiInput(govtUpiData.settings?.upiId || '');
-        setGovtUpiNameInput(govtUpiData.settings?.payeeName || '');
       }
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : 'Could not load security data.', type: 'error' });
@@ -355,45 +344,6 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
       setMessage({ text: error instanceof Error ? error.message : 'Could not clear the admin UPI.', type: 'error' });
     } finally {
       setIsSavingUpi(false);
-    }
-  };
-
-  const handleSaveGovtUpi = async () => {
-    setIsSavingGovtUpi(true);
-    try {
-      const response = await fetchWithRetry('/api/admin/settings/govt-upi', {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({ upiId: govtUpiInput.trim(), payeeName: govtUpiNameInput.trim() })
-      });
-      const data = await parseJsonResponse(response);
-      if (!response.ok || !data.success) throw new Error(data.error || 'Could not save the government UPI.');
-      setGovtUpiSettings(data.settings as AdminUpiSettings);
-      setMessage({ text: data.message || 'Government UPI saved.', type: 'ok' });
-    } catch (error) {
-      setMessage({ text: error instanceof Error ? error.message : 'Could not save the government UPI.', type: 'error' });
-    } finally {
-      setIsSavingGovtUpi(false);
-    }
-  };
-
-  const handleClearGovtUpi = async () => {
-    setIsSavingGovtUpi(true);
-    try {
-      const response = await fetchWithRetry('/api/admin/settings/govt-upi', {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({ upiId: '', payeeName: '' })
-      });
-      const data = await parseJsonResponse(response);
-      if (!response.ok || !data.success) throw new Error(data.error || 'Could not clear the government UPI.');
-      setGovtUpiSettings(data.settings as AdminUpiSettings);
-      setGovtUpiInput(data.settings?.upiId || '');
-      setMessage({ text: data.message || 'Government UPI cleared.', type: 'ok' });
-    } catch (error) {
-      setMessage({ text: error instanceof Error ? error.message : 'Could not clear the government UPI.', type: 'error' });
-    } finally {
-      setIsSavingGovtUpi(false);
     }
   };
 
@@ -503,54 +453,6 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
               </button>
               <span className="text-[10px] font-mono text-slate-500">
                 Current: {upiSettings.upiId || '(not set)'} • source: {upiSettings.source}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {govtUpiSettings && (
-          <div className="rounded-2xl border border-white/10 bg-[#0A1020]/80 p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-emerald-300" />
-              <h2 className="text-sm font-black text-white">Government Fee UPI (global fallback)</h2>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Yeh UPI ID citizen ke &quot;Government Fee&quot; QR me dikhti hai jab operator ne per-order Govt UPI/QR set nahi kiya. Yahan save karte hi turant apply ho jaati hai — server restart ki zaroorat nahi.
-              {!govtUpiSettings.upiId && ' Abhi koi UPI set nahi hai, isliye citizen ko Government Fee QR nahi dikh raha.'}
-            </p>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                value={govtUpiInput}
-                onChange={event => setGovtUpiInput(event.target.value)}
-                placeholder="government upi id (e.g. treasury@bank)"
-                className="flex-1 h-10 px-3 rounded-xl bg-[#090F1D] border border-white/10 text-xs font-mono text-white outline-none focus:border-emerald-400/70"
-                autoComplete="off"
-              />
-              <input
-                value={govtUpiNameInput}
-                onChange={event => setGovtUpiNameInput(event.target.value)}
-                placeholder="Payee name"
-                className="flex-1 h-10 px-3 rounded-xl bg-[#090F1D] border border-white/10 text-xs text-white outline-none focus:border-emerald-400/70"
-                autoComplete="off"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2 items-center">
-              <button
-                onClick={() => void handleSaveGovtUpi()}
-                disabled={isSavingGovtUpi}
-                className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition disabled:opacity-50"
-              >
-                <Save className="h-3.5 w-3.5" /> Save Govt UPI
-              </button>
-              <button
-                onClick={() => void handleClearGovtUpi()}
-                disabled={isSavingGovtUpi}
-                className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs font-bold transition disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Clear
-              </button>
-              <span className="text-[10px] font-mono text-slate-500">
-                Current: {govtUpiSettings.upiId || '(not set)'} • source: {govtUpiSettings.source}
               </span>
             </div>
           </div>

@@ -295,10 +295,69 @@ export let fillerOrdersStore: FillerOrder[] = [];
 
 export let adminPaymentLedgerStore: AdminPaymentLedgerEntry[] = [];
 
+// ========================================================
+// 💳 OPERATOR PAYOUT UPI PROFILES (persistent)
+// ========================================================
+// Pehle ye profile sirf RAM ke Map me thi, isliye server restart / Render
+// sleep / redeploy par operator ki UPI gayab ho jaati thi aur citizen ko
+// Operator Share QR nahi milta tha. Ab Mongo me save + boot par hydrate hoti hai.
+export interface PayoutUpiHistoryEntry {
+  upiId: string;
+  previousUpiId?: string;
+  changedAt: string;
+  ip?: string;
+  source?: string;
+}
+
+export interface PayoutProfile {
+  id: string;
+  key: string;
+  role: 'vle' | 'filler';
+  phone: string;
+  email: string;
+  upiId: string;
+  savedAt: string;
+  upiChangedAt: string;
+  /** Nayi UPI is time tak payment receive nahi karegi (security cooling). */
+  upiCoolingUntil?: string;
+  /** Cooling ke dauran last known good UPI use hoti hai. */
+  previousUpiId?: string;
+  payoutUpiHistory: PayoutUpiHistoryEntry[];
+}
+
+export const payoutProfilesStore = new Map<string, PayoutProfile>();
+
+function normalizeProfileIso(value: unknown): string {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
+export function hydratePayoutProfile(doc: any): PayoutProfile | null {
+  if (!doc || typeof doc !== 'object') return null;
+  const key = String(doc.id || doc.key || '').trim();
+  if (!key) return null;
+  const role = doc.role === 'filler' ? 'filler' : doc.role === 'vle' ? 'vle' : null;
+  if (!role) return null;
+  return {
+    id: key,
+    key,
+    role,
+    phone: String(doc.phone || ''),
+    email: String(doc.email || ''),
+    upiId: String(doc.upiId || ''),
+    savedAt: normalizeProfileIso(doc.savedAt || doc.updatedAt),
+    upiChangedAt: normalizeProfileIso(doc.upiChangedAt),
+    upiCoolingUntil: normalizeProfileIso(doc.upiCoolingUntil) || undefined,
+    previousUpiId: typeof doc.previousUpiId === 'string' ? doc.previousUpiId : undefined,
+    payoutUpiHistory: Array.isArray(doc.payoutUpiHistory) ? doc.payoutUpiHistory : []
+  };
+}
+
 export async function hydrateFromMongo() {
   if (!isMongoConnected()) return;
   try {
-    const [vles, fExperts, vOrders, fOrders, fServices, gPricing, ledger, accounts] = await Promise.all<any>([
+    const [vles, fExperts, vOrders, fOrders, fServices, gPricing, ledger, accounts, payoutProfiles] = await Promise.all<any>([
       (VleOperatorModel as any).find({}).lean().exec(),
       (FillerExpertModel as any).find({}).lean().exec(),
       (VleOrderModel as any).find({}).sort({ createdAt: -1 }).lean().exec(),
@@ -306,7 +365,8 @@ export async function hydrateFromMongo() {
       (FillerServiceModel as any).find({}).lean().exec(),
       (GlobalPricingModel as any).find({}).lean().exec(),
       (AdminPaymentLedgerModel as any).find({}).sort({ createdAt: -1 }).lean().exec(),
-      (UserAccountModel as any).find({}).lean().exec()
+      (UserAccountModel as any).find({}).lean().exec(),
+      (PayoutProfileModel as any).find({}).lean().exec()
     ]);
 
     if (vles.length) vleListStore = vles.map(cleanMongoDoc) as any;
@@ -316,6 +376,12 @@ export async function hydrateFromMongo() {
     if (gPricing.length) globalPricingStore = gPricing.map(cleanMongoDoc) as any;
     if (ledger.length) adminPaymentLedgerStore = ledger.map(cleanMongoDoc) as any;
     if (accounts.length) userAccountsStore = accounts.map(cleanMongoDoc) as any;
+    if (payoutProfiles.length) {
+      for (const doc of payoutProfiles) {
+        const profile = hydratePayoutProfile(cleanMongoDoc(doc));
+        if (profile) payoutProfilesStore.set(profile.key, profile);
+      }
+    }
 
     console.log('[MongoDB] Data hydrated into in-memory stores');
   } catch (e) {

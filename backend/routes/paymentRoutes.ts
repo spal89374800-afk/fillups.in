@@ -1,25 +1,53 @@
 import { Router } from 'express';
 import { consumeOtpVerification } from './authRoutes.ts';
-import { findAnyOrder, userAccountsStore, orderBelongsToClient, recordAdminPaymentLedger, persistOrder } from '../services/storeService.ts';
-import { buildUpiUri, computeFeeBreakdown, getAdminUpi, getGovtUpi } from '../services/pricingService.ts';
+import {
+  findAnyOrder,
+  userAccountsStore,
+  orderBelongsToClient,
+  recordAdminPaymentLedger,
+  persistOrder,
+  persistToMongo,
+  payoutProfilesStore,
+  type PayoutProfile
+} from '../services/storeService.ts';
+import { buildUpiUri, computeFeeBreakdown, getAdminUpi } from '../services/pricingService.ts';
 import { getRequestAccount, requireAccount } from '../middleware/securityMiddleware.ts';
 import { isRasterImageDataUrl } from '../services/mediaService.ts';
 import { emitOrderUpdate } from '../services/realtimeService.ts';
 import { maybeCompleteOrder } from '../services/orderDispatchService.ts';
+import { sendTransactionalEmail } from '../services/emailService.ts';
+import { readEnvValue } from '../env.ts';
 import { PaymentSplits, SplitStatus } from '../types/index.ts';
 
 type OperatorRole = 'vle' | 'filler';
 type SplitLeg = 'govt' | 'admin' | 'operator';
 
-interface PayoutProfile {
-  role: OperatorRole;
-  phone: string;
-  email: string;
-  upiId: string;
-  updatedAt: string;
+// Nayi UPI ko turant payout receive karne se rokta hai. Agar kisi ne account
+// takeover karke UPI badal di, to cooling period ke andar paisa divert nahi ho
+// sakta. Default 24 ghante, env se override ho sakta hai.
+function getPayoutCoolingMs(): number {
+  const raw = Number(readEnvValue('PAYOUT_UPI_COOLING_HOURS'));
+  const hours = Number.isFinite(raw) && raw >= 0 ? raw : 24;
+  return hours * 60 * 60 * 1000;
 }
 
-const payoutProfiles = new Map<string, PayoutProfile>();
+function maskUpiId(upiId: string): string {
+  const [name, bank] = String(upiId || '').split('@');
+  if (!name || !bank) return upiId;
+  return `${name.slice(0, 2)}***@${bank}`;
+}
+
+function requestIp(req: any): string {
+  const forwarded = req.headers?.['x-forwarded-for'];
+  const first = Array.isArray(forwarded) ? forwarded[0] : String(forwarded || '').split(',')[0];
+  return String(first || req.ip || req.socket?.remoteAddress || '').trim();
+}
+
+function isCoolingActive(profile: PayoutProfile | undefined): boolean {
+  if (!profile?.upiCoolingUntil) return false;
+  return Date.parse(profile.upiCoolingUntil) > Date.now();
+}
+
 export const paymentRouter = Router();
 
 function normalizePhone(value: unknown): string {
@@ -156,7 +184,7 @@ paymentRouter.get('/payments/order-intent/:orderId', requireAccount(), (req, res
   if (!operator) return res.status(409).json({ success: false, error: 'The assigned operator profile is unavailable.' });
 
   const role: OperatorRole = operator.role === 'vle' ? 'vle' : 'filler';
-  const profile = payoutProfiles.get(getProfileKey(role, normalizePhone(operator.phone)));
+  const profile = payoutProfilesStore.get(getProfileKey(role, normalizePhone(operator.phone)));
   if (!profile?.upiId) {
     return res.status(409).json({ success: false, error: 'The assigned operator has not added a UPI ID yet.' });
   }
@@ -175,20 +203,26 @@ paymentRouter.get('/payments/order-intent/:orderId', requireAccount(), (req, res
   const breakdown = computeFeeBreakdown(serviceFeeAmount, (found.order as any).govtFee);
   const operatorPayeeName = operator.name || found.order.acceptedByName || 'Operator';
   const admin = getAdminUpi();
-  const govt = getGovtUpi();
   const adminUpiUri = admin.upiId
     ? buildUpiUri(admin.upiId, admin.payeeName, breakdown.adminCommission, `Order ${found.order.id} - Admin fee (${breakdown.adminCommissionPercent}%)`)
     : '';
   // Government fee seedha government ke apne UPI par jaata hai — operator ise touch nahi karta.
-  // Assigned operator chahe to per-order govt UPI ya govt QR image chat panel se set kar sakta hai;
-  // warna global GOVT_UPI_ID fallback use hota hai.
+  // Ab koi global fallback nahi hai: assigned operator har order ke liye govt UPI/QR set karta hai,
+  // aur order complete hote hi wo details delete ho jaati hain.
   const orderAny = found.order as any;
   const orderGovtUpiId = typeof orderAny.govtUpiId === 'string' ? orderAny.govtUpiId.trim() : '';
+  const orderGovtUpiName = typeof orderAny.govtUpiName === 'string' ? orderAny.govtUpiName.trim() : '';
   const orderGovtQrImage = typeof orderAny.govtQrImage === 'string' ? orderAny.govtQrImage : '';
-  const effectiveGovtUpiId = orderGovtUpiId || govt.upiId;
-  const effectiveGovtName = orderGovtUpiId && orderAny.govtUpiName ? orderAny.govtUpiName : govt.payeeName;
+  const effectiveGovtUpiId = orderGovtUpiId;
+  const effectiveGovtName = orderGovtUpiName || 'Government Fee';
   const govtUpiUri = (!orderGovtQrImage && effectiveGovtUpiId && breakdown.govtFee > 0)
     ? buildUpiUri(effectiveGovtUpiId, effectiveGovtName, breakdown.govtFee, `Order ${found.order.id} - Government fee`)
+    : '';
+  // Cooling ke dauran nayi UPI ki jagah last known good UPI use hoti hai.
+  const operatorCooling = isCoolingActive(profile);
+  const effectiveOperatorUpiId = operatorCooling && profile.previousUpiId ? profile.previousUpiId : profile.upiId;
+  const operatorUpiUri = effectiveOperatorUpiId
+    ? buildUpiUri(effectiveOperatorUpiId, operatorPayeeName, breakdown.operatorShare, `Order ${found.order.id} - Operator share (${breakdown.operatorSharePercent}%)`)
     : '';
 
   const qrs = [
@@ -227,9 +261,11 @@ paymentRouter.get('/payments/order-intent/:orderId', requireAccount(), (req, res
       role: 'operator',
       label: role === 'vle' ? 'Jan Seva Operator Share' : 'Form Filler Expert Share',
       payeeName: operatorPayeeName,
-      upiId: profile.upiId,
+      upiId: effectiveOperatorUpiId,
       amount: breakdown.operatorShare.toFixed(2),
-      upiUri: buildUpiUri(profile.upiId, operatorPayeeName, breakdown.operatorShare, `Order ${found.order.id} - Operator share (${breakdown.operatorSharePercent}%)`),
+      upiUri: operatorUpiUri,
+      upiCooling: operatorCooling,
+      upiActiveAt: operatorCooling ? profile.upiCoolingUntil : undefined,
       status: getSplitStatus(found.order, 'operator'),
       confirmedBy: splits.operator.confirmedBy,
       confirmedAt: splits.operator.confirmedAt,
@@ -255,6 +291,9 @@ paymentRouter.get('/payments/order-intent/:orderId', requireAccount(), (req, res
     isPaymentDoneInApp: Boolean(found.order.isPaymentDoneInApp),
     adminUpiConfigured: Boolean(admin.upiId),
     govtUpiConfigured: Boolean(effectiveGovtUpiId || orderGovtQrImage),
+    governmentUpiRequired: breakdown.govtFee > 0 && !effectiveGovtUpiId && !orderGovtQrImage,
+    operatorUpiCooling: operatorCooling,
+    operatorUpiActiveAt: operatorCooling ? profile.upiCoolingUntil : undefined,
     splitPayment: true,
     automaticConfirmation: true
   });
@@ -558,18 +597,21 @@ paymentRouter.get('/payments/profile', requireAccount(), (req, res) => {
   const account = getRequestAccount(req)!;
   const role = account.role === 'filler' ? 'filler' : account.role === 'vle' ? 'vle' : null;
   if (!role) return res.status(403).json({ success: false, error: 'Only operator accounts have payout profiles.' });
-  const profile = payoutProfiles.get(getProfileKey(role, normalizePhone(account.phone)));
+  const profile = payoutProfilesStore.get(getProfileKey(role, normalizePhone(account.phone)));
+  const cooling = isCoolingActive(profile);
   return res.json({
     success: true,
     profile: profile ? {
       hasSavedDetails: true,
       hasUpiId: Boolean(profile.upiId),
-      updatedAt: profile.updatedAt
+      updatedAt: profile.savedAt,
+      upiCoolingUntil: cooling ? profile.upiCoolingUntil : undefined,
+      upiActive: !cooling
     } : null
   });
 });
 
-paymentRouter.post('/payments/profile', requireAccount(), (req, res) => {
+paymentRouter.post('/payments/profile', requireAccount(), async (req, res) => {
   const account = getRequestAccount(req)!;
   const role: OperatorRole | null = account.role === 'filler' ? 'filler' : account.role === 'vle' ? 'vle' : null;
   if (!role) return res.status(403).json({ success: false, error: 'Only operator accounts have payout profiles.' });
@@ -587,22 +629,85 @@ paymentRouter.post('/payments/profile', requireAccount(), (req, res) => {
     return res.status(401).json({ success: false, error: 'Verify the OTP sent to your registered email (and WhatsApp when enabled) before saving payout details.' });
   }
 
+  const key = getProfileKey(role, normalizedPhone);
+  const previous = payoutProfilesStore.get(key);
+  const sameUpi = Boolean(previous?.upiId && previous.upiId === upiId);
+  const isChange = Boolean(previous?.upiId && !sameUpi);
+
+  // Ek change pehle se cooling me hai to doosra change reject karo — warna
+  // attacker chain karke cooling bypass kar sakta hai.
+  if (isChange && isCoolingActive(previous)) {
+    return res.status(409).json({
+      success: false,
+      error: `A UPI change is already in security cooling until ${new Date(previous!.upiCoolingUntil!).toLocaleString()}. Please try again after that.`
+    });
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const coolingMs = getPayoutCoolingMs();
+  const coolingUntil = isChange && coolingMs > 0
+    ? new Date(now.getTime() + coolingMs).toISOString()
+    : undefined;
+
+  const history = Array.isArray(previous?.payoutUpiHistory) ? [...previous!.payoutUpiHistory] : [];
+  if (!sameUpi) {
+    history.unshift({
+      upiId,
+      previousUpiId: previous?.upiId || undefined,
+      changedAt: nowIso,
+      ip: requestIp(req),
+      source: 'operator_self_service'
+    });
+  }
+
   const saved: PayoutProfile = {
+    id: key,
+    key,
     role,
     phone: normalizedPhone,
     email: normalizedEmail,
     upiId,
-    updatedAt: new Date().toISOString()
+    savedAt: nowIso,
+    upiChangedAt: isChange ? nowIso : (previous?.upiChangedAt || nowIso),
+    upiCoolingUntil: isChange ? coolingUntil : previous?.upiCoolingUntil,
+    previousUpiId: isChange ? previous?.upiId : previous?.previousUpiId,
+    payoutUpiHistory: history.slice(0, 20)
   };
-  payoutProfiles.set(getProfileKey(role, normalizedPhone), saved);
+  payoutProfilesStore.set(key, saved);
+  await persistToMongo('payoutProfile', saved).catch(() => {});
+
+  // UPI change hone par owner ko alert — agar ye change usne nahi kiya to
+  // turant report kar sake.
+  if (isChange) {
+    void sendTransactionalEmail({
+      to: normalizedEmail,
+      subject: 'Your payout UPI was changed',
+      text: [
+        `Namaste ${account.name || 'Operator'},`,
+        '',
+        `Aapki payout UPI ${maskUpiId(previous!.upiId)} se ${maskUpiId(upiId)} par change ho gayi.`,
+        `Time: ${new Date(nowIso).toLocaleString()}`,
+        coolingUntil ? `Security cooling: nayi UPI ${new Date(coolingUntil).toLocaleString()} tak active nahi hogi. Tab tak purani UPI use hogi.` : '',
+        '',
+        'Agar ye change aapne nahi kiya, turant support ko report karein.'
+      ].filter(Boolean).join('\n')
+    }).catch(() => {});
+  }
 
   return res.json({
     success: true,
-    message: 'UPI ID saved. It will receive this operator’s 83% share QR. The government fee goes directly to the government UPI.',
+    message: isChange && coolingUntil
+      ? `UPI ID saved. Security cooling active: nayi UPI ${new Date(coolingUntil).toLocaleString()} ke baad payout receive karegi. Tab tak purani UPI active rahegi.`
+      : sameUpi
+        ? 'UPI ID already saved. No change needed.'
+        : 'UPI ID saved. It will receive this operator’s share QR. The government fee goes directly to the government UPI set for this order.',
     profile: {
       hasSavedDetails: true,
-      hasUpiId: Boolean(saved.upiId),
-      updatedAt: saved.updatedAt
+      hasUpiId: true,
+      updatedAt: saved.savedAt,
+      upiCoolingUntil: isCoolingActive(saved) ? saved.upiCoolingUntil : undefined,
+      upiActive: !isCoolingActive(saved)
     },
     automaticPayoutsEnabled: false
   });

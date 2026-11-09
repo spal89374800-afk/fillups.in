@@ -16,6 +16,8 @@ interface PayoutProfileSummary {
   hasSavedDetails: boolean;
   hasUpiId: boolean;
   updatedAt: string;
+  upiCoolingUntil?: string;
+  upiActive?: boolean;
 }
 
 export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: PayoutSettingsPanelProps) {
@@ -137,14 +139,25 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
 
         <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-100">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-          <p><b>{t('UPI ID only.', 'केवल UPI आईडी।')}</b> {t('Bank account details are not collected here. This UPI ID is used as the recipient for your Govt Fee and Operator Share QR codes. After the citizen approves proof, 3 QRs are shown: Govt Fee (your UPI), Admin Fee (platform UPI), and Operator Share (your UPI). Each QR is confirmed by the owner’s right-tick.', 'यहाँ बैंक खाते का विवरण नहीं लिया जाता। यह UPI आईडी आपके सरकारी शुल्क और ऑपरेटर शेयर QR कोड के प्राप्तकर्ता के रूप में उपयोग होगी। नागरिक द्वारा प्रमाण स्वीकृत होने के बाद 3 QR मिलते हैं: सरकारी शुल्क (आपकी UPI), एडमिन शुल्क (प्लेटफ़ॉर्म UPI), और ऑपरेटर शेयर (आपकी UPI)। हर QR उसके मालिक के राइट-टिक से पुष्टि होता है।')}</p>
+          <p><b>{t('UPI ID only.', 'केवल UPI आईडी।')}</b> {t('Bank account details are not collected here. This UPI ID receives ONLY your Operator Share QR. The Government Fee goes to the government UPI you set for each order, and the Admin Fee goes to the platform UPI. After the citizen approves proof, 3 QRs are shown. Each QR is confirmed by the owner’s right-tick.', 'यहाँ बैंक खाते का विवरण नहीं लिया जाता। यह UPI आईडी केवल आपके ऑपरेटर शेयर QR के लिए है। सरकारी शुल्क उस सरकारी UPI पर जाता है जो आप हर ऑर्डर के लिए सेट करते हैं, और एडमिन शुल्क प्लेटफ़ॉर्म UPI पर जाता है। नागरिक द्वारा प्रमाण स्वीकृत होने के बाद 3 QR मिलते हैं। हर QR उसके मालिक के राइट-टिक से पुष्टि होता है।')}</p>
         </div>
 
         {profile && (
-          <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-            <CheckCircle2 className="h-5 w-5 shrink-0" />
-            <span>{t('UPI ID saved. Details are hidden; enter a new UPI ID to replace it.', 'UPI आईडी सेव हो गई। विवरण छिपा है; बदलने के लिए नई UPI आईडी दर्ज करें।')}</span>
-          </div>
+          profile.upiCoolingUntil ? (
+            <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+              <Clock3 className="h-5 w-5 shrink-0" />
+              <span>
+                {t('New UPI saved, but security cooling is active until ', 'नई UPI सेव हो गई, लेकिन सुरक्षा कूलिंग चालू है ')}
+                <b>{new Date(profile.upiCoolingUntil).toLocaleString()}</b>
+                {t('. Until then your previous UPI receives payouts.', ' तक। तब तक आपकी पुरानी UPI भुगतान प्राप्त करेगी।')}
+              </span>
+            </div>
+          ) : (
+            <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+              <CheckCircle2 className="h-5 w-5 shrink-0" />
+              <span>{t('UPI ID saved. Details are hidden; enter a new UPI ID to replace it.', 'UPI आईडी सेव हो गई। विवरण छिपा है; बदलने के लिए नई UPI आईडी दर्ज करें।')}</span>
+            </div>
+          )
         )}
       </div>
 
@@ -154,7 +167,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
             <QrCode className="h-5 w-5 text-sky-400" />
             <h3 className="text-lg font-extrabold text-white">{t('Add UPI ID', 'UPI आईडी जोड़ें')}</h3>
           </div>
-          <p className="text-xs leading-relaxed text-slate-400">{t('Only a UPI ID is required for payout. Your registered mobile number will be used; bank account, IFSC, or account number is not needed.', 'भुगतान के लिए केवल UPI आईडी चाहिए। आपका पंजीकृत मोबाइल नंबर उपयोग होगा; बैंक खाता, IFSC या खाता संख्या की ज़रूरत नहीं है।')}</p>
+          <p className="text-xs leading-relaxed text-slate-400">{t('Only a UPI ID is required for payout. Your registered mobile number will be used; bank account, IFSC, or account number is not needed. Changing your UPI starts a 24-hour security cooling period; your previous UPI stays active until then.', 'भुगतान के लिए केवल UPI आईडी चाहिए। आपका पंजीकृत मोबाइल नंबर उपयोग होगा; बैंक खाता, IFSC या खाता संख्या की ज़रूरत नहीं है। UPI बदलने पर 24 घंटे की सुरक्षा कूलिंग शुरू होती है; तब तक आपकी पुरानी UPI सक्रिय रहती है।')}</p>
           <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
             <span>{t('Registered mobile number', 'पंजीकृत मोबाइल नंबर')}</span>
             <input className={`${inputClass} text-slate-400`} value={phone} readOnly aria-readonly="true" />

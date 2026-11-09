@@ -1694,9 +1694,9 @@ export default function App() {
   type SplitStatus = 'pending' | 'confirmed';
   interface PaymentSplit { status: SplitStatus; utr?: string; confirmedBy?: string; confirmedAt?: string; clientConfirmed?: boolean; clientConfirmedAt?: string; clientUtr?: string; }
   interface PaymentSplits { govt: PaymentSplit; admin: PaymentSplit; operator: PaymentSplit; }
-  interface PaymentQr { role: 'admin' | 'operator' | 'government'; label: string; payeeName: string; upiId: string; amount: string; upiUri: string; qrImage?: string; status?: SplitStatus; confirmedBy?: string; confirmedAt?: string; utr?: string; clientConfirmed?: boolean; clientConfirmedAt?: string; clientUtr?: string; }
+  interface PaymentQr { role: 'admin' | 'operator' | 'government'; label: string; payeeName: string; upiId: string; amount: string; upiUri: string; qrImage?: string; upiCooling?: boolean; upiActiveAt?: string; status?: SplitStatus; confirmedBy?: string; confirmedAt?: string; utr?: string; clientConfirmed?: boolean; clientConfirmedAt?: string; clientUtr?: string; }
   interface FeeBreakdown { govtFee: number; serviceFee: number; adminCommission: number; adminCommissionPercent: number; operatorShare: number; operatorSharePercent: number; total: number; }
-  interface WorkspacePaymentIntent { amount: string; breakdown?: FeeBreakdown; qrs?: PaymentQr[]; splits?: PaymentSplits; isPaymentDoneInApp?: boolean; governmentQrUri?: string; adminUpiConfigured?: boolean; }
+  interface WorkspacePaymentIntent { amount: string; breakdown?: FeeBreakdown; qrs?: PaymentQr[]; splits?: PaymentSplits; isPaymentDoneInApp?: boolean; governmentQrUri?: string; adminUpiConfigured?: boolean; governmentUpiRequired?: boolean; operatorUpiCooling?: boolean; operatorUpiActiveAt?: string; }
   const [workspacePaymentIntent, setWorkspacePaymentIntent] = useState<WorkspacePaymentIntent | null>(null);
   const [paymentIntentError, setPaymentIntentError] = useState('');
   const [qrZoomImage, setQrZoomImage] = useState('');
@@ -12596,6 +12596,17 @@ export default function App() {
                       <p role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-[10px] text-amber-200">{paymentIntentError}</p>
                     ) : workspacePaymentIntent?.qrs ? (
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {workspacePaymentIntent.operatorUpiCooling && (
+                          <p className="col-span-full rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] leading-relaxed text-amber-200">
+                            Operator ne UPI change ki hai — security cooling active hai. Tab tak payment purani (last known good) UPI par jayegi.
+                            {workspacePaymentIntent.operatorUpiActiveAt ? ` Nayi UPI ${new Date(workspacePaymentIntent.operatorUpiActiveAt).toLocaleString()} ke baad active hogi.` : ''}
+                          </p>
+                        )}
+                        {workspacePaymentIntent.governmentUpiRequired && (
+                          <p className="col-span-full rounded-lg border border-rose-500/30 bg-rose-500/10 p-2 text-[10px] leading-relaxed text-rose-200">
+                            Is order ke liye Government UPI/QR set nahi hai. Operator ko payment se pehle government UPI ya QR add karna hoga.
+                          </p>
+                        )}
                         {workspacePaymentIntent.qrs.map(qr => {
                           const uri = qr.upiUri;
                           const isConfirmed = qr.status === 'confirmed';
@@ -12616,6 +12627,9 @@ export default function App() {
                                 <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${statusClass}`}>{statusLabel}</span>
                               </div>
                               <p className="text-base font-black text-white">₹{qr.amount}</p>
+                              {qr.payeeName && (
+                                <p className="truncate text-[9px] font-semibold text-slate-400" title={qr.payeeName}>Payee: {qr.payeeName}</p>
+                              )}
 
                               {qr.qrImage || uri ? (
                                 <div className="flex justify-center">

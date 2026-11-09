@@ -39,31 +39,10 @@ export function getAdminUpiSource(): 'runtime' | 'env' | 'not_configured' {
   return readEnvValue('ADMIN_UPI_ID') ? 'env' : 'not_configured';
 }
 
-let runtimeGovtUpiId = '';
-let runtimeGovtPayeeName = '';
-
-export function setGovtUpi(upiId: string, payeeName: string): void {
-  runtimeGovtUpiId = upiId.trim().toLowerCase();
-  runtimeGovtPayeeName = payeeName.trim();
-}
-
-export function clearGovtUpi(): void {
-  runtimeGovtUpiId = '';
-  runtimeGovtPayeeName = '';
-}
-
-export function getGovtUpi(): { upiId: string; payeeName: string } {
-  return {
-    upiId: runtimeGovtUpiId || readEnvValue('GOVT_UPI_ID') || '',
-    payeeName: runtimeGovtPayeeName || readEnvValue('GOVT_UPI_NAME') || 'Government Fee'
-  };
-}
-
-/** 'runtime' = admin console se abhi set kiya, 'env' = .env.local se, 'not_configured' = koi UPI nahi. */
-export function getGovtUpiSource(): 'runtime' | 'env' | 'not_configured' {
-  if (runtimeGovtUpiId) return 'runtime';
-  return readEnvValue('GOVT_UPI_ID') ? 'env' : 'not_configured';
-}
+// 🏛️ Government UPI is now strictly per-order (see order.govtUpiId /
+// order.govtQrImage in paymentRoutes). There is no global/env fallback: the
+// assigned operator sets it for each order and it is cleared when the order
+// completes. This keeps the government payment details ephemeral.
 
 export interface FeeBreakdown {
   govtFee: number;
