@@ -1,4 +1,9 @@
 import { readEnvValue } from '../env.ts';
+import {
+  adminUpiSettingStore,
+  clearAdminUpiSetting,
+  setAdminUpiSetting
+} from './storeService.ts';
 
 export const DEFAULT_ADMIN_COMMISSION_PERCENT = 17;
 
@@ -11,31 +16,27 @@ export function getOperatorSharePercent(): number {
   return 100 - getAdminCommissionPercent();
 }
 
-// Admin UPI ID ko server restart ke bina bhi set kiya ja sake —
-// admin console se. Env value hamesha fallback rehti hai.
-let runtimeAdminUpiId = '';
-let runtimeAdminPayeeName = '';
-
+// Admin UPI ab MongoDB me permanently save hoti hai (boot par hydrate hoti
+// hai), isliye server restart / Render sleep / redeploy par gayab nahi hoti.
+// Env value sirf fallback hai — agar database me kuch save na ho.
 export function setAdminUpi(upiId: string, payeeName: string): void {
-  runtimeAdminUpiId = upiId.trim().toLowerCase();
-  runtimeAdminPayeeName = payeeName.trim();
+  setAdminUpiSetting(upiId, payeeName);
 }
 
 export function clearAdminUpi(): void {
-  runtimeAdminUpiId = '';
-  runtimeAdminPayeeName = '';
+  clearAdminUpiSetting();
 }
 
 export function getAdminUpi(): { upiId: string; payeeName: string } {
   return {
-    upiId: runtimeAdminUpiId || readEnvValue('ADMIN_UPI_ID') || '',
-    payeeName: runtimeAdminPayeeName || readEnvValue('ADMIN_UPI_NAME') || 'DigiSeva Admin'
+    upiId: adminUpiSettingStore?.upiId || readEnvValue('ADMIN_UPI_ID') || '',
+    payeeName: adminUpiSettingStore?.payeeName || readEnvValue('ADMIN_UPI_NAME') || 'DigiSeva Admin'
   };
 }
 
-/** 'runtime' = admin console se abhi set kiya, 'env' = .env.local se, 'not_configured' = koi UPI nahi. */
-export function getAdminUpiSource(): 'runtime' | 'env' | 'not_configured' {
-  if (runtimeAdminUpiId) return 'runtime';
+/** 'database' = admin console se save kiya (persistent), 'env' = .env fallback, 'not_configured' = koi UPI nahi. */
+export function getAdminUpiSource(): 'database' | 'env' | 'not_configured' {
+  if (adminUpiSettingStore?.upiId) return 'database';
   return readEnvValue('ADMIN_UPI_ID') ? 'env' : 'not_configured';
 }
 

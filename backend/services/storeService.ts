@@ -9,7 +9,8 @@ import {
   FillerServiceModel,
   GlobalPricingModel,
   AdminPaymentLedgerModel,
-  PayoutProfileModel
+  PayoutProfileModel,
+  AdminUpiSettingModel
 } from '../models/index.ts';
 import { isMongoConnected, onMongoReady } from '../config/db.ts';
 
@@ -296,6 +297,45 @@ export let fillerOrdersStore: FillerOrder[] = [];
 export let adminPaymentLedgerStore: AdminPaymentLedgerEntry[] = [];
 
 // ========================================================
+// 💰 ADMIN (PLATFORM) FEE UPI — persistent
+// ========================================================
+// Pehle ye sirf RAM me thi + .env fallback, isliye admin panel se saved UPI
+// restart / Render sleep / redeploy par gayab ho jaati thi. Ab Mongo me save
+// hoti hai aur boot par hydrate hoti hai.
+export interface AdminUpiSetting {
+  id: string;
+  upiId: string;
+  payeeName: string;
+  updatedAt: string;
+}
+
+export const ADMIN_UPI_SETTING_ID = 'admin_upi';
+export let adminUpiSettingStore: AdminUpiSetting | null = null;
+
+export function setAdminUpiSetting(upiId: string, payeeName: string): AdminUpiSetting {
+  const setting: AdminUpiSetting = {
+    id: ADMIN_UPI_SETTING_ID,
+    upiId: upiId.trim().toLowerCase(),
+    payeeName: payeeName.trim(),
+    updatedAt: new Date().toISOString()
+  };
+  adminUpiSettingStore = setting;
+  void persistToMongo('adminUpiSetting', setting).catch(() => {});
+  return setting;
+}
+
+export function clearAdminUpiSetting(): void {
+  const setting: AdminUpiSetting = {
+    id: ADMIN_UPI_SETTING_ID,
+    upiId: '',
+    payeeName: '',
+    updatedAt: new Date().toISOString()
+  };
+  adminUpiSettingStore = setting;
+  void persistToMongo('adminUpiSetting', setting).catch(() => {});
+}
+
+// ========================================================
 // 💳 OPERATOR PAYOUT UPI PROFILES (persistent)
 // ========================================================
 // Pehle ye profile sirf RAM ke Map me thi, isliye server restart / Render
@@ -357,7 +397,7 @@ export function hydratePayoutProfile(doc: any): PayoutProfile | null {
 export async function hydrateFromMongo() {
   if (!isMongoConnected()) return;
   try {
-    const [vles, fExperts, vOrders, fOrders, fServices, gPricing, ledger, accounts, payoutProfiles] = await Promise.all<any>([
+    const [vles, fExperts, vOrders, fOrders, fServices, gPricing, ledger, accounts, payoutProfiles, adminUpiSetting] = await Promise.all<any>([
       (VleOperatorModel as any).find({}).lean().exec(),
       (FillerExpertModel as any).find({}).lean().exec(),
       (VleOrderModel as any).find({}).sort({ createdAt: -1 }).lean().exec(),
@@ -366,7 +406,8 @@ export async function hydrateFromMongo() {
       (GlobalPricingModel as any).find({}).lean().exec(),
       (AdminPaymentLedgerModel as any).find({}).sort({ createdAt: -1 }).lean().exec(),
       (UserAccountModel as any).find({}).lean().exec(),
-      (PayoutProfileModel as any).find({}).lean().exec()
+      (PayoutProfileModel as any).find({}).lean().exec(),
+      (AdminUpiSettingModel as any).findOne({ id: ADMIN_UPI_SETTING_ID }).lean().exec()
     ]);
 
     if (vles.length) vleListStore = vles.map(cleanMongoDoc) as any;
@@ -381,6 +422,15 @@ export async function hydrateFromMongo() {
         const profile = hydratePayoutProfile(cleanMongoDoc(doc));
         if (profile) payoutProfilesStore.set(profile.key, profile);
       }
+    }
+    if (adminUpiSetting) {
+      const setting = cleanMongoDoc(adminUpiSetting);
+      adminUpiSettingStore = {
+        id: String(setting.id || ADMIN_UPI_SETTING_ID),
+        upiId: String(setting.upiId || ''),
+        payeeName: String(setting.payeeName || ''),
+        updatedAt: normalizeProfileIso(setting.updatedAt)
+      };
     }
 
     console.log('[MongoDB] Data hydrated into in-memory stores');
@@ -440,6 +490,9 @@ export async function persistToMongo(collection: string, doc: any) {
         break;
       case 'payoutProfile':
         await PayoutProfileModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
+        break;
+      case 'adminUpiSetting':
+        await AdminUpiSettingModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
       default:
         break;

@@ -148,6 +148,14 @@ const PayoutProfileSchema = new Schema({
   updatedAt: Date
 }, { timestamps: true, strict: false });
 
+// Platform-level settings (admin fee UPI). Single doc with a fixed id so it
+// survives server restarts, Render sleep and redeploys.
+const AdminUpiSettingSchema = new Schema({
+  id: { type: String, unique: true, index: true },
+  upiId: String,
+  payeeName: String
+}, { timestamps: true, strict: false });
+
 export const UserAccountModel = mongoose.models.UserAccount || model('UserAccount', UserAccountSchema);
 export const VleOperatorModel = mongoose.models.VleOperator || model('VleOperator', VleOperatorSchema);
 export const FillerExpertModel = mongoose.models.FillerExpert || model('FillerExpert', FillerExpertSchema);
@@ -157,3 +165,4 @@ export const FillerServiceModel = mongoose.models.FillerService || model('Filler
 export const GlobalPricingModel = mongoose.models.GlobalPricing || model('GlobalPricing', GlobalPricingSchema);
 export const AdminPaymentLedgerModel = mongoose.models.AdminPaymentLedger || model('AdminPaymentLedger', AdminPaymentLedgerSchema);
 export const PayoutProfileModel = mongoose.models.PayoutProfile || model('PayoutProfile', PayoutProfileSchema);
+export const AdminUpiSettingModel = mongoose.models.AdminUpiSetting || model('AdminUpiSetting', AdminUpiSettingSchema);

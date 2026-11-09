@@ -417,7 +417,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
               <h2 className="text-sm font-black text-white">Admin Fee UPI (platform commission)</h2>
             </div>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Yeh UPI ID citizen ke &quot;Admin Fee&quot; QR me dikhti hai. Yahan save karte hi turant apply ho jaati hai — server restart ki zaroorat nahi.
+              Yeh UPI ID citizen ke &quot;Admin Fee&quot; QR me dikhti hai. Save karte hi turant apply ho jaati hai aur MongoDB me permanently save hoti hai — server restart ya redeploy par bhi nahi jaati.
               {!upiSettings.upiId && ' Abhi koi UPI set nahi hai, isliye citizen ko Admin Fee QR nahi dikh raha.'}
             </p>
             <div className="flex flex-col sm:flex-row gap-2">

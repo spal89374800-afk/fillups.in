@@ -202,7 +202,7 @@ adminSecurityRouter.post('/admin/settings/upi', (req, res) => {
     const admin = getAdminUpi();
     return res.json({
       success: true,
-      message: 'Admin UPI cleared. The server .env.local value (if any) will be used instead.',
+      message: 'Admin UPI cleared from the database. The server .env value (if any) will be used instead.',
       settings: { upiId: admin.upiId, payeeName: admin.payeeName, source: getAdminUpiSource() }
     });
   }
@@ -214,7 +214,7 @@ adminSecurityRouter.post('/admin/settings/upi', (req, res) => {
   const admin = getAdminUpi();
   return res.json({
     success: true,
-    message: '✅ Admin UPI saved. The Admin Fee QR will now show this UPI ID to citizens.',
+    message: '✅ Admin UPI saved permanently in the database. It survives server restarts and redeploys.',
     settings: { upiId: admin.upiId, payeeName: admin.payeeName, source: getAdminUpiSource() }
   });
 });
