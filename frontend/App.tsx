@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { MouseEvent } from 'react';
-import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw } from 'lucide-react';
+import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
 import { OrderStatusFilter, OrderStatusFilterValue } from './components/OrderStatusFilter';
@@ -1719,6 +1719,22 @@ export default function App() {
   const [callDuration, setCallDuration] = useState(0);
   const [isCallMuted, setIsCallMuted] = useState(false);
   const [callPeerLabel, setCallPeerLabel] = useState('');
+  // 🔊 Speaker / audio output controls. Volume works everywhere; picking a
+  // specific output device only works on browsers that support setSinkId.
+  const [callVolume, setCallVolume] = useState(1);
+  const [callOutputDevices, setCallOutputDevices] = useState<{ deviceId: string; label: string }[]>([]);
+  const [callOutputDeviceId, setCallOutputDeviceId] = useState('');
+  const [callSinkSupported, setCallSinkSupported] = useState(false);
+  const [showCallAudioPanel, setShowCallAudioPanel] = useState(false);
+  // iOS Safari ignores HTMLMediaElement.volume — only hardware buttons work there.
+  const [callVolumeHardwareOnly] = useState(() => {
+    try {
+      const ua = navigator.userAgent || '';
+      return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    } catch {
+      return false;
+    }
+  });
   const [zoomProofPhoto, setZoomProofPhoto] = useState<string | null>(null);
   const [, setCopiedAppNo] = useState(false);
   const [editingCredentials, setEditingCredentials] = useState(false);
@@ -2213,6 +2229,111 @@ export default function App() {
     tracks.forEach(track => { track.enabled = !next; });
     setIsCallMuted(next);
   };
+
+  // 🔊 Call speaker controls. setSinkId is the only browser API that can pick a
+  // specific output device (speaker / headphone / Bluetooth). Safari/iOS does
+  // not support it, so there we only offer the volume slider.
+  const refreshCallOutputDevices = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const outputs = devices
+        .filter(device => device.kind === 'audiooutput')
+        .map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Audio output ${index + 1}`
+        }));
+      setCallOutputDevices(outputs);
+    } catch {
+      // Device list unavailable — volume control still works.
+    }
+  };
+
+  const selectCallOutputDevice = async (deviceId: string) => {
+    const element = callAudioRef.current;
+    if (!element) return;
+    if (typeof element.setSinkId !== 'function') {
+      setWorkspaceStatusMsg({ text: 'Is browser me audio output device badalna support nahi hai.', type: 'info' });
+      return;
+    }
+    try {
+      await element.setSinkId(deviceId);
+      setCallOutputDeviceId(deviceId);
+      setWorkspaceStatusMsg({ text: '🔊 Audio output device badal diya.', type: 'success' });
+    } catch {
+      setWorkspaceStatusMsg({ text: 'Yeh audio output device select nahi ho paya. Browser permission check karein.', type: 'error' });
+    }
+  };
+
+  useEffect(() => {
+    try {
+      setCallSinkSupported(typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype);
+    } catch {
+      setCallSinkSupported(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (callAudioRef.current) callAudioRef.current.volume = callVolume;
+  }, [callVolume]);
+
+  useEffect(() => {
+    if (callingState === 'idle') {
+      setShowCallAudioPanel(false);
+      return;
+    }
+    if (callingState === 'connected') void refreshCallOutputDevices();
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices?.addEventListener) return;
+    const onDeviceChange = () => { void refreshCallOutputDevices(); };
+    mediaDevices.addEventListener('devicechange', onDeviceChange);
+    return () => mediaDevices.removeEventListener('devicechange', onDeviceChange);
+  }, [callingState]);
+
+  const renderCallAudioControls = () => (
+    <div className="w-full max-w-xs rounded-2xl border border-slate-700 bg-slate-900/95 p-3 text-left shadow-xl">
+      <div className="flex items-center gap-2">
+        {callVolume === 0 ? <VolumeX className="h-4 w-4 text-rose-300" /> : <Volume2 className="h-4 w-4 text-emerald-300" />}
+        <span className="text-[11px] font-bold text-slate-200">Speaker volume</span>
+        <span className="ml-auto font-mono text-[11px] text-slate-400">{Math.round(callVolume * 100)}%</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={Math.round(callVolume * 100)}
+        onChange={(e) => setCallVolume(Math.max(0, Math.min(100, Number(e.target.value))) / 100)}
+        className="mt-2 w-full accent-emerald-500 disabled:opacity-40"
+        aria-label="Call speaker volume"
+        disabled={callVolumeHardwareOnly}
+      />
+      {callVolumeHardwareOnly && (
+        <p className="mt-1 text-[10px] font-medium text-slate-500">
+          iPhone par volume sirf hardware buttons se badhta hai.
+        </p>
+      )}
+      {callSinkSupported ? (
+        <div className="mt-2 space-y-1">
+          <label className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Audio output</label>
+          <select
+            value={callOutputDeviceId}
+            onChange={(e) => void selectCallOutputDevice(e.target.value)}
+            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-[11px] font-semibold text-slate-200"
+          >
+            <option value="">Default (system speaker)</option>
+            {callOutputDevices.map(device => (
+              <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <p className="mt-2 text-[10px] font-medium text-slate-500">
+          Speaker/device switching is not supported in this browser. Use your phone or laptop volume keys.
+        </p>
+      )}
+    </div>
+  );
 
   const createRtcPeer = (orderId: string, token: string, targetSocketId: string, receiveOnly: boolean) => {
     rtcPeerConnectionRef.current?.close();
@@ -11971,26 +12092,26 @@ export default function App() {
 
             {/* Active Voice Call Screen Notification Bar */}
             {callingState !== 'idle' && (
-              <div className="p-3 border-b flex items-center justify-between text-xs animate-in slide-in-from-top duration-200 bg-emerald-950/80 border-emerald-500/30 text-emerald-200">
-                <div className="flex items-center gap-3">
-                  <span className={`w-3 h-3 rounded-full ${callingState === 'connected' ? 'bg-emerald-400 animate-ping' : 'bg-amber-400 animate-pulse'}`} />
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold">
+              <div className="p-3 border-b flex flex-wrap items-center justify-between gap-2 text-xs animate-in slide-in-from-top duration-200 bg-emerald-950/80 border-emerald-500/30 text-emerald-200">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className={`w-3 h-3 shrink-0 rounded-full ${callingState === 'connected' ? 'bg-emerald-400 animate-ping' : 'bg-amber-400 animate-pulse'}`} />
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 font-bold">
                       {callingState === 'connected' ? '🔊 Voice Call Connected' :
                        callingState === 'incoming' ? '📞 Incoming Call…' : '📡 Calling…'}
                     </span>
-                    <span className="text-[11px] text-emerald-300/80">
+                    <span className="truncate text-[11px] text-emerald-300/80">
                       {callPeerLabel || 'Connected user'}
                     </span>
                   </div>
                   {callingState === 'connected' && (
-                    <span className="font-mono bg-slate-900 px-2.5 py-0.5 rounded-full text-white text-[11px] border border-slate-700">
+                    <span className="shrink-0 font-mono bg-slate-900 px-2.5 py-0.5 rounded-full text-white text-[11px] border border-slate-700">
                       ⏱️ {Math.floor(callDuration / 60)}:{(callDuration % 60).toString().padStart(2, '0')}
                     </span>
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                   {callingState === 'incoming' ? (
                     <>
                       <button
@@ -12012,6 +12133,18 @@ export default function App() {
                     <>
                       {callingState === 'connected' && (
                         <button
+                          onClick={() => setShowCallAudioPanel(value => !value)}
+                          className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 ${
+                            showCallAudioPanel ? 'bg-emerald-500/20 text-emerald-200 border-emerald-500/40' : 'bg-slate-800 text-slate-300 border-slate-700'
+                          }`}
+                          title="Speaker and volume"
+                          aria-label="Speaker and volume"
+                        >
+                          <Volume2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {callingState === 'connected' && (
+                        <button
                           onClick={toggleCallMute}
                           className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 ${
                             isCallMuted ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-slate-800 text-slate-300 border-slate-700'
@@ -12030,6 +12163,13 @@ export default function App() {
                     </>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* 🔊 Speaker volume + output device (only while a call is connected) */}
+            {callingState === 'connected' && showCallAudioPanel && (
+              <div className="flex justify-center border-b border-emerald-500/20 bg-emerald-950/60 px-3 py-2">
+                {renderCallAudioControls()}
               </div>
             )}
 
@@ -13358,6 +13498,11 @@ export default function App() {
               </>
             )}
           </div>
+          {callingState === 'connected' && (
+            <div className="mt-6 flex w-full justify-center">
+              {renderCallAudioControls()}
+            </div>
+          )}
         </div>
       )}
 
