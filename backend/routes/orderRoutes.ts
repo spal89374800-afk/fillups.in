@@ -2,7 +2,7 @@ import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import { findAnyOrder, processDocumentWithZeroRetention, orderBelongsToClient, vleOrdersStore, fillerOrdersStore, persistOrder } from '../services/storeService.ts';
-import { sendOrderMessage } from '../services/orderMessageService.ts';
+import { sendOrderMessage, deleteOrderMessage } from '../services/orderMessageService.ts';
 import { emitOrderUpdate } from '../services/realtimeService.ts';
 import { maybeCompleteOrder } from '../services/orderDispatchService.ts';
 import { isRasterImageDataUrl } from '../services/mediaService.ts';
@@ -45,6 +45,28 @@ const handleSendMessage = async (req: any, res: any) => {
 
 orderRouter.post('/orders/:id/message', handleSendMessage);
 orderRouter.post('/orders/:id/messages', handleSendMessage);
+
+// Delete a chat message (soft delete — WhatsApp style)
+const handleDeleteMessage = async (req: any, res: any) => {
+  const found = findAnyOrder(req.params.id);
+  if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
+  const account = getRequestAccount(req);
+  if (!accountCanAccessOrder(found.order, account)) {
+    return res.status(403).json({ success: false, error: 'You do not have access to this order.' });
+  }
+  // Client apne 'client' messages delete karta hai, operator apne 'operator'
+  // messages — role server par decide hota hai, client se nahi aata.
+  const role: 'client' | 'operator' = account?.role === 'client' ? 'client' : 'operator';
+  const result = deleteOrderMessage(req.params.id, req.params.messageId, role);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  await persistOrder(found.order);
+  res.json(result);
+};
+
+orderRouter.delete('/orders/:id/messages/:messageId', handleDeleteMessage);
+orderRouter.post('/orders/:id/messages/:messageId/delete', handleDeleteMessage);
 
 // Upload Photo Proof
 orderRouter.post('/orders/:id/upload-proof', async (req, res) => {

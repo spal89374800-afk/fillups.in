@@ -875,6 +875,8 @@ export default function App() {
   // Synchronous lock: state update async hota hai, isliye tez double-tap par
   // dono tap nikal jaate the aur ek hi message do baar chala jaata tha.
   const sendingMessageRef = useRef(false);
+  // 🗑️ Kis message ka delete request chal raha hai (button spinner/disable ke liye).
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [isUploadingDocs, setIsUploadingDocs] = useState(false);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   // Action-level loading states (Priority 2 buttons).
@@ -4011,6 +4013,8 @@ export default function App() {
   // ↩ Reply/tag helpers (WhatsApp jaisa)
   const startReplyToMessage = (msg: any) => {
     if (!msg) return;
+    // Deleted message ko quote karna bekaar hai — uska content hi nahi bacha.
+    if (msg.isDeleted) return;
     const target: ChatReplyTarget = {
       id: String(msg.id || ''),
       senderName: String(msg.senderName || (msg.sender === 'operator' ? 'Operator' : 'Client')),
@@ -4025,6 +4029,40 @@ export default function App() {
   const cancelReplyToMessage = () => {
     replyingToMessageRef.current = null;
     setReplyingToMessage(null);
+  };
+
+  // 🗑️ Soft delete (WhatsApp style) — sirf apna 15-minute ke andar ka message.
+  // Backend dobara verify karta hai (sender ownership + time window), isliye
+  // yahan sirf UX ke liye button dikhta hai.
+  const handleDeleteMessage = async (msg: any) => {
+    if (!msg?.id || !activeWorkspaceOrder) return;
+    if (msg.isDeleted) return;
+    if (deletingMessageId) return;
+    const confirmed = window.confirm(
+      'Yeh message delete karna hai?\n\nDono taraf "🚫 Yeh message delete kar diya gaya" dikhega. Record dispute ke liye database me rehta hai.'
+    );
+    if (!confirmed) return;
+
+    setDeletingMessageId(msg.id);
+    try {
+      const res = await fetchWithRetry(
+        `/api/orders/${encodeURIComponent(activeWorkspaceOrder.id)}/messages/${encodeURIComponent(msg.id)}`,
+        { method: 'DELETE' }
+      );
+      const data = await parseJsonResponse(res).catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Message delete nahi ho paya.');
+      }
+      if (data.order) setActiveWorkspaceOrder(data.order);
+      setWorkspaceStatusMsg({ text: '🗑️ Message delete ho gaya.', type: 'success' });
+    } catch (err) {
+      setWorkspaceStatusMsg({
+        text: err instanceof Error ? err.message : 'Message delete nahi ho paya.',
+        type: 'error'
+      });
+    } finally {
+      setDeletingMessageId(null);
+    }
   };
 
   const scrollToQuotedMessage = (messageId: string) => {
@@ -12508,6 +12546,15 @@ export default function App() {
                               const isLast = idx === group.items.length - 1;
                               const messageKey = msg.id || `${gIdx}-${idx}`;
                               const isVoicePlaying = voiceNotePlayback?.key === messageKey && voiceNotePlayback?.playing === true;
+                              // Delete sirf apne message par, 15 minute ke andar.
+                              // Purane messages me createdAt nahi hota — unhe allow
+                              // karte hain (server bhi yahi rule lagata hai).
+                              const canDelete = isMine && !msg.isDeleted && Boolean(msg.id) && (() => {
+                                if (!msg.createdAt) return true;
+                                const createdAtMs = new Date(msg.createdAt).getTime();
+                                if (!Number.isFinite(createdAtMs)) return true;
+                                return Date.now() - createdAtMs <= 15 * 60 * 1000;
+                              })();
                               return (
                                 <div key={msg.id || `${gIdx}-${idx}`} className="relative w-fit max-w-full">
                                   <span
@@ -12529,6 +12576,10 @@ export default function App() {
                                         : `bg-slate-800 text-slate-200 border border-slate-700 ${isFirst ? 'rounded-tr-2xl rounded-tl-2xl rounded-br-2xl' : 'rounded-2xl rounded-tl-md'} ${!isFirst ? '-mt-0.5' : ''}`
                                     } ${highlightedMessageId === messageKey ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900' : ''}`}
                                   >
+                                  {msg.isDeleted ? (
+                                    <span className="italic text-[11px] opacity-80">🚫 Yeh message delete kar diya gaya</span>
+                                  ) : (
+                                    <>
                                   {msg.replyTo && (
                                     <button
                                       type="button"
@@ -12652,17 +12703,35 @@ export default function App() {
                           </div>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => startReplyToMessage(msg)}
-                          className={`mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold transition-colors ${
-                            isMine ? 'text-white/70 hover:bg-black/20 hover:text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-100'
-                          }`}
-                          title="Is message ko tag karke reply karein"
-                          aria-label="Reply to this message"
-                        >
-                          ↩ Reply
-                        </button>
+                        <div className="mt-1.5 flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => startReplyToMessage(msg)}
+                            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold transition-colors ${
+                              isMine ? 'text-white/70 hover:bg-black/20 hover:text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-100'
+                            }`}
+                            title="Is message ko tag karke reply karein"
+                            aria-label="Reply to this message"
+                          >
+                            ↩ Reply
+                          </button>
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteMessage(msg)}
+                              disabled={deletingMessageId === msg.id}
+                              className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                                isMine ? 'text-rose-100/80 hover:bg-black/25 hover:text-white' : 'text-rose-300 hover:bg-slate-700 hover:text-rose-200'
+                              }`}
+                              title="Apna message delete karein (15 min ke andar)"
+                              aria-label="Delete this message"
+                            >
+                              {deletingMessageId === msg.id ? <Loader2 className="w-3 h-3 animate-spin" /> : '🗑️'} Delete
+                            </button>
+                          )}
+                        </div>
+                                    </>
+                                  )}
 
                                   </div>
                                 </div>

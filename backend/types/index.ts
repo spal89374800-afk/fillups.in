@@ -45,6 +45,14 @@ export interface ChatMessage {
     text: string;
     isVoiceNote?: boolean;
   };
+  // Real timestamp — `time` sirf formatted string hai (e.g. "10:30 AM"),
+  // isliye delete ki 15-minute window check ke liye ye chahiye.
+  createdAt?: string;
+  // Soft delete: message DB me rehta hai (dispute/audit ke liye), bas
+  // content scrub ho jaata hai aur dono taraf placeholder dikhta hai.
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: 'client' | 'operator';
 }
 
 export interface ClientDocument {

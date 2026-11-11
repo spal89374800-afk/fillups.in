@@ -64,6 +64,7 @@ export function sendOrderMessage(
     senderName: payload.senderName || (sender === 'operator' ? 'Operator' : 'Client'),
     text: payload.text || '',
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    createdAt: new Date().toISOString(),
     attachment: payload.attachment || undefined,
     isVoiceNote: payload.isVoiceNote || false,
     audioDataUrl: payload.audioDataUrl || undefined,
@@ -100,7 +101,8 @@ export function sendOrderMessage(
       sender: 'operator',
       senderName: 'Jan Seva Dispatch Center',
       text: '⏳ Please wait: Your message has been received. Certified Jan Seva Kendra operators and Form Filler experts in your area are reviewing your request. Live interaction will proceed as soon as an expert accepts your request.',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date().toISOString()
     });
   }
 
@@ -136,5 +138,90 @@ export function sendOrderMessage(
       }
     }
   }
+  return result;
+}
+
+// ======================================================
+// 🗑️ Soft delete (WhatsApp style)
+// ======================================================
+// Rules:
+//   • Sirf apna bheja hua message delete ho sakta hai
+//     (client apne 'client' messages, operator apne 'operator' messages).
+//   • 15 minute ke andar hi delete ho sakta hai.
+//   • Content scrub ho jaata hai (text / voice audio / attachment link),
+//     par message record DB me rehta hai — chat dispute evidence hai.
+//   • Deleted message par reply karne wale messages ka quote bhi scrub
+//     hota hai, warna deleted text wahan se leak ho jaata.
+const MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000;
+
+export function deleteOrderMessage(
+  orderId: string,
+  messageId: string,
+  role: 'client' | 'operator'
+) {
+  const found = findAnyOrder(orderId);
+  if (!found) {
+    return { success: false, error: 'Order not found.' };
+  }
+
+  const messages: ChatMessage[] = Array.isArray(found.order.chatMessages)
+    ? found.order.chatMessages
+    : [];
+  const target = messages.find(message => message.id === messageId);
+  if (!target) {
+    return { success: false, error: 'Message not found.' };
+  }
+
+  if (target.isDeleted) {
+    // Already deleted — idempotent success.
+    return { success: true, message: 'Message already deleted.', order: found.order };
+  }
+
+  if (target.sender !== role) {
+    return {
+      success: false,
+      error: 'Aap sirf apna bheja hua message delete kar sakte hain.'
+    };
+  }
+
+  // Purane messages me createdAt nahi hai — unki age verify nahi ho sakti,
+  // isliye unhe allowed rakha hai. Naye messages par 15-minute limit lagti hai.
+  if (target.createdAt) {
+    const createdAtMs = new Date(target.createdAt).getTime();
+    if (Number.isFinite(createdAtMs) && Date.now() - createdAtMs > MESSAGE_DELETE_WINDOW_MS) {
+      return {
+        success: false,
+        error: '15 minute ke baad message delete nahi ho sakta.'
+      };
+    }
+  }
+
+  // Content scrub — record rehta hai, dikhane layak kuch nahi bachta.
+  target.isDeleted = true;
+  target.deletedAt = new Date().toISOString();
+  target.deletedBy = role;
+  target.text = '';
+  target.attachment = undefined;
+  target.audioDataUrl = undefined;
+  target.audioDuration = undefined;
+  target.isVoiceNote = false;
+
+  // Is deleted message ko quote karne wale messages ka preview bhi scrub
+  // karo — warna deleted text quote me dikhta rahega.
+  const deletedPlaceholder = '🚫 Yeh message delete kar diya gaya';
+  messages.forEach(message => {
+    if (message.replyTo && message.replyTo.id === target.id) {
+      message.replyTo = {
+        ...message.replyTo,
+        text: deletedPlaceholder,
+        isVoiceNote: false
+      };
+    }
+  });
+
+  const result = { success: true, message: 'Message deleted.', order: found.order };
+  // `order:updated` already frontend me suna jaata hai — poora order replace
+  // ho jaata hai, isliye delete dono taraf live dikhta hai.
+  emitOrderEvent(orderId, 'order:updated', found.order);
   return result;
 }
