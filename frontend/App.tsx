@@ -877,6 +877,9 @@ export default function App() {
   const sendingMessageRef = useRef(false);
   // 🗑️ Kis message ka delete request chal raha hai (button spinner/disable ke liye).
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  // WhatsApp-style long-press / right-click action menu
+  const [messageMenuTarget, setMessageMenuTarget] = useState<any | null>(null);
+  const [messageDeleteTarget, setMessageDeleteTarget] = useState<any | null>(null);
   const [isUploadingDocs, setIsUploadingDocs] = useState(false);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   // Action-level loading states (Priority 2 buttons).
@@ -4033,15 +4036,22 @@ export default function App() {
 
   // 🗑️ Soft delete (WhatsApp style) — sirf apna 15-minute ke andar ka message.
   // Backend dobara verify karta hai (sender ownership + time window), isliye
-  // yahan sirf UX ke liye button dikhta hai.
+  // yahan sirf UX ke liye option dikhta hai. Confirmation alag dialog se aata hai.
+  const canDeleteMessage = (msg: any) => {
+    if (!msg || msg.isDeleted) return false;
+    const isMine = (activeRole === 'client' && msg.sender === 'client') ||
+      (activeRole !== 'client' && msg.sender === 'operator');
+    if (!isMine) return false;
+    if (!msg.createdAt) return true;
+    const createdAtMs = new Date(msg.createdAt).getTime();
+    if (!Number.isFinite(createdAtMs)) return true;
+    return Date.now() - createdAtMs <= 15 * 60 * 1000;
+  };
+
   const handleDeleteMessage = async (msg: any) => {
     if (!msg?.id || !activeWorkspaceOrder) return;
     if (msg.isDeleted) return;
     if (deletingMessageId) return;
-    const confirmed = window.confirm(
-      'Yeh message delete karna hai?\n\nDono taraf "🚫 Yeh message delete kar diya gaya" dikhega. Record dispute ke liye database me rehta hai.'
-    );
-    if (!confirmed) return;
 
     setDeletingMessageId(msg.id);
     try {
@@ -4081,9 +4091,10 @@ export default function App() {
     }, 1600);
   };
 
-  // 👆 WhatsApp-style swipe-to-reply (mobile). Bubble ko right kheencho to
-  // peeche se ↩ icon nikalti hai; 56px se zyada kheencha to reply set ho jaata hai.
-  // Vertical scroll par koi asar nahi — sirf horizontal movement pakadte hain.
+  // 👆 WhatsApp-style swipe-to-reply (mobile) + long-press action menu.
+  // Bubble ko right kheencho to peeche se ↩ icon nikalti hai; 56px se zyada
+  // kheencha to reply set ho jaata hai. Long-press (0.5s) ya right-click se
+  // WhatsApp jaisa menu khulta hai.
   const messageSwipeRef = useRef<{
     key: string;
     x: number;
@@ -4093,9 +4104,42 @@ export default function App() {
     element: HTMLElement;
     arrow: HTMLElement | null;
   } | null>(null);
+  const messageLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const messageLongPressFiredRef = useRef(false);
+  const messageMouseStartRef = useRef<{ x: number; y: number } | null>(null);
+  const messageMenuOpenedAtRef = useRef(0);
 
-  const handleMessageSwipeStart = (event: TouchEvent<HTMLDivElement>, messageKey: string) => {
+  const isInteractiveMessageTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest('button, a, input, textarea, select, [role="button"]'));
+  };
+
+  const clearMessageLongPress = () => {
+    if (messageLongPressTimerRef.current) {
+      clearTimeout(messageLongPressTimerRef.current);
+      messageLongPressTimerRef.current = null;
+    }
+  };
+
+  const openMessageMenu = (msg: any) => {
+    if (!msg || msg.isDeleted) return;
+    clearMessageLongPress();
+    // Agar swipe adhoora tha to bubble ko wapas apni jagah bhej do.
+    const swipe = messageSwipeRef.current;
+    if (swipe) {
+      swipe.element.style.transition = 'transform 120ms ease-out';
+      swipe.element.style.transform = '';
+      if (swipe.arrow) swipe.arrow.style.opacity = '0';
+      messageSwipeRef.current = null;
+    }
+    messageMenuOpenedAtRef.current = Date.now();
+    setMessageMenuTarget(msg);
+    try { navigator.vibrate?.(20); } catch {}
+  };
+
+  const handleMessageSwipeStart = (event: TouchEvent<HTMLDivElement>, messageKey: string, msg?: any) => {
     if (event.touches.length !== 1) return;
+    if (isInteractiveMessageTarget(event.target)) return;
     const touch = event.touches[0];
     const element = event.currentTarget;
     const previous = element.previousElementSibling;
@@ -4108,6 +4152,15 @@ export default function App() {
       element,
       arrow: previous instanceof HTMLElement ? previous : null
     };
+    messageLongPressFiredRef.current = false;
+    clearMessageLongPress();
+    if (msg && !msg.isDeleted) {
+      messageLongPressTimerRef.current = setTimeout(() => {
+        messageLongPressTimerRef.current = null;
+        messageLongPressFiredRef.current = true;
+        openMessageMenu(msg);
+      }, 500);
+    }
   };
 
   const handleMessageSwipeMove = (event: TouchEvent<HTMLDivElement>, messageKey: string) => {
@@ -4116,6 +4169,8 @@ export default function App() {
     const touch = event.touches[0];
     const dx = touch.clientX - swipe.x;
     const dy = touch.clientY - swipe.y;
+    // Finger hilne par long-press cancel — warna scroll karte waqt menu khul jayega.
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) clearMessageLongPress();
     if (!swipe.active) {
       // Vertical scroll ko mat roko.
       if (Math.abs(dx) < 12 || Math.abs(dx) <= Math.abs(dy) * 1.2) return;
@@ -4129,16 +4184,77 @@ export default function App() {
   };
 
   const handleMessageSwipeEnd = (messageKey: string, msg: any) => {
+    clearMessageLongPress();
+    const longPressFired = messageLongPressFiredRef.current;
+    messageLongPressFiredRef.current = false;
     const swipe = messageSwipeRef.current;
     messageSwipeRef.current = null;
     if (!swipe || swipe.key !== messageKey) return;
     swipe.element.style.transition = 'transform 140ms ease-out';
     swipe.element.style.transform = '';
     if (swipe.arrow) swipe.arrow.style.opacity = '0';
+    if (longPressFired) return;
     if (swipe.active && swipe.lastOffset >= 56) {
       startReplyToMessage(msg);
       try { navigator.vibrate?.(15); } catch {}
     }
+  };
+
+  // 🖱️ Desktop: right-click ya left-button long-press par bhi menu khule.
+  const handleMessageContextMenu = (event: MouseEvent, msg: any) => {
+    if (isInteractiveMessageTarget(event.target)) return;
+    event.preventDefault();
+    openMessageMenu(msg);
+  };
+
+  const handleMessageMouseDown = (event: MouseEvent, msg: any) => {
+    if (event.button !== 0) return;
+    if (isInteractiveMessageTarget(event.target)) return;
+    messageMouseStartRef.current = { x: event.clientX, y: event.clientY };
+    clearMessageLongPress();
+    if (!msg || msg.isDeleted) return;
+    messageLongPressTimerRef.current = setTimeout(() => {
+      messageLongPressTimerRef.current = null;
+      openMessageMenu(msg);
+    }, 550);
+  };
+
+  const handleMessageMouseMove = (event: MouseEvent) => {
+    const start = messageMouseStartRef.current;
+    if (!start) return;
+    if (Math.abs(event.clientX - start.x) > 10 || Math.abs(event.clientY - start.y) > 10) {
+      clearMessageLongPress();
+    }
+  };
+
+  const endMessageMousePress = () => {
+    messageMouseStartRef.current = null;
+    clearMessageLongPress();
+  };
+
+  // Bubble par text select band hai (long-press ko clean rakhne ke liye),
+  // isliye menu me Copy option diya hai.
+  const copyMessageText = async (msg: any) => {
+    const text = String(msg?.text || '');
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setWorkspaceStatusMsg({ text: '📋 Message copy ho gaya.', type: 'success' });
+    } catch {
+      setWorkspaceStatusMsg({ text: 'Message copy nahi ho paya.', type: 'error' });
+    }
+    setMessageMenuTarget(null);
+  };
+
+  const requestDeleteMessage = (msg: any) => {
+    setMessageMenuTarget(null);
+    setMessageDeleteTarget(msg);
+  };
+
+  const confirmDeleteMessage = async () => {
+    const target = messageDeleteTarget;
+    setMessageDeleteTarget(null);
+    if (target) await handleDeleteMessage(target);
   };
 
   // Send Chat Message with correct sender identity
@@ -12538,23 +12654,13 @@ export default function App() {
                     return groups.map((group, gIdx) => {
                       const isMine = (activeRole === 'client' && group.sender === 'client') || (activeRole !== 'client' && group.sender === 'operator');
                       return (
-                        <div key={group.items[0].id || gIdx} className={`flex flex-col max-w-[85%] ${isMine ? 'ml-auto items-end' : 'mr-auto items-start'} mt-2`}>
+                        <div key={group.items[0].id || gIdx} className={`flex flex-col max-w-[82%] md:max-w-[70%] ${isMine ? 'ml-auto items-end' : 'mr-auto items-start'} mt-2`}>
                           <span className={`text-[10px] text-slate-500 mb-0.5 px-1 ${isMine ? 'text-right' : 'text-left'}`}>{group.senderName} • {group.items[group.items.length - 1]?.time || ''}</span>
-                          <div className={`flex flex-col gap-0.5 w-full`}>
+                          <div className={`flex flex-col gap-0.5 w-full ${isMine ? 'items-end' : 'items-start'}`}>
                             {group.items.map((msg: any, idx: number) => {
                               const isFirst = idx === 0;
-                              const isLast = idx === group.items.length - 1;
                               const messageKey = msg.id || `${gIdx}-${idx}`;
                               const isVoicePlaying = voiceNotePlayback?.key === messageKey && voiceNotePlayback?.playing === true;
-                              // Delete sirf apne message par, 15 minute ke andar.
-                              // Purane messages me createdAt nahi hota — unhe allow
-                              // karte hain (server bhi yahi rule lagata hai).
-                              const canDelete = isMine && !msg.isDeleted && Boolean(msg.id) && (() => {
-                                if (!msg.createdAt) return true;
-                                const createdAtMs = new Date(msg.createdAt).getTime();
-                                if (!Number.isFinite(createdAtMs)) return true;
-                                return Date.now() - createdAtMs <= 15 * 60 * 1000;
-                              })();
                               return (
                                 <div key={msg.id || `${gIdx}-${idx}`} className="relative w-fit max-w-full">
                                   <span
@@ -12565,12 +12671,17 @@ export default function App() {
                                   </span>
                                   <div
                                     id={`chat-msg-${messageKey}`}
-                                    onTouchStart={(event) => handleMessageSwipeStart(event, messageKey)}
+                                    onTouchStart={(event) => handleMessageSwipeStart(event, messageKey, msg)}
                                     onTouchMove={(event) => handleMessageSwipeMove(event, messageKey)}
                                     onTouchEnd={() => handleMessageSwipeEnd(messageKey, msg)}
                                     onTouchCancel={() => handleMessageSwipeEnd(messageKey, msg)}
-                                    style={{ touchAction: 'pan-y' }}
-                                    className={`p-2.5 text-xs leading-relaxed w-fit max-w-full transition-shadow ${
+                                    onContextMenu={(event) => handleMessageContextMenu(event, msg)}
+                                    onMouseDown={(event) => handleMessageMouseDown(event, msg)}
+                                    onMouseMove={handleMessageMouseMove}
+                                    onMouseUp={endMessageMousePress}
+                                    onMouseLeave={endMessageMousePress}
+                                    style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none' }}
+                                    className={`p-2.5 text-xs leading-relaxed w-fit max-w-full break-words select-none transition-shadow ${
                                       isMine
                                         ? `bg-indigo-600 text-white font-medium ${isFirst ? 'rounded-tl-2xl rounded-tr-2xl rounded-bl-2xl' : 'rounded-2xl rounded-tr-md'} ${!isFirst ? '-mt-0.5' : ''}`
                                         : `bg-slate-800 text-slate-200 border border-slate-700 ${isFirst ? 'rounded-tr-2xl rounded-tl-2xl rounded-br-2xl' : 'rounded-2xl rounded-tl-md'} ${!isFirst ? '-mt-0.5' : ''}`
@@ -12703,33 +12814,6 @@ export default function App() {
                           </div>
                         )}
 
-                        <div className="mt-1.5 flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => startReplyToMessage(msg)}
-                            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold transition-colors ${
-                              isMine ? 'text-white/70 hover:bg-black/20 hover:text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-100'
-                            }`}
-                            title="Is message ko tag karke reply karein"
-                            aria-label="Reply to this message"
-                          >
-                            ↩ Reply
-                          </button>
-                          {canDelete && (
-                            <button
-                              type="button"
-                              onClick={() => void handleDeleteMessage(msg)}
-                              disabled={deletingMessageId === msg.id}
-                              className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-                                isMine ? 'text-rose-100/80 hover:bg-black/25 hover:text-white' : 'text-rose-300 hover:bg-slate-700 hover:text-rose-200'
-                              }`}
-                              title="Apna message delete karein (15 min ke andar)"
-                              aria-label="Delete this message"
-                            >
-                              {deletingMessageId === msg.id ? <Loader2 className="w-3 h-3 animate-spin" /> : '🗑️'} Delete
-                            </button>
-                          )}
-                        </div>
                                     </>
                                   )}
 
@@ -14837,6 +14921,111 @@ export default function App() {
             <p className="mt-2 text-center text-[11px] font-semibold text-slate-600">
               Phone se scan karke payment karein
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp-style message actions (long-press / right-click) */}
+      {messageMenuTarget && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center"
+          onClick={() => {
+            // Long-press ke turant baad aane wala synthetic click menu band na kare.
+            if (Date.now() - messageMenuOpenedAtRef.current < 350) return;
+            setMessageMenuTarget(null);
+          }}
+        >
+          <div
+            className="w-full sm:max-w-xs bg-slate-900 border border-white/10 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-white/10">
+              <p className="text-[11px] font-bold text-slate-300 truncate">
+                {messageMenuTarget.senderName || (messageMenuTarget.sender === 'operator' ? 'Operator' : 'Citizen')}
+              </p>
+              <p className="mt-0.5 text-[10px] text-slate-500 truncate">
+                {messageMenuTarget.isVoiceNote ? '🎙️ Voice Note' : (messageMenuTarget.text || 'Attachment')}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                startReplyToMessage(messageMenuTarget);
+                setMessageMenuTarget(null);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-200 hover:bg-white/[0.06] transition-colors"
+            >
+              <span className="text-base">↩</span>
+              Reply
+            </button>
+
+            {!messageMenuTarget.isVoiceNote && String(messageMenuTarget.text || '').trim() && (
+              <button
+                type="button"
+                onClick={() => void copyMessageText(messageMenuTarget)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-200 hover:bg-white/[0.06] transition-colors"
+              >
+                <span className="text-base">📋</span>
+                Copy text
+              </button>
+            )}
+
+            {canDeleteMessage(messageMenuTarget) && (
+              <button
+                type="button"
+                onClick={() => requestDeleteMessage(messageMenuTarget)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm font-bold text-rose-400 hover:bg-rose-500/10 transition-colors"
+              >
+                <span className="text-base">🗑️</span>
+                Delete message
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setMessageMenuTarget(null)}
+              className="w-full flex items-center justify-center px-4 py-3 text-sm font-semibold text-slate-400 hover:bg-white/[0.04] border-t border-white/10 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation (WhatsApp style) */}
+      {messageDeleteTarget && (
+        <div
+          className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setMessageDeleteTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm bg-slate-900 border border-white/10 rounded-2xl shadow-2xl p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="text-base font-black text-white">Delete this message?</h3>
+            <p className="mt-1.5 text-xs leading-relaxed text-slate-400">
+              Yeh message dono taraf se delete ho jayega. Chat me &quot;🚫 Yeh message delete kar diya gaya&quot; dikhega. Record dispute ke liye database me rehta hai.
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMessageDeleteTarget(null)}
+                className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800 text-slate-200 text-xs font-bold hover:bg-slate-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeleteMessage()}
+                disabled={Boolean(deletingMessageId)}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5"
+              >
+                {deletingMessageId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}
