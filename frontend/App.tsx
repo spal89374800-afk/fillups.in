@@ -1935,7 +1935,10 @@ export default function App() {
     callLocalStreamRef.current?.getTracks().forEach(track => peer.addTrack(track, callLocalStreamRef.current!));
     peer.onicecandidate = event => {
       if (event.candidate) {
-        realtimeSocket.emit('call:signal', { orderId, candidate: event.candidate.toJSON() });
+        const targetSocketId = callTargetSocketIdRef.current;
+        if (targetSocketId) {
+          realtimeSocket.emit('call:signal', { orderId, targetSocketId, candidate: event.candidate.toJSON() });
+        }
       }
     };
     peer.ontrack = event => {
@@ -1954,7 +1957,10 @@ export default function App() {
         try {
           const offer = await peer.createOffer();
           await peer.setLocalDescription(offer);
-          realtimeSocket.emit('call:signal', { orderId, description: peer.localDescription?.toJSON() });
+          const targetSocketId = callTargetSocketIdRef.current;
+          if (targetSocketId) {
+            realtimeSocket.emit('call:signal', { orderId, targetSocketId, description: peer.localDescription?.toJSON() });
+          }
         } catch (err) {
           console.warn('Call offer failed:', err);
         }
@@ -1986,7 +1992,10 @@ export default function App() {
         if (signal.description.type === 'offer') {
           const answer = await peer.createAnswer();
           await peer.setLocalDescription(answer);
-          realtimeSocket.emit('call:signal', { orderId: signal.orderId, description: peer.localDescription?.toJSON() });
+          const targetSocketId = callTargetSocketIdRef.current;
+          if (targetSocketId) {
+            realtimeSocket.emit('call:signal', { orderId: signal.orderId, targetSocketId, description: peer.localDescription?.toJSON() });
+          }
         }
       } else if (signal.candidate) {
         if (peer.remoteDescription) {
