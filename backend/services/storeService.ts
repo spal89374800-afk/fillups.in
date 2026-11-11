@@ -1491,7 +1491,6 @@ export function createBroadcastFormBid(data: {
 }) {
   const bidId = 'BID-FORM-' + Math.floor(1000 + Math.random() * 9000);
   const now = new Date();
-  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const allVleRecipients = vleListStore.filter(operator => operator.role !== 'filler');
 
   const newBid: any = {
@@ -1522,15 +1521,7 @@ export function createBroadcastFormBid(data: {
       broadcastToVle: allVleRecipients.length > 0,
       broadcastToFiller: true
     },
-    chatMessages: [
-      {
-        id: 'sys-' + Date.now(),
-        sender: 'operator',
-        senderName: 'FILLUP Central Broadcast',
-        text: `📢 New request: "${data.formTitle}" is available to all Jan Seva operators (national scope) and Form Filler experts. First eligible operator to accept wins the bid.`,
-        time: timeStr
-      }
-    ],
+    chatMessages: [],
     clientDocuments: []
   };
 

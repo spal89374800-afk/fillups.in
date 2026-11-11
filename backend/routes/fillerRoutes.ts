@@ -269,13 +269,6 @@ async function createAndDispatchFormRequest(req: any, res: any, fallbackTitle: s
   newBid.routingNote = 'Yeh form request poore India ke Jan Seva operators aur Form Filler experts ko bheji gayi hai. Online operators ko turant in-app notification milti hai, offline operators ko email.';
 
   newBid.chatMessages = Array.isArray(newBid.chatMessages) ? newBid.chatMessages : [];
-  newBid.chatMessages.push({
-    id: 'sys-routing-' + Date.now(),
-    sender: 'operator',
-    senderName: 'DigiSeva Dispatch',
-    text: `📢 ${newBid.routingNote}`,
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  });
 
   // Broadcast to BOTH Form Fillers (all India) and Jan Seva Kendra network.
   const allVle = vleListStore.filter(operator => operator.role !== 'filler');

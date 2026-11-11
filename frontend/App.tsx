@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import type { MouseEvent } from 'react';
+import type { MouseEvent, TouchEvent } from 'react';
 import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
@@ -872,6 +872,9 @@ export default function App() {
   // Visible loading states for manual refresh, chat send, and file/proof uploads.
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  // Synchronous lock: state update async hota hai, isliye tez double-tap par
+  // dono tap nikal jaate the aur ek hi message do baar chala jaata tha.
+  const sendingMessageRef = useRef(false);
   const [isUploadingDocs, setIsUploadingDocs] = useState(false);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   // Action-level loading states (Priority 2 buttons).
@@ -4027,7 +4030,10 @@ export default function App() {
   const scrollToQuotedMessage = (messageId: string) => {
     if (!messageId) return;
     const element = document.getElementById(`chat-msg-${messageId}`);
-    if (!element) return;
+    if (!element) {
+      setWorkspaceStatusMsg({ text: '⚠️ Original message nahi mila (delete ho gaya hoga).', type: 'info' });
+      return;
+    }
     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setHighlightedMessageId(messageId);
     if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
@@ -4035,6 +4041,66 @@ export default function App() {
       setHighlightedMessageId(null);
       highlightTimerRef.current = null;
     }, 1600);
+  };
+
+  // 👆 WhatsApp-style swipe-to-reply (mobile). Bubble ko right kheencho to
+  // peeche se ↩ icon nikalti hai; 56px se zyada kheencha to reply set ho jaata hai.
+  // Vertical scroll par koi asar nahi — sirf horizontal movement pakadte hain.
+  const messageSwipeRef = useRef<{
+    key: string;
+    x: number;
+    y: number;
+    lastOffset: number;
+    active: boolean;
+    element: HTMLElement;
+    arrow: HTMLElement | null;
+  } | null>(null);
+
+  const handleMessageSwipeStart = (event: TouchEvent<HTMLDivElement>, messageKey: string) => {
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const element = event.currentTarget;
+    const previous = element.previousElementSibling;
+    messageSwipeRef.current = {
+      key: messageKey,
+      x: touch.clientX,
+      y: touch.clientY,
+      lastOffset: 0,
+      active: false,
+      element,
+      arrow: previous instanceof HTMLElement ? previous : null
+    };
+  };
+
+  const handleMessageSwipeMove = (event: TouchEvent<HTMLDivElement>, messageKey: string) => {
+    const swipe = messageSwipeRef.current;
+    if (!swipe || swipe.key !== messageKey || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - swipe.x;
+    const dy = touch.clientY - swipe.y;
+    if (!swipe.active) {
+      // Vertical scroll ko mat roko.
+      if (Math.abs(dx) < 12 || Math.abs(dx) <= Math.abs(dy) * 1.2) return;
+      swipe.active = true;
+      swipe.element.style.transition = 'none';
+    }
+    const offset = Math.max(0, Math.min(dx, 64));
+    swipe.lastOffset = offset;
+    swipe.element.style.transform = offset > 0 ? `translateX(${offset}px)` : '';
+    if (swipe.arrow) swipe.arrow.style.opacity = String(Math.min(1, offset / 48));
+  };
+
+  const handleMessageSwipeEnd = (messageKey: string, msg: any) => {
+    const swipe = messageSwipeRef.current;
+    messageSwipeRef.current = null;
+    if (!swipe || swipe.key !== messageKey) return;
+    swipe.element.style.transition = 'transform 140ms ease-out';
+    swipe.element.style.transform = '';
+    if (swipe.arrow) swipe.arrow.style.opacity = '0';
+    if (swipe.active && swipe.lastOffset >= 56) {
+      startReplyToMessage(msg);
+      try { navigator.vibrate?.(15); } catch {}
+    }
   };
 
   // Send Chat Message with correct sender identity
@@ -4054,9 +4120,12 @@ export default function App() {
     }
     if (!chatInputText.trim() && stagedFiles.length === 0) return;
     if (!activeWorkspaceOrder) return;
-    if (isSendingMessage) return;
+    if (isSendingMessage || sendingMessageRef.current) return;
 
+    sendingMessageRef.current = true;
     setIsSendingMessage(true);
+    const pendingText = chatInputText;
+    const pendingReply = replyingToMessageRef.current;
     try {
       const actualSender = activeRole === 'client' ? 'client' : 'operator';
       const actualSenderName = activeRole === 'client'
@@ -4076,23 +4145,35 @@ export default function App() {
         setStagedFiles([]);
       }
 
-      if (chatInputText.trim()) {
+      if (pendingText.trim()) {
+        // Input turant clear karo — server ka wait karte waqt dobara tap/Enter
+        // ho jaye to wahi text dobara na chala jaye.
+        setChatInputText('');
+        cancelReplyToMessage();
         const data = await sendRealtimeMessage(activeWorkspaceOrder.id, {
           sender: actualSender,
           senderName: actualSenderName,
-          text: chatInputText,
-          ...(replyingToMessageRef.current ? { replyTo: replyingToMessageRef.current } : {})
+          text: pendingText,
+          ...(pendingReply ? { replyTo: pendingReply } : {})
         });
-        setChatInputText('');
-        cancelReplyToMessage();
         setActiveWorkspaceOrder(data.order);
       }
 
       fetchAllData();
     } catch (err) {
       console.warn('Unable to send message/files:', err);
+      // Send fail hua to text wapas laao (reply target bhi), taaki user dobara
+      // bhej sake.
+      if (pendingText.trim()) {
+        setChatInputText(current => (current.trim() ? current : pendingText));
+        if (pendingReply) {
+          replyingToMessageRef.current = pendingReply;
+          setReplyingToMessage(pendingReply);
+        }
+      }
       setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'The message or attachment could not be sent.', type: 'error' });
     } finally {
+      sendingMessageRef.current = false;
       setIsSendingMessage(false);
     }
   };
@@ -12428,15 +12509,26 @@ export default function App() {
                               const messageKey = msg.id || `${gIdx}-${idx}`;
                               const isVoicePlaying = voiceNotePlayback?.key === messageKey && voiceNotePlayback?.playing === true;
                               return (
-                                <div
-                                  key={msg.id || `${gIdx}-${idx}`}
-                                  id={`chat-msg-${messageKey}`}
-                                  className={`p-2.5 text-xs leading-relaxed w-fit max-w-full transition-shadow ${
-                                    isMine
-                                      ? `bg-indigo-600 text-white font-medium ${isFirst ? 'rounded-tl-2xl rounded-tr-2xl rounded-bl-2xl' : 'rounded-2xl rounded-tr-md'} ${!isFirst ? '-mt-0.5' : ''}`
-                                      : `bg-slate-800 text-slate-200 border border-slate-700 ${isFirst ? 'rounded-tr-2xl rounded-tl-2xl rounded-br-2xl' : 'rounded-2xl rounded-tl-md'} ${!isFirst ? '-mt-0.5' : ''}`
-                                  } ${highlightedMessageId === messageKey ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900' : ''}`}
-                                >
+                                <div key={msg.id || `${gIdx}-${idx}`} className="relative w-fit max-w-full">
+                                  <span
+                                    className="pointer-events-none absolute left-1 top-1/2 -translate-y-1/2 text-base text-emerald-400 opacity-0"
+                                    aria-hidden="true"
+                                  >
+                                    ↩
+                                  </span>
+                                  <div
+                                    id={`chat-msg-${messageKey}`}
+                                    onTouchStart={(event) => handleMessageSwipeStart(event, messageKey)}
+                                    onTouchMove={(event) => handleMessageSwipeMove(event, messageKey)}
+                                    onTouchEnd={() => handleMessageSwipeEnd(messageKey, msg)}
+                                    onTouchCancel={() => handleMessageSwipeEnd(messageKey, msg)}
+                                    style={{ touchAction: 'pan-y' }}
+                                    className={`p-2.5 text-xs leading-relaxed w-fit max-w-full transition-shadow ${
+                                      isMine
+                                        ? `bg-indigo-600 text-white font-medium ${isFirst ? 'rounded-tl-2xl rounded-tr-2xl rounded-bl-2xl' : 'rounded-2xl rounded-tr-md'} ${!isFirst ? '-mt-0.5' : ''}`
+                                        : `bg-slate-800 text-slate-200 border border-slate-700 ${isFirst ? 'rounded-tr-2xl rounded-tl-2xl rounded-br-2xl' : 'rounded-2xl rounded-tl-md'} ${!isFirst ? '-mt-0.5' : ''}`
+                                    } ${highlightedMessageId === messageKey ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900' : ''}`}
+                                  >
                                   {msg.replyTo && (
                                     <button
                                       type="button"
@@ -12572,7 +12664,8 @@ export default function App() {
                           ↩ Reply
                         </button>
 
-                      </div>
+                                  </div>
+                                </div>
                     );
                     })}
                   </div>
