@@ -12,6 +12,8 @@ export function sendOrderMessage(
     isVoiceNote?: boolean;
     audioDataUrl?: string;
     audioDuration?: string;
+    clientMessageId?: string;
+    replyTo?: ChatMessage['replyTo'];
   }
 ) {
   let found = findAnyOrder(orderId);
@@ -37,8 +39,27 @@ export function sendOrderMessage(
   }
 
   const sender: 'client' | 'operator' = payload.sender === 'operator' ? 'operator' : 'client';
+
+  // Idempotency: agar yahi clientMessageId pehle save ho chuki hai (socket
+  // deliver ho gaya par ack timeout hua, phir REST fallback aaya) to duplicate
+  // message save na karo — bas existing message wapas do.
+  const clientMessageId = typeof payload.clientMessageId === 'string' ? payload.clientMessageId.trim() : '';
+  if (clientMessageId) {
+    const existing = Array.isArray(found.order.chatMessages)
+      ? found.order.chatMessages.find((message: ChatMessage) => message.id === clientMessageId)
+      : undefined;
+    if (existing) {
+      return {
+        success: true,
+        message: 'Message already sent.',
+        chatMessage: existing,
+        order: found.order
+      };
+    }
+  }
+
   const newMessage = {
-    id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: clientMessageId || `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     sender,
     senderName: payload.senderName || (sender === 'operator' ? 'Operator' : 'Client'),
     text: payload.text || '',
@@ -46,7 +67,21 @@ export function sendOrderMessage(
     attachment: payload.attachment || undefined,
     isVoiceNote: payload.isVoiceNote || false,
     audioDataUrl: payload.audioDataUrl || undefined,
-    audioDuration: payload.audioDuration || '0:05'
+    audioDuration: payload.audioDuration || '0:05',
+    // Reply preview ko sanitize karke store karo — client se aaya data
+    // seedha DB me nahi jaata, length bhi cap hai.
+    replyTo: (() => {
+      const reply = payload.replyTo;
+      if (!reply || typeof reply !== 'object') return undefined;
+      const replyId = typeof reply.id === 'string' ? reply.id.trim().slice(0, 120) : '';
+      if (!replyId) return undefined;
+      return {
+        id: replyId,
+        senderName: String(reply.senderName || '').trim().slice(0, 80),
+        text: String(reply.text || '').trim().slice(0, 300),
+        ...(reply.isVoiceNote ? { isVoiceNote: true } : {})
+      };
+    })()
   };
   found.order.chatMessages.push(newMessage);
 

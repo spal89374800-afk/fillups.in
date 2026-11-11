@@ -1187,6 +1187,10 @@ export default function App() {
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceStartAtRef = useRef(0);
   const voiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Start race guard: mic permission/setup me time lagta hai, tab dobara tap
+  // karne par do recorder ban jaate the aur ek hi voice note do baar chala
+  // jaata tha. Yeh ref double-start rokta hai.
+  const voiceStartingRef = useRef(false);
 
   const cleanupVoiceRecording = () => {
     if (voiceTimerRef.current) {
@@ -1218,12 +1222,13 @@ export default function App() {
       voiceRecorderRef.current.stop();
       return;
     }
-    if (isVoiceRecording) return;
+    if (isVoiceRecording || voiceStartingRef.current) return;
     if (!activeWorkspaceOrder) {
       alert(t('Please select an active order first to send a voice note.', 'कृपया पहले कोई सक्रिय ऑर्डर चुनें जिसमें वॉइस मैसेज भेजना है।'));
       return;
     }
 
+    voiceStartingRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = pickRecorderMimeType();
@@ -1262,8 +1267,10 @@ export default function App() {
               text: '🎙️ Voice Note (Audio Message)',
               isVoiceNote: true,
               audioDataUrl: base64Audio,
-              audioDuration: formatDurationLabel(durationSec)
+              audioDuration: formatDurationLabel(durationSec),
+              ...(replyingToMessageRef.current ? { replyTo: replyingToMessageRef.current } : {})
             });
+            cancelReplyToMessage();
             setActiveWorkspaceOrder(data.order);
           } catch (err) {
             console.warn('Failed to send voice note:', err);
@@ -1278,6 +1285,7 @@ export default function App() {
       voiceRecorderRef.current = mediaRecorder;
       voiceStartAtRef.current = Date.now();
       mediaRecorder.start();
+      voiceStartingRef.current = false;
       setIsVoiceRecording(true);
       setVoiceRecordSeconds(0);
       if (soundAlertEnabled) playChime();
@@ -1286,6 +1294,7 @@ export default function App() {
       }, 500);
     } catch (err) {
       console.warn('MediaRecorder permission or support error:', err);
+      voiceStartingRef.current = false;
       cleanupVoiceRecording();
       alert('Microphone access denied or not supported. Please allow microphone permissions.');
     }
@@ -1699,6 +1708,12 @@ export default function App() {
   const fillerDistrictRef = useRef(fillerDistrict);
   fillerDistrictRef.current = fillerDistrict;
   const [chatInputText, setChatInputText] = useState('');
+  // ↩ WhatsApp-style reply/tag: kis message ko quote karke jawab de rahe hain.
+  type ChatReplyTarget = { id: string; senderName: string; text: string; isVoiceNote?: boolean };
+  const [replyingToMessage, setReplyingToMessage] = useState<ChatReplyTarget | null>(null);
+  const replyingToMessageRef = useRef<ChatReplyTarget | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatLogEndRef = useRef<HTMLDivElement | null>(null);
   const [feeGovtInput, setFeeGovtInput] = useState('');
   const [feeServiceInput, setFeeServiceInput] = useState('');
@@ -1713,6 +1728,13 @@ export default function App() {
   useEffect(() => {
     chatLogEndRef.current?.scrollIntoView({ block: 'end' });
   }, [activeWorkspaceOrder?.id, activeWorkspaceOrder?.chatMessages?.length]);
+
+  // Dusra order khula to purana reply target clear kar do.
+  useEffect(() => {
+    replyingToMessageRef.current = null;
+    setReplyingToMessage(null);
+    setHighlightedMessageId(null);
+  }, [activeWorkspaceOrder?.id]);
   const [callingState, setCallingState] = useState<'idle' | 'calling' | 'incoming' | 'connected'>('idle');
   const [activeCallOrderId, setActiveCallOrderId] = useState<string | null>(null);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
@@ -1813,10 +1835,17 @@ export default function App() {
 
   const sendRealtimeMessage = (orderId: string, payload: Record<string, unknown>) =>
     new Promise<any>((resolve, reject) => {
+      // Idempotency key: socket send aur REST fallback dono same id bhejte hain,
+      // taaki slow network par ack timeout hone se message do baar save na ho.
+      const clientMessageId = typeof payload.clientMessageId === 'string' && payload.clientMessageId
+        ? payload.clientMessageId
+        : `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const messagePayload = { ...payload, clientMessageId };
+
       const fallbackToRest = async (socketError?: unknown) => {
         if (socketError) console.warn('Live chat socket unavailable, using REST fallback:', socketError);
         try {
-          resolve(await sendMessageOverRest(orderId, payload));
+          resolve(await sendMessageOverRest(orderId, messagePayload));
         } catch (err) {
           reject(err);
         }
@@ -1833,7 +1862,7 @@ export default function App() {
       let settled = false;
       realtimeSocket.timeout(10000).emit(
         'order:send-message',
-        { ...payload, orderId },
+        { ...messagePayload, orderId },
         (error: Error | null, result: any) => {
           if (settled) return;
           settled = true;
@@ -1857,10 +1886,52 @@ export default function App() {
   const callStartingRef = useRef(false);
   const callRoleRef = useRef<'caller' | 'callee' | null>(null);
   const callPcRef = useRef<RTCPeerConnection | null>(null);
+  // Network blip par call turant band na ho — 20 second ka grace timer.
+  const callDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const callLocalStreamRef = useRef<MediaStream | null>(null);
   const callTargetSocketIdRef = useRef<string | null>(null);
   const callPendingIceRef = useRef<RTCIceCandidateInit[]>([]);
   const callAudioRef = useRef<HTMLAudioElement | null>(null);
+  // 🎙️ Voice-note playback: ek hi persistent <audio> element use karte hain.
+  // Pehle har click par naya Audio() banta tha, jiski wajah se mobile par
+  // play block ho jaata tha aur purani aawaz chalti rehti thi.
+  const voiceNoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [voiceNotePlayback, setVoiceNotePlayback] = useState<{ key: string; playing: boolean } | null>(null);
+
+  const toggleVoiceNotePlayback = async (messageKey: string, audioDataUrl?: string) => {
+    if (!audioDataUrl) {
+      setWorkspaceStatusMsg({ text: '⚠️ Voice note data missing hai.', type: 'error' });
+      return;
+    }
+    const element = voiceNoteAudioRef.current;
+    if (!element) return;
+
+    const isCurrent = voiceNotePlayback?.key === messageKey;
+
+    // Same note par dobara tap = pause.
+    if (isCurrent && voiceNotePlayback?.playing) {
+      element.pause();
+      setVoiceNotePlayback({ key: messageKey, playing: false });
+      return;
+    }
+
+    // Naya note = purana band karke naya load karo.
+    if (!isCurrent) {
+      element.pause();
+      element.src = audioDataUrl;
+      element.load();
+      setVoiceNotePlayback({ key: messageKey, playing: false });
+    }
+
+    try {
+      await element.play();
+      setVoiceNotePlayback({ key: messageKey, playing: true });
+    } catch (err) {
+      console.warn('Voice note playback error:', err);
+      setVoiceNotePlayback(null);
+      setWorkspaceStatusMsg({ text: '⚠️ Voice note play nahi ho saki. Dobara tap karein.', type: 'error' });
+    }
+  };
   const callRingtoneCtxRef = useRef<AudioContext | null>(null);
   const callRingtoneTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const callVibrateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1922,6 +1993,10 @@ export default function App() {
 
   const teardownCallMedia = () => {
     stopCallRingtone();
+    if (callDisconnectTimerRef.current) {
+      clearTimeout(callDisconnectTimerRef.current);
+      callDisconnectTimerRef.current = null;
+    }
     try { callPcRef.current?.close(); } catch {}
     callPcRef.current = null;
     callLocalStreamRef.current?.getTracks().forEach(track => track.stop());
@@ -1964,8 +2039,39 @@ export default function App() {
       }
     };
     peer.onconnectionstatechange = () => {
-      if (peer.connectionState === 'failed' || peer.connectionState === 'disconnected' || peer.connectionState === 'closed') {
+      // Sirf isi peer ka state consider karo — naya peer banate waqt purane
+      // peer ka 'closed' event call ko galti se band na kar de.
+      if (callPcRef.current !== peer) return;
+      const state = peer.connectionState;
+
+      if (state === 'connected') {
+        if (callDisconnectTimerRef.current) {
+          clearTimeout(callDisconnectTimerRef.current);
+          callDisconnectTimerRef.current = null;
+        }
+        return;
+      }
+
+      if (state === 'failed' || state === 'closed') {
+        if (callDisconnectTimerRef.current) {
+          clearTimeout(callDisconnectTimerRef.current);
+          callDisconnectTimerRef.current = null;
+        }
         if (callOrderRef.current) endVoiceCall();
+        return;
+      }
+
+      // 'disconnected' aksar temporary hota hai (mobile par WiFi/data switch,
+      // 1-2 second ka network gap). Turant call mat kaato — thoda wait karo.
+      // Agar us beech connection wapas 'connected' ho jaye to call chalti rahegi.
+      if (state === 'disconnected' && !callDisconnectTimerRef.current) {
+        callDisconnectTimerRef.current = setTimeout(() => {
+          callDisconnectTimerRef.current = null;
+          if (callPcRef.current !== peer || !callOrderRef.current) return;
+          if (peer.connectionState === 'connected') return;
+          setWorkspaceStatusMsg({ text: '📵 Call connection 20 second tak wapas nahi aayi, isliye call band ho rahi hai.', type: 'error' });
+          endVoiceCall();
+        }, 20000);
       }
     };
     if (initiator) {
@@ -3277,7 +3383,20 @@ export default function App() {
       setWorkspaceStatusMsg({ text: '📵 Sirf ek call ek time par — dusri taraf already busy hai.', type: 'info' });
       resetCall();
     };
-    const onCallEnded = () => {
+    const onCallEnded = (event?: { orderId?: string; reason?: string }) => {
+      // Socket ek pal ke liye toota (mobile network switch) to server
+      // 'disconnected' bhej deta hai. Aawaz peer-to-peer chalti hai, isliye
+      // agar call already connected hai to use band mat karo — bas batao.
+      if (
+        event?.reason === 'disconnected' &&
+        callOrderRef.current &&
+        callPcRef.current &&
+        callPcRef.current.connectionState !== 'failed' &&
+        callPcRef.current.connectionState !== 'closed'
+      ) {
+        setWorkspaceStatusMsg({ text: '⚠️ Network blip — call chalu hai, aawaz aani chahiye.', type: 'info' });
+        return;
+      }
       if (callOrderRef.current || callingState !== 'idle') {
         setWorkspaceStatusMsg({ text: 'Call ended.', type: 'info' });
       }
@@ -3886,6 +4005,38 @@ export default function App() {
     };
   }, [feeGovtInput, feeServiceInput, activeWorkspaceOrder?.id, activeWorkspaceOrder?.feesApprovalRequired, activeRole]);
 
+  // ↩ Reply/tag helpers (WhatsApp jaisa)
+  const startReplyToMessage = (msg: any) => {
+    if (!msg) return;
+    const target: ChatReplyTarget = {
+      id: String(msg.id || ''),
+      senderName: String(msg.senderName || (msg.sender === 'operator' ? 'Operator' : 'Client')),
+      text: msg.isVoiceNote ? '🎙️ Voice Note' : String(msg.text || ''),
+      ...(msg.isVoiceNote ? { isVoiceNote: true } : {})
+    };
+    if (!target.id) return;
+    replyingToMessageRef.current = target;
+    setReplyingToMessage(target);
+  };
+
+  const cancelReplyToMessage = () => {
+    replyingToMessageRef.current = null;
+    setReplyingToMessage(null);
+  };
+
+  const scrollToQuotedMessage = (messageId: string) => {
+    if (!messageId) return;
+    const element = document.getElementById(`chat-msg-${messageId}`);
+    if (!element) return;
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedMessageId(messageId);
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedMessageId(null);
+      highlightTimerRef.current = null;
+    }, 1600);
+  };
+
   // Send Chat Message with correct sender identity
   const handleSendMessage = async () => {
     hideMobileWorkspaceHeader();
@@ -3929,9 +4080,11 @@ export default function App() {
         const data = await sendRealtimeMessage(activeWorkspaceOrder.id, {
           sender: actualSender,
           senderName: actualSenderName,
-          text: chatInputText
+          text: chatInputText,
+          ...(replyingToMessageRef.current ? { replyTo: replyingToMessageRef.current } : {})
         });
         setChatInputText('');
+        cancelReplyToMessage();
         setActiveWorkspaceOrder(data.order);
       }
 
@@ -12272,36 +12425,45 @@ export default function App() {
                             {group.items.map((msg: any, idx: number) => {
                               const isFirst = idx === 0;
                               const isLast = idx === group.items.length - 1;
+                              const messageKey = msg.id || `${gIdx}-${idx}`;
+                              const isVoicePlaying = voiceNotePlayback?.key === messageKey && voiceNotePlayback?.playing === true;
                               return (
                                 <div
                                   key={msg.id || `${gIdx}-${idx}`}
-                                  className={`p-2.5 text-xs leading-relaxed w-fit max-w-full ${
+                                  id={`chat-msg-${messageKey}`}
+                                  className={`p-2.5 text-xs leading-relaxed w-fit max-w-full transition-shadow ${
                                     isMine
                                       ? `bg-indigo-600 text-white font-medium ${isFirst ? 'rounded-tl-2xl rounded-tr-2xl rounded-bl-2xl' : 'rounded-2xl rounded-tr-md'} ${!isFirst ? '-mt-0.5' : ''}`
                                       : `bg-slate-800 text-slate-200 border border-slate-700 ${isFirst ? 'rounded-tr-2xl rounded-tl-2xl rounded-br-2xl' : 'rounded-2xl rounded-tl-md'} ${!isFirst ? '-mt-0.5' : ''}`
-                                  }`}
+                                  } ${highlightedMessageId === messageKey ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900' : ''}`}
                                 >
+                                  {msg.replyTo && (
+                                    <button
+                                      type="button"
+                                      onClick={() => scrollToQuotedMessage(msg.replyTo.id)}
+                                      className={`mb-1.5 block w-full max-w-[240px] overflow-hidden rounded-lg border-l-2 border-emerald-400 px-2 py-1 text-left ${
+                                        isMine ? 'bg-black/25' : 'bg-slate-950/60'
+                                      }`}
+                                      title="Original message dekhein"
+                                    >
+                                      <div className="truncate text-[10px] font-bold text-emerald-300">
+                                        ↩ {msg.replyTo.senderName || 'Message'}
+                                      </div>
+                                      <div className={`truncate text-[10px] ${isMine ? 'text-white/75' : 'text-slate-400'}`}>
+                                        {msg.replyTo.isVoiceNote ? '🎙️ Voice Note' : msg.replyTo.text}
+                                      </div>
+                                    </button>
+                                  )}
                                   {msg.isVoiceNote ? (
                           <div className="flex items-center gap-2 py-0.5">
-                            <button 
-                              onClick={() => {
-                                if (msg.audioDataUrl) {
-                                  const audio = new Audio(msg.audioDataUrl);
-                                  audio.onerror = () => {
-                                    setWorkspaceStatusMsg({ text: '⚠️ Is device par ye voice note play nahi ho saki (format support nahi hai).', type: 'error' });
-                                  };
-                                  audio.play().catch(e => {
-                                    console.warn('Audio playback error:', e);
-                                    setWorkspaceStatusMsg({ text: '⚠️ Voice note play nahi ho saki. Dobara tap karein.', type: 'error' });
-                                  });
-                                } else {
-                                  setWorkspaceStatusMsg({ text: '⚠️ Voice note data missing hai.', type: 'error' });
-                                }
-                              }} 
-                              className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-xs shadow cursor-pointer"
-                              title="Play Voice Note"
+                            <button
+                              type="button"
+                              onClick={() => void toggleVoiceNotePlayback(messageKey, msg.audioDataUrl)}
+                              className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white flex items-center justify-center text-xs shadow cursor-pointer"
+                              title={isVoicePlaying ? 'Pause Voice Note' : 'Play Voice Note'}
+                              aria-label={isVoicePlaying ? 'Pause voice note' : 'Play voice note'}
                             >
-                              ▶
+                              {isVoicePlaying ? '❚❚' : '▶'}
                             </button>
                             <div className="flex flex-col">
                               <span className="text-[11px] font-bold flex items-center gap-1">
@@ -12310,7 +12472,11 @@ export default function App() {
                               </span>
                               <div className="flex items-center gap-0.5 mt-1">
                                 {[40, 80, 50, 90, 30, 70, 40, 85, 60, 40].map((h, i) => (
-                                  <div key={i} className="w-1 bg-white/70 rounded-full" style={{ height: `${h * 0.14}px` }} />
+                                  <div
+                                    key={i}
+                                    className={`w-1 rounded-full ${isVoicePlaying ? 'bg-emerald-300' : 'bg-white/70'}`}
+                                    style={{ height: `${h * 0.14}px` }}
+                                  />
                                 ))}
                               </div>
                             </div>
@@ -12394,6 +12560,18 @@ export default function App() {
                           </div>
                         )}
 
+                        <button
+                          type="button"
+                          onClick={() => startReplyToMessage(msg)}
+                          className={`mt-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold transition-colors ${
+                            isMine ? 'text-white/70 hover:bg-black/20 hover:text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-100'
+                          }`}
+                          title="Is message ko tag karke reply karein"
+                          aria-label="Reply to this message"
+                        >
+                          ↩ Reply
+                        </button>
+
                       </div>
                     );
                     })}
@@ -12438,7 +12616,29 @@ export default function App() {
                       )}
 
                       {/* Chat Input & Document Upload File Input */}
-                      <div className="p-3 bg-slate-950 border-t border-slate-800 flex items-center gap-2">
+                      <div className="border-t border-slate-800 bg-slate-950">
+                        {replyingToMessage && (
+                          <div className="flex items-start gap-2 border-b border-slate-800 bg-slate-900/80 px-3 py-2">
+                            <div className="min-w-0 flex-1 border-l-2 border-emerald-400 pl-2">
+                              <div className="truncate text-[10px] font-bold text-emerald-300">
+                                ↩ Replying to {replyingToMessage.senderName}
+                              </div>
+                              <div className="truncate text-[10px] text-slate-400">
+                                {replyingToMessage.isVoiceNote ? '🎙️ Voice Note' : replyingToMessage.text}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={cancelReplyToMessage}
+                              className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+                              title="Reply cancel karein"
+                              aria-label="Cancel reply"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 p-3">
                         <label
                           className={`p-2.5 rounded-xl border transition-all flex items-center gap-1 text-xs font-bold ${
                             isUploadingDocs
@@ -12570,6 +12770,7 @@ export default function App() {
                         >
                           {isSendingMessage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                         </button>
+                        </div>
                       </div>
 
                       {/* 🔒 Privacy footer — sabse niche (documents 24h me auto delete) */}
@@ -13432,6 +13633,19 @@ export default function App() {
       {/* 📞 Hidden audio sink + GLOBAL call overlay (workspace band/minimized ho tab bhi call chale).
           Incoming call hamesha dikhta hai — chahe koi bhi workspace khula ho. */}
       <audio ref={callAudioRef} autoPlay playsInline className="hidden" />
+      {/* 🎙️ Voice-note player — ek hi element, taaki mobile browsers playback
+          block na karein aur play/pause reliably kaam kare. */}
+      <audio
+        ref={voiceNoteAudioRef}
+        playsInline
+        preload="auto"
+        className="hidden"
+        onEnded={() => setVoiceNotePlayback(prev => (prev ? { ...prev, playing: false } : prev))}
+        onError={() => {
+          setVoiceNotePlayback(null);
+          setWorkspaceStatusMsg({ text: '⚠️ Is device par ye voice note play nahi ho saki (format support nahi hai).', type: 'error' });
+        }}
+      />
       {callingState !== 'idle' && (
         callingState === 'incoming'
         || !activeWorkspaceOrder

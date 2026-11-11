@@ -170,6 +170,8 @@ export function setRealtimeServer(server: Server): void {
       isVoiceNote?: boolean;
       audioDataUrl?: string;
       audioDuration?: string;
+      clientMessageId?: string;
+      replyTo?: ChatMessage['replyTo'];
     }, acknowledge?: (result: object) => void) => {
       const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
       if (!orderId || !joinedOrders.has(orderId) || (!payload.text?.trim() && !payload.attachment && !payload.audioDataUrl)) {

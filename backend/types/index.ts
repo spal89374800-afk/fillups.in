@@ -38,6 +38,13 @@ export interface ChatMessage {
   isVoiceNote?: boolean;
   audioDataUrl?: string;
   audioDuration?: string;
+  // WhatsApp-style reply: kis message ka jawab hai (sirf preview, poora data nahi).
+  replyTo?: {
+    id: string;
+    senderName: string;
+    text: string;
+    isVoiceNote?: boolean;
+  };
 }
 
 export interface ClientDocument {
