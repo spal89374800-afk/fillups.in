@@ -13382,10 +13382,14 @@ export default function App() {
                                       ✓ = doosri side tak pahunch gaya, ✓✓ = dekh liya. */}
                                   {isMine && !msg.isDeleted && idx === group.items.length - 1 && (msg.readAt || msg.deliveredAt) ? (
                                     <span
-                                      className={`mt-0.5 flex items-center justify-end gap-0.5 text-[10px] font-bold ${msg.readAt ? 'text-sky-300' : 'text-white/50'}`}
+                                      className={`mt-1 flex items-center justify-end gap-0.5 ${msg.readAt ? 'text-cyan-200' : 'text-white/90'}`}
                                       title={msg.readAt ? 'Message dekh liya gaya' : 'Message pahunch gaya'}
                                     >
-                                      {msg.readAt ? <CheckCheck className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                                      {msg.readAt ? (
+                                        <CheckCheck className="h-4 w-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={2.5} />
+                                      ) : (
+                                        <Check className="h-4 w-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={2.5} />
+                                      )}
                                     </span>
                                   ) : null}
 
