@@ -428,6 +428,13 @@ if (typeof window !== 'undefined' && !(window as any).__digisevaFetchPatched) {
   };
 }
 
+// ➡️ Swipe / drag-to-reply tuning (mobile touch + laptop mouse dono same feel).
+//    10px ke baad drag start, 72px tak bubble follow karta hai, aur 48px par
+//    reply confirm ho jaata hai — WhatsApp jaisa halka aur forgiving.
+const MESSAGE_REPLY_DRAG_START_PX = 10;
+const MESSAGE_REPLY_DRAG_MAX_PX = 72;
+const MESSAGE_REPLY_DRAG_CONFIRM_PX = 48;
+
 export default function App() {
   const [legalAccepted, setLegalAccepted] = useState(() => {
     try {
@@ -4564,14 +4571,14 @@ export default function App() {
     if (Math.abs(dx) > 10 || Math.abs(dy) > 10) clearMessageLongPress();
     if (!swipe.active) {
       // Vertical scroll ko mat roko.
-      if (Math.abs(dx) < 12 || Math.abs(dx) <= Math.abs(dy) * 1.2) return;
+      if (Math.abs(dx) < MESSAGE_REPLY_DRAG_START_PX || Math.abs(dx) <= Math.abs(dy) * 1.2) return;
       swipe.active = true;
       swipe.element.style.transition = 'none';
     }
-    const offset = Math.max(0, Math.min(dx, 64));
+    const offset = Math.max(0, Math.min(dx, MESSAGE_REPLY_DRAG_MAX_PX));
     swipe.lastOffset = offset;
     swipe.element.style.transform = offset > 0 ? `translateX(${offset}px)` : '';
-    if (swipe.arrow) swipe.arrow.style.opacity = String(Math.min(1, offset / 48));
+    if (swipe.arrow) swipe.arrow.style.opacity = String(Math.min(1, offset / MESSAGE_REPLY_DRAG_CONFIRM_PX));
   };
 
   const handleMessageSwipeEnd = (messageKey: string, msg: any) => {
@@ -4585,7 +4592,7 @@ export default function App() {
     swipe.element.style.transform = '';
     if (swipe.arrow) swipe.arrow.style.opacity = '0';
     if (longPressFired) return;
-    if (swipe.active && swipe.lastOffset >= 56) {
+    if (swipe.active && swipe.lastOffset >= MESSAGE_REPLY_DRAG_CONFIRM_PX) {
       startReplyToMessage(msg);
       try { navigator.vibrate?.(15); } catch {}
     }
@@ -4641,15 +4648,15 @@ export default function App() {
     const dy = event.clientY - drag.y;
     if (!drag.active) {
       // Vertical scroll / chhoti movement ko ignore karo.
-      if (Math.abs(dx) < 12 || Math.abs(dx) <= Math.abs(dy) * 1.2) return;
+      if (Math.abs(dx) < MESSAGE_REPLY_DRAG_START_PX || Math.abs(dx) <= Math.abs(dy) * 1.2) return;
       drag.active = true;
       drag.element.style.transition = 'none';
       drag.element.style.cursor = 'grabbing';
     }
-    const offset = Math.max(0, Math.min(dx, 64));
+    const offset = Math.max(0, Math.min(dx, MESSAGE_REPLY_DRAG_MAX_PX));
     drag.lastOffset = offset;
     drag.element.style.transform = offset > 0 ? `translateX(${offset}px)` : '';
-    if (drag.arrow) drag.arrow.style.opacity = String(Math.min(1, offset / 48));
+    if (drag.arrow) drag.arrow.style.opacity = String(Math.min(1, offset / MESSAGE_REPLY_DRAG_CONFIRM_PX));
   };
 
   const endMessageMousePress = (msg?: any) => {
@@ -4662,7 +4669,7 @@ export default function App() {
     drag.element.style.transform = '';
     drag.element.style.cursor = '';
     if (drag.arrow) drag.arrow.style.opacity = '0';
-    if (drag.active && drag.lastOffset >= 56 && msg && !msg.isDeleted) {
+    if (drag.active && drag.lastOffset >= MESSAGE_REPLY_DRAG_CONFIRM_PX && msg && !msg.isDeleted) {
       startReplyToMessage(msg);
       try { navigator.vibrate?.(15); } catch {}
     }
