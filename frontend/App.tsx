@@ -1270,20 +1270,63 @@ export default function App() {
             ? (clientName || 'Citizen')
             : (activeRole === 'form_filler' ? (fillerName || 'Form Filler') : (vleName || 'Jan Seva Operator'));
 
+          const orderId = activeWorkspaceOrder.id;
+          const pendingReply = replyingToMessageRef.current;
+          const voiceClientMessageId = `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const audioDuration = formatDurationLabel(durationSec);
+          const voicePayload = {
+            clientMessageId: voiceClientMessageId,
+            sender: actualSender,
+            senderName: actualSenderName,
+            text: '🎙️ Voice Note (Audio Message)',
+            isVoiceNote: true,
+            audioDataUrl: base64Audio,
+            audioDuration,
+            ...(pendingReply ? { replyTo: pendingReply } : {})
+          };
+
+          // WhatsApp jaisa: voice bubble turant chat me, server ka wait nahi.
+          setActiveWorkspaceOrder((current: any) => current && current.id === orderId
+            ? {
+                ...current,
+                chatMessages: [
+                  ...(current.chatMessages || []),
+                  {
+                    id: voiceClientMessageId,
+                    sender: actualSender,
+                    senderName: actualSenderName,
+                    text: '🎙️ Voice Note (Audio Message)',
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    createdAt: new Date().toISOString(),
+                    isVoiceNote: true,
+                    audioDataUrl: base64Audio,
+                    audioDuration,
+                    ...(pendingReply ? { replyTo: pendingReply } : {}),
+                    _pending: true,
+                    _failed: false,
+                    // Manual retry ke liye poora payload saath rakho (text aur
+                    // voice note dono ka same retry path chalta hai).
+                    _payload: voicePayload
+                  }
+                ]
+              }
+            : current);
+          cancelReplyToMessage();
+
           setIsSendingVoiceNote(true);
           try {
-            const data = await sendRealtimeMessage(activeWorkspaceOrder.id, {
-              sender: actualSender,
-              senderName: actualSenderName,
-              text: '🎙️ Voice Note (Audio Message)',
-              isVoiceNote: true,
-              audioDataUrl: base64Audio,
-              audioDuration: formatDurationLabel(durationSec),
-              ...(replyingToMessageRef.current ? { replyTo: replyingToMessageRef.current } : {})
-            });
-            cancelReplyToMessage();
-            setActiveWorkspaceOrder(data.order);
+            const data = await sendRealtimeMessage(orderId, voicePayload);
+            confirmLocalMessage(orderId, voiceClientMessageId, data?.chatMessage);
+            if (data?.order) setActiveWorkspaceOrder(data.order);
           } catch (err) {
+            setActiveWorkspaceOrder((current: any) => current && current.id === orderId
+              ? {
+                  ...current,
+                  chatMessages: (current.chatMessages || []).map((m: any) =>
+                    m.id === voiceClientMessageId ? { ...m, _pending: false, _failed: true } : m
+                  )
+                }
+              : current);
             console.warn('Failed to send voice note:', err);
             setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'The voice message could not be sent.', type: 'error' });
           } finally {
@@ -1853,6 +1896,11 @@ export default function App() {
     }
   };
 
+  // 📤 Outbox: network fail / socket down hone par message yahan rehta hai.
+  //    Socket wapas connect hote hi khud dobara chala jaata hai. Server
+  //    clientMessageId se duplicate rok deta hai, isliye retry safe hai.
+  const outgoingMessagesRef = useRef<Map<string, { orderId: string; payload: Record<string, unknown> }>>(new Map());
+
   const sendRealtimeMessage = (orderId: string, payload: Record<string, unknown>) =>
     new Promise<any>((resolve, reject) => {
       // Idempotency key: socket send aur REST fallback dono same id bhejte hain,
@@ -1871,10 +1919,20 @@ export default function App() {
         token: session?.token
       };
 
+      // Outbox ko bahut bada na hone do.
+      if (outgoingMessagesRef.current.size > 80) {
+        const oldest = outgoingMessagesRef.current.keys().next().value;
+        if (oldest) outgoingMessagesRef.current.delete(oldest);
+      }
+      outgoingMessagesRef.current.set(clientMessageId, { orderId, payload: messagePayload });
+      const clearOutbox = () => outgoingMessagesRef.current.delete(clientMessageId);
+
       const fallbackToRest = async (socketError?: unknown) => {
         if (socketError) console.warn('Live chat socket unavailable, using REST fallback:', socketError);
         try {
-          resolve(await sendMessageOverRest(orderId, messagePayload));
+          const data = await sendMessageOverRest(orderId, messagePayload);
+          clearOutbox();
+          resolve(data);
         } catch (err) {
           reject(err);
         }
@@ -1889,9 +1947,9 @@ export default function App() {
       }
 
       let settled = false;
-      // 2 second me ack nahi mila to REST fallback — user ko 3 second tak
-      // "Sending…" nahi dekhna padta.
-      realtimeSocket.timeout(2000).emit(
+      // Ack ab sirf naya message laata hai (poora order nahi), isliye 6 second
+      // kaafi hai. Timeout par REST safety net chalta hai.
+      realtimeSocket.timeout(6000).emit(
         'order:send-message',
         { ...messagePayload, orderId },
         (error: Error | null, result: any) => {
@@ -1905,11 +1963,43 @@ export default function App() {
             // the account/order access itself, so use it as the safety net.
             void fallbackToRest(result?.error);
           } else {
+            clearOutbox();
             resolve(result);
           }
         }
       );
     });
+
+  // Server ne message confirm kar diya → local bubble ko final kar do.
+  // Spinner/pending state yahan clear hoti hai, par UI me spinner dikhta hi
+  // nahi (WhatsApp jaisa seedha bubble).
+  const confirmLocalMessage = (orderId: string, clientMessageId: string, serverMessage?: any) => {
+    setActiveWorkspaceOrder((current: any) => {
+      if (!current || current.id !== orderId) return current;
+      const messages = Array.isArray(current.chatMessages) ? current.chatMessages.slice() : [];
+      const index = messages.findIndex((m: any) => m.id === clientMessageId);
+      if (index >= 0) {
+        messages[index] = { ...(serverMessage || messages[index]), _pending: false, _failed: false };
+      } else if (serverMessage) {
+        messages.push({ ...serverMessage, _pending: false, _failed: false });
+      }
+      return { ...current, chatMessages: messages };
+    });
+  };
+
+  // Socket reconnect hone par outbox khud flush karo — user ko retry nahi
+  // dabana padega. Ref isliye ki purane effect closure stale na hon.
+  const flushOutgoingMessagesRef = useRef<() => void>(() => {});
+  flushOutgoingMessagesRef.current = () => {
+    if (!realtimeSocket.connected) return;
+    const pending = [...outgoingMessagesRef.current.entries()];
+    if (pending.length === 0) return;
+    pending.forEach(([clientMessageId, item]) => {
+      if (!outgoingMessagesRef.current.has(clientMessageId)) return;
+      void sendRealtimeMessage(item.orderId, { ...item.payload, clientMessageId })
+        .catch(() => { /* outbox me hi rehne do, agli reconnect par phir try hoga */ });
+    });
+  };
 
   // ================= ☎️ In-App WebRTC Audio Call (no phone numbers shown) =================
   // Sab call logic refs par chalta hai taaki purane socket-effect closures stale na ho.
@@ -3139,10 +3229,13 @@ export default function App() {
         senderName: clientName || 'Citizen',
         text
       });
-      setActiveWorkspaceOrder((current: any) => current?.id === order.id ? result.order : current);
+      if (result?.order) {
+        setActiveWorkspaceOrder((current: any) => current?.id === order.id ? result.order : current);
+      } else if (result?.chatMessage?.id) {
+        confirmLocalMessage(order.id, result.chatMessage.id, result.chatMessage);
+      }
       setQuickReplyText(prev => ({ ...prev, [order.id]: '' }));
       if (soundAlertEnabled) playChime();
-      fetchAllData();
     } catch (err) {
       console.warn('Quick reply send error:', err);
       setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'The message could not be sent.', type: 'error' });
@@ -3260,17 +3353,19 @@ export default function App() {
       const orderId = payload?.orderId;
       const message = payload?.chatMessage;
       if (!orderId || !message?.id) return;
-      setActiveWorkspaceOrder((current: any) => {
-        if (current?.id !== orderId) return current;
-        const messages = Array.isArray(current.chatMessages) ? current.chatMessages : [];
+      // Halka update: sirf naya message jodo. Poora order bhejne ki zaroorat
+      // nahi — isse chat, list preview aur unread dono turant update hote hain.
+      const appendMessage = (current: any) => {
+        if (!current || current.id !== orderId) return current;
+        const messages = Array.isArray(current.chatMessages) ? current.chatMessages.slice() : [];
         const index = messages.findIndex((item: any) => item.id === message.id);
-        if (index >= 0) {
-          const next = messages.slice();
-          next[index] = message;
-          return { ...current, chatMessages: next };
-        }
-        return { ...current, chatMessages: [...messages, message] };
-      });
+        if (index >= 0) messages[index] = message;
+        else messages.push(message);
+        return { ...current, chatMessages: messages };
+      };
+      setActiveWorkspaceOrder(appendMessage);
+      setVleExclusiveOrders((current: any[]) => current.map(appendMessage));
+      setFillerOrders((current: any[]) => current.map(appendMessage));
     };
     const onDispatchMessage = (result: { order?: any }) => {      const order = result.order;
       if (!order?.id) return;
@@ -3496,6 +3591,8 @@ export default function App() {
           token
         });
       }
+      // Reconnect ke baad pending/queued messages khud bhej do.
+      flushOutgoingMessagesRef.current();
     };
 
     realtimeSocket.on('connect', onConnect);
@@ -4452,8 +4549,8 @@ export default function App() {
     //    to sendRealtimeMessage khud REST par fallback kar deta hai.
     try {
       const data = await sendRealtimeMessage(orderId, optimisticPayload);
+      confirmLocalMessage(orderId, clientMessageId, data?.chatMessage);
       if (data?.order) setActiveWorkspaceOrder(data.order);
-      fetchAllData();
     } catch (err) {
       console.warn('Unable to send message:', err);
       setActiveWorkspaceOrder((current: any) => current && current.id === orderId
@@ -4476,9 +4573,24 @@ export default function App() {
   // ⚠️ Failed bubble par tap → wahi clientMessageId se dobara bhejo (server
   // idempotent hai, isliye duplicate save nahi hoga).
   const retryPendingMessage = async (msg: any) => {
-    if (!activeWorkspaceOrder || !msg?._payload) return;
+    if (!activeWorkspaceOrder || !msg?.id) return;
     const orderId = activeWorkspaceOrder.id;
     const clientMessageId = String(msg.id || '');
+    // Purane pending messages ke paas _payload nahi ho sakta — message se hi
+    // payload bana lo (voice note / attachment / reply sab cover ho jate hain).
+    const payload = msg._payload || {
+      clientMessageId,
+      sender: msg.sender,
+      senderName: msg.senderName,
+      text: msg.text,
+      ...(msg.attachment ? { attachment: msg.attachment } : {}),
+      ...(msg.isVoiceNote ? {
+        isVoiceNote: true,
+        audioDataUrl: msg.audioDataUrl,
+        audioDuration: msg.audioDuration
+      } : {}),
+      ...(msg.replyTo ? { replyTo: msg.replyTo } : {})
+    };
     setActiveWorkspaceOrder((current: any) => current && current.id === orderId
       ? {
           ...current,
@@ -4488,9 +4600,10 @@ export default function App() {
         }
       : current);
     try {
-      const data = await sendMessageOverRest(orderId, msg._payload);
-      setActiveWorkspaceOrder(data.order);
-      fetchAllData();
+      // Socket-first + REST fallback + outbox — auto-retry jaisa hi safe path.
+      const data = await sendRealtimeMessage(orderId, { ...payload, clientMessageId });
+      confirmLocalMessage(orderId, clientMessageId, data?.chatMessage);
+      if (data?.order) setActiveWorkspaceOrder(data.order);
     } catch (err) {
       console.warn('Retry message failed:', err);
       setActiveWorkspaceOrder((current: any) => current && current.id === orderId
@@ -12998,10 +13111,6 @@ export default function App() {
                                     >
                                       ⚠️ Failed — Tap to retry
                                     </button>
-                                  ) : msg._pending ? (
-                                    <div className="mt-1 flex items-center justify-end opacity-60" title="Sending">
-                                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                    </div>
                                   ) : null}
 
                                   </div>

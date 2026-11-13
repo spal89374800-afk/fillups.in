@@ -53,7 +53,7 @@ export function sendOrderMessage(
         success: true,
         message: 'Message already sent.',
         chatMessage: existing,
-        order: found.order
+        orderId: found.order.id
       };
     }
   }
@@ -95,33 +95,45 @@ export function sendOrderMessage(
     found.order.status === 'completed'
   );
 
+  // Auto-reply ko bhi naye message ki tarah bhejna hai, warna client ko
+  // "Please wait" note page refresh ke baad hi dikhta hai.
+  const extraNewMessages: ChatMessage[] = [];
   if (sender === 'client' && !isAccepted) {
-    found.order.chatMessages.push({
+    const waitMessage: ChatMessage = {
       id: `m-wait-${Date.now()}`,
       sender: 'operator',
       senderName: 'Jan Seva Dispatch Center',
       text: '⏳ Please wait: Your message has been received. Certified Jan Seva Kendra operators and Form Filler experts in your area are reviewing your request. Live interaction will proceed as soon as an expert accepts your request.',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       createdAt: new Date().toISOString()
-    });
+    };
+    found.order.chatMessages.push(waitMessage);
+    extraNewMessages.push(waitMessage);
   }
 
   const result = {
     success: true,
     message: 'Message sent.',
     chatMessage: newMessage,
-    order: found.order
+    orderId: found.order.id
   };
-  // ⚡ Sabse pehle sirf naya message bhejo (halka payload) — doosri side ka
-  // bubble turant paint ho jaye. Poore order ka event iske turant baad jaata
-  // hai taaki status/payment jaise baaki fields sync rahein.
+  // ⚡ Sirf naya message bhejo (halka payload). Pehle yahan poora order bhi
+  // emit hota tha — PDF/voice note/photo ke saath, isliye har chhote message
+  // par bhi bhaari data travel karta tha aur delivery late hoti thi.
   const resolvedOrderId = String(found.order.id || orderId);
   emitOrderEvent(resolvedOrderId, 'order:message-new', {
     orderId: resolvedOrderId,
     chatMessage: newMessage
   });
-  emitOrderEvent(resolvedOrderId, 'order:message', result);
+  extraNewMessages.forEach(message => {
+    emitOrderEvent(resolvedOrderId, 'order:message-new', {
+      orderId: resolvedOrderId,
+      chatMessage: message
+    });
+  });
   if (sender === 'client' && !isAccepted) {
+    // Dispatch rooms me order preview/notification ke liye poora order chahiye.
+    const dispatchResult = { ...result, order: found.order };
     const district = normalizeLocation(found.order.district);
     const isFormFilling = ['online_form_filling', 'custom_form'].includes(String((found.order as any).orderType || ''));
     const availableOperatorIds = (found.order as any).availableOperatorIds;
@@ -131,18 +143,18 @@ export function sendOrderMessage(
           emitDispatchEvent(
             `dispatch:vle-id:${normalizeLocation(id)}`,
             'dispatch:message',
-            result
+            dispatchResult
           );
         }
       });
     } else if (district) {
-      emitDispatchEvent(`dispatch:vle-district:${district}`, 'dispatch:message', result);
+      emitDispatchEvent(`dispatch:vle-district:${district}`, 'dispatch:message', dispatchResult);
     }
     if (isFormFilling) {
       if (district) {
-        emitDispatchEvent(`dispatch:filler-district:${district}`, 'dispatch:message', result);
+        emitDispatchEvent(`dispatch:filler-district:${district}`, 'dispatch:message', dispatchResult);
       } else {
-        emitDispatchEvent('dispatch:filler-global', 'dispatch:message', result);
+        emitDispatchEvent('dispatch:filler-global', 'dispatch:message', dispatchResult);
       }
     }
   }
