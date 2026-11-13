@@ -13445,13 +13445,13 @@ export default function App() {
                                       title={tickReadAt ? 'Message dekh liya gaya' : 'Message bhej diya'}
                                     >
                                       {tickReadAt ? (
-                                        // Do tick, par har tick ka size single tick jitna hi chhota.
-                                        <span className="flex items-center drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" aria-hidden="true">
-                                          <Check className="h-3 w-3" strokeWidth={3} />
-                                          <Check className="-ml-1 h-3 w-3" strokeWidth={3} />
+                                        // Option C: do tick, ek ke neeche ek, har tick 8px.
+                                        <span className="flex flex-col items-center leading-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" aria-hidden="true">
+                                          <Check className="h-2 w-2" strokeWidth={3.5} />
+                                          <Check className="-mt-[3px] h-2 w-2" strokeWidth={3.5} />
                                         </span>
                                       ) : (
-                                        <Check className="h-3 w-3 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={3} />
+                                        <Check className="h-2 w-2 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={3.5} />
                                       )}
                                     </span>
                                   ) : null}
