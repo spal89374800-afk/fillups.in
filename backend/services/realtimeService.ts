@@ -7,6 +7,7 @@ import {
   findAccountForOperator,
   markAccountOnline,
   markAccountOffline,
+  persistOrder,
   type UserAccount
 } from './storeService.ts';
 import { sendOrderMessage } from './orderMessageService.ts';
@@ -178,7 +179,16 @@ export function setRealtimeServer(server: Server): void {
         acknowledge?.({ success: false, error: 'Join an order and provide a message before sending.' });
         return;
       }
-      acknowledge?.(sendOrderMessage(orderId, payload));
+      const result = sendOrderMessage(orderId, payload);
+      acknowledge?.(result);
+      // Socket se bheja gaya message bhi DB me save karo — pehle yahan save hi
+      // nahi hota tha, isliye server restart par message gayab ho jaata tha.
+      const found = findAnyOrder(orderId);
+      if (found) {
+        void persistOrder(found.order).catch(error => {
+          console.error('[Chat] Socket message persist failed:', error);
+        });
+      }
     });
 
     socket.on('dispatch:join', (payload: { role?: string; district?: string; operatorIds?: string[]; token?: string }) => {

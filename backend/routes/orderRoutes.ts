@@ -39,8 +39,13 @@ const handleSendMessage = async (req: any, res: any) => {
     return res.status(403).json({ success: false, error: 'You do not have access to this order.' });
   }
   const result = sendOrderMessage(req.params.id, req.body);
-  await persistOrder(found.order);
+  // Pehle jawab do — UI ko DB write ka wait nahi karana. Save background me
+  // chalta hai, message memory me turant maujood hai aur socket broadcast bhi
+  // sendOrderMessage ke andar ho chuka hota hai.
   res.json(result);
+  void persistOrder(found.order).catch(error => {
+    console.error('[Chat] Message persist failed:', error);
+  });
 };
 
 orderRouter.post('/orders/:id/message', handleSendMessage);
@@ -61,8 +66,11 @@ const handleDeleteMessage = async (req: any, res: any) => {
   if (!result.success) {
     return res.status(400).json(result);
   }
-  await persistOrder(found.order);
+  // Delete bhi turant UI me dikhna chahiye — DB save background me.
   res.json(result);
+  void persistOrder(found.order).catch(error => {
+    console.error('[Chat] Delete persist failed:', error);
+  });
 };
 
 orderRouter.delete('/orders/:id/messages/:messageId', handleDeleteMessage);

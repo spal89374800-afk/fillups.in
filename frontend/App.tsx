@@ -875,6 +875,9 @@ export default function App() {
   // Synchronous lock: state update async hota hai, isliye tez double-tap par
   // dono tap nikal jaate the aur ek hi message do baar chala jaata tha.
   const sendingMessageRef = useRef(false);
+  // Optimistic send me button block nahi karte (turant bhejna hai), isliye
+  // wahi text 1.2 second ke andar dobara na jaye — sirf iske liye guard.
+  const lastSentTextRef = useRef<{ text: string; at: number }>({ text: '', at: 0 });
   // 🗑️ Kis message ka delete request chal raha hai (button spinner/disable ke liye).
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   // WhatsApp-style long-press / right-click action menu
@@ -1828,17 +1831,27 @@ export default function App() {
   // Chat is sent over the live socket when possible, but the REST endpoint is
   // the source of truth. This keeps messaging working when the socket is still
   // waking up (Render cold start), disconnected, or the room join failed.
+  // Chat send ke liye timeout chhota rakha hai — 10 second se zyada spinner
+  // ghoomna user ko "message atka hai" lagta hai. Retries bhi band hain kyunki
+  // chat me fail hone par user ko turant Retry option milta hai.
   const sendMessageOverRest = async (orderId: string, payload: Record<string, unknown>) => {
-    const res = await fetchWithRetry(`/api/orders/${encodeURIComponent(orderId)}/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await parseJsonResponse(res).catch(() => ({} as any));
-    if (!res.ok || !data?.success) {
-      throw new Error(data?.error || 'The message could not be sent. Please try again.');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const res = await fetchWithRetry(`/api/orders/${encodeURIComponent(orderId)}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      }, 0);
+      const data = await parseJsonResponse(res).catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'The message could not be sent. Please try again.');
+      }
+      return data;
+    } finally {
+      clearTimeout(timer);
     }
-    return data;
   };
 
   const sendRealtimeMessage = (orderId: string, payload: Record<string, unknown>) =>
@@ -1868,7 +1881,7 @@ export default function App() {
       }
 
       let settled = false;
-      realtimeSocket.timeout(10000).emit(
+      realtimeSocket.timeout(3000).emit(
         'order:send-message',
         { ...messagePayload, orderId },
         (error: Error | null, result: any) => {
@@ -4039,6 +4052,7 @@ export default function App() {
   // yahan sirf UX ke liye option dikhta hai. Confirmation alag dialog se aata hai.
   const canDeleteMessage = (msg: any) => {
     if (!msg || msg.isDeleted) return false;
+    if (msg._pending || msg._failed) return false;
     const isMine = (activeRole === 'client' && msg.sender === 'client') ||
       (activeRole !== 'client' && msg.sender === 'operator');
     if (!isMine) return false;
@@ -4053,21 +4067,67 @@ export default function App() {
     if (msg.isDeleted) return;
     if (deletingMessageId) return;
 
-    setDeletingMessageId(msg.id);
+    const orderId = activeWorkspaceOrder.id;
+    const targetId = String(msg.id);
+    const role: 'client' | 'operator' = activeRole === 'client' ? 'client' : 'operator';
+    // Fail hone par sirf target + usko quote karne wale messages revert karne
+    // hain — poora chat replace karne se beech me aaya naya message kho jaata.
+    const snapshot = new Map<string, any>();
+    (activeWorkspaceOrder.chatMessages || []).forEach((m: any) => {
+      if (m.id === targetId) snapshot.set(m.id, { ...m });
+      else if (m.replyTo?.id === targetId) snapshot.set(m.id, { ...m, replyTo: m.replyTo ? { ...m.replyTo } : m.replyTo });
+    });
+
+    setDeletingMessageId(targetId);
+    // Turant placeholder dikhao — server ka jawab aane ka wait mat karao.
+    setActiveWorkspaceOrder((current: any) => current && current.id === orderId
+      ? {
+          ...current,
+          chatMessages: (current.chatMessages || []).map((m: any) => {
+            if (m.id === targetId) {
+              return {
+                ...m,
+                isDeleted: true,
+                deletedAt: new Date().toISOString(),
+                deletedBy: role,
+                text: '',
+                attachment: undefined,
+                audioDataUrl: undefined,
+                audioDuration: undefined,
+                isVoiceNote: false
+              };
+            }
+            if (m.replyTo?.id === targetId) {
+              return { ...m, replyTo: { ...m.replyTo, text: 'This message was deleted', isVoiceNote: false } };
+            }
+            return m;
+          })
+        }
+      : current);
+    setWorkspaceStatusMsg({ text: '🗑️ Message deleted.', type: 'success' });
+
     try {
       const res = await fetchWithRetry(
-        `/api/orders/${encodeURIComponent(activeWorkspaceOrder.id)}/messages/${encodeURIComponent(msg.id)}`,
-        { method: 'DELETE' }
+        `/api/orders/${encodeURIComponent(orderId)}/messages/${encodeURIComponent(targetId)}`,
+        { method: 'DELETE' },
+        0
       );
       const data = await parseJsonResponse(res).catch(() => ({} as any));
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || 'Message delete nahi ho paya.');
+        throw new Error(data?.error || 'The message could not be deleted.');
       }
       if (data.order) setActiveWorkspaceOrder(data.order);
-      setWorkspaceStatusMsg({ text: '🗑️ Message delete ho gaya.', type: 'success' });
     } catch (err) {
+      setActiveWorkspaceOrder((current: any) => current && current.id === orderId
+        ? {
+            ...current,
+            chatMessages: (current.chatMessages || []).map((m: any) =>
+              snapshot.has(m.id) ? snapshot.get(m.id) : m
+            )
+          }
+        : current);
       setWorkspaceStatusMsg({
-        text: err instanceof Error ? err.message : 'Message delete nahi ho paya.',
+        text: err instanceof Error ? err.message : 'The message could not be deleted.',
         type: 'error'
       });
     } finally {
@@ -4079,7 +4139,7 @@ export default function App() {
     if (!messageId) return;
     const element = document.getElementById(`chat-msg-${messageId}`);
     if (!element) {
-      setWorkspaceStatusMsg({ text: '⚠️ Original message nahi mila (delete ho gaya hoga).', type: 'info' });
+      setWorkspaceStatusMsg({ text: '⚠️ Original message not found (it may have been deleted).', type: 'info' });
       return;
     }
     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4239,9 +4299,9 @@ export default function App() {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      setWorkspaceStatusMsg({ text: '📋 Message copy ho gaya.', type: 'success' });
+      setWorkspaceStatusMsg({ text: '📋 Message copied.', type: 'success' });
     } catch {
-      setWorkspaceStatusMsg({ text: 'Message copy nahi ho paya.', type: 'error' });
+      setWorkspaceStatusMsg({ text: 'Message could not be copied.', type: 'error' });
     }
     setMessageMenuTarget(null);
   };
@@ -4260,75 +4320,139 @@ export default function App() {
   // Send Chat Message with correct sender identity
   const handleSendMessage = async () => {
     hideMobileWorkspaceHeader();
+    if (!chatInputText.trim() && stagedFiles.length === 0) return;
+    if (!activeWorkspaceOrder) return;
+    if (isSendingMessage) return;
+
+    const orderId = activeWorkspaceOrder.id;
+    const pendingText = chatInputText;
+    const pendingReply = replyingToMessageRef.current;
+    const actualSender: 'client' | 'operator' = activeRole === 'client' ? 'client' : 'operator';
+    const actualSenderName = activeRole === 'client'
+      ? (clientName || 'Citizen')
+      : (activeRole === 'form_filler' ? (fillerName || 'Form Filler') : (vleName || 'Jan Seva Operator'));
+
     if (activeRole === 'client') {
       const allowed = Boolean(
-        activeWorkspaceOrder?.acceptedByVleName ||
-        activeWorkspaceOrder?.acceptedByFillerName ||
-        activeWorkspaceOrder?.acceptedByName ||
-        activeWorkspaceOrder?.status === 'accepted' ||
-        activeWorkspaceOrder?.chatMessages?.some((m: any) => m.sender === 'operator')
+        activeWorkspaceOrder.acceptedByVleName ||
+        activeWorkspaceOrder.acceptedByFillerName ||
+        activeWorkspaceOrder.acceptedByName ||
+        activeWorkspaceOrder.status === 'accepted' ||
+        activeWorkspaceOrder.chatMessages?.some((m: any) => m.sender === 'operator')
       );
       if (!allowed) {
         setWorkspaceStatusMsg({ text: '⏳ Message sent! Please wait while a Jan Seva Kendra or Form Filler expert accepts your request.', type: 'info' });
       }
     }
-    if (!chatInputText.trim() && stagedFiles.length === 0) return;
-    if (!activeWorkspaceOrder) return;
-    if (isSendingMessage || sendingMessageRef.current) return;
 
-    sendingMessageRef.current = true;
-    setIsSendingMessage(true);
-    const pendingText = chatInputText;
-    const pendingReply = replyingToMessageRef.current;
-    try {
-      const actualSender = activeRole === 'client' ? 'client' : 'operator';
-      const actualSenderName = activeRole === 'client'
-        ? (clientName || 'Citizen')
-        : (activeRole === 'form_filler' ? (fillerName || 'Form Filler') : (vleName || 'Jan Seva Operator'));
-
-      if (stagedFiles.length > 0) {
+    // 1) Attachments pehle upload karo (agar hain) — warna upload ka result
+    //    optimistic bubble ko overwrite kar dega.
+    if (stagedFiles.length > 0) {
+      setIsSendingMessage(true);
+      sendingMessageRef.current = true;
+      try {
         const uploadedOrder = await uploadDocumentsToOrder(
-          activeWorkspaceOrder.id,
+          orderId,
           stagedFiles.map(item => item.file),
           actualSender,
           actualSenderName
         );
-        if (uploadedOrder) {
-          setActiveWorkspaceOrder(uploadedOrder);
-        }
+        if (uploadedOrder) setActiveWorkspaceOrder(uploadedOrder);
         setStagedFiles([]);
+      } catch (err) {
+        console.warn('Unable to upload files:', err);
+        setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'The attachment could not be uploaded.', type: 'error' });
+      } finally {
+        sendingMessageRef.current = false;
+        setIsSendingMessage(false);
       }
+    }
 
-      if (pendingText.trim()) {
-        // Input turant clear karo — server ka wait karte waqt dobara tap/Enter
-        // ho jaye to wahi text dobara na chala jaye.
-        setChatInputText('');
-        cancelReplyToMessage();
-        const data = await sendRealtimeMessage(activeWorkspaceOrder.id, {
-          sender: actualSender,
-          senderName: actualSenderName,
-          text: pendingText,
-          ...(pendingReply ? { replyTo: pendingReply } : {})
-        });
-        setActiveWorkspaceOrder(data.order);
-      }
+    if (!pendingText.trim()) return;
 
+    // Wahi text 1.2 second ke andar dobara na jaye (double-tap / Enter+click).
+    const trimmedPendingText = pendingText.trim();
+    const lastSent = lastSentTextRef.current;
+    if (lastSent.text === trimmedPendingText && Date.now() - lastSent.at < 1200) return;
+    lastSentTextRef.current = { text: trimmedPendingText, at: Date.now() };
+
+    // 2) Text bubble turant chat me daalo — server ka wait mat karao.
+    //    Isi id ko server bhi message id banata hai, isliye confirm hone par
+    //    koi duplicate nahi banta.
+    const clientMessageId = `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const optimisticPayload: Record<string, unknown> = {
+      sender: actualSender,
+      senderName: actualSenderName,
+      text: pendingText,
+      clientMessageId,
+      ...(pendingReply ? { replyTo: pendingReply } : {})
+    };
+    const optimisticMessage = {
+      id: clientMessageId,
+      sender: actualSender,
+      senderName: actualSenderName,
+      text: pendingText,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date().toISOString(),
+      ...(pendingReply ? { replyTo: pendingReply } : {}),
+      _pending: true,
+      _failed: false,
+      _payload: optimisticPayload
+    };
+    setActiveWorkspaceOrder((current: any) => current && current.id === orderId
+      ? { ...current, chatMessages: [...(current.chatMessages || []), optimisticMessage] }
+      : current);
+    setChatInputText('');
+    cancelReplyToMessage();
+
+    // 3) Text REST se bhejo — socket ack ka 10-second wait hata diya.
+    try {
+      const data = await sendMessageOverRest(orderId, optimisticPayload);
+      setActiveWorkspaceOrder(data.order);
       fetchAllData();
     } catch (err) {
-      console.warn('Unable to send message/files:', err);
-      // Send fail hua to text wapas laao (reply target bhi), taaki user dobara
-      // bhej sake.
-      if (pendingText.trim()) {
-        setChatInputText(current => (current.trim() ? current : pendingText));
-        if (pendingReply) {
-          replyingToMessageRef.current = pendingReply;
-          setReplyingToMessage(pendingReply);
+      console.warn('Unable to send message:', err);
+      setActiveWorkspaceOrder((current: any) => current && current.id === orderId
+        ? {
+            ...current,
+            chatMessages: (current.chatMessages || []).map((m: any) =>
+              m.id === clientMessageId ? { ...m, _pending: false, _failed: true } : m
+            )
+          }
+        : current);
+      setWorkspaceStatusMsg({ text: 'Message could not be sent. Tap the message to retry.', type: 'error' });
+    }
+  };
+
+  // ⚠️ Failed bubble par tap → wahi clientMessageId se dobara bhejo (server
+  // idempotent hai, isliye duplicate save nahi hoga).
+  const retryPendingMessage = async (msg: any) => {
+    if (!activeWorkspaceOrder || !msg?._payload) return;
+    const orderId = activeWorkspaceOrder.id;
+    const clientMessageId = String(msg.id || '');
+    setActiveWorkspaceOrder((current: any) => current && current.id === orderId
+      ? {
+          ...current,
+          chatMessages: (current.chatMessages || []).map((m: any) =>
+            m.id === clientMessageId ? { ...m, _pending: true, _failed: false } : m
+          )
         }
-      }
-      setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'The message or attachment could not be sent.', type: 'error' });
-    } finally {
-      sendingMessageRef.current = false;
-      setIsSendingMessage(false);
+      : current);
+    try {
+      const data = await sendMessageOverRest(orderId, msg._payload);
+      setActiveWorkspaceOrder(data.order);
+      fetchAllData();
+    } catch (err) {
+      console.warn('Retry message failed:', err);
+      setActiveWorkspaceOrder((current: any) => current && current.id === orderId
+        ? {
+            ...current,
+            chatMessages: (current.chatMessages || []).map((m: any) =>
+              m.id === clientMessageId ? { ...m, _pending: false, _failed: true } : m
+            )
+          }
+        : current);
+      setWorkspaceStatusMsg({ text: err instanceof Error ? err.message : 'Message could not be sent. Tap the message to retry.', type: 'error' });
     }
   };
 
@@ -12688,7 +12812,7 @@ export default function App() {
                                     } ${highlightedMessageId === messageKey ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900' : ''}`}
                                   >
                                   {msg.isDeleted ? (
-                                    <span className="italic text-[11px] opacity-80">🚫 Yeh message delete kar diya gaya</span>
+                                    <span className="italic text-[11px] opacity-80">🚫 This message was deleted</span>
                                   ) : (
                                     <>
                                   {msg.replyTo && (
@@ -12816,6 +12940,21 @@ export default function App() {
 
                                     </>
                                   )}
+
+                                  {msg._failed ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void retryPendingMessage(msg)}
+                                      className="mt-1 flex w-full items-center gap-1 text-[10px] font-bold text-rose-200 hover:text-white"
+                                    >
+                                      ⚠️ Failed — Tap to retry
+                                    </button>
+                                  ) : msg._pending ? (
+                                    <div className="mt-1 flex items-center justify-end gap-1 text-[9px] opacity-70">
+                                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                      Sending…
+                                    </div>
+                                  ) : null}
 
                                   </div>
                                 </div>
@@ -15006,7 +15145,7 @@ export default function App() {
           >
             <h3 className="text-base font-black text-white">Delete this message?</h3>
             <p className="mt-1.5 text-xs leading-relaxed text-slate-400">
-              Yeh message dono taraf se delete ho jayega. Chat me &quot;🚫 Yeh message delete kar diya gaya&quot; dikhega. Record dispute ke liye database me rehta hai.
+              This message will be deleted for both sides. The record stays in the database for disputes.
             </p>
             <div className="mt-4 flex items-center justify-end gap-2">
               <button

@@ -232,4 +232,23 @@ export const phase3HindiTranslations: Record<string, string> = {
   [`Each WEBRTC_ICE_SERVERS entry must have a string urls field or an array of URL strings.`]: `WEBRTC_ICE_SERVERS की प्रत्येक प्रविष्टि में urls फ़ील्ड स्ट्रिंग या URL स्ट्रिंग्स की सरणी होनी चाहिए।`,
   [`Registered operator account required.`]: `पंजीकृत ऑपरेटर खाता आवश्यक है।`,
   [`🚫 BIDS SUSPENDED: In-app payment bypass ki wajah se aapka bid lena band hai.`]: `🚫 बोलियाँ निलंबित: ऐप में भुगतान बायपास किए जाने के कारण आपकी बोली लेना बंद है।`,
+
+  // -------------------------------------------------------------- Chat / delete
+  [`🚫 This message was deleted`]: `🚫 यह संदेश हटा दिया गया`,
+  [`This message was deleted`]: `यह संदेश हटा दिया गया`,
+  [`Delete this message?`]: `यह संदेश हटाएँ?`,
+  [`This message will be deleted for both sides. The record stays in the database for disputes.`]: `यह संदेश दोनों तरफ़ से हट जाएगा। विवाद के लिए रिकॉर्ड डेटाबेस में बना रहेगा।`,
+  [`Delete message`]: `संदेश हटाएँ`,
+  [`Copy text`]: `टेक्स्ट कॉपी करें`,
+  [`Reply`]: `जवाब दें`,
+  [`🗑️ Message deleted.`]: `🗑️ संदेश हटा दिया गया।`,
+  [`📋 Message copied.`]: `📋 संदेश कॉपी हो गया।`,
+  [`Message could not be copied.`]: `संदेश कॉपी नहीं हो सका।`,
+  [`The message could not be deleted.`]: `संदेश हटाया नहीं जा सका।`,
+  [`Message could not be sent. Tap the message to retry.`]: `संदेश नहीं भेजा जा सका। दोबारा कोशिश करने के लिए संदेश पर टैप करें।`,
+  [`⚠️ Original message not found (it may have been deleted).`]: `⚠️ मूल संदेश नहीं मिला (शायद हटा दिया गया है)।`,
+  [`⚠️ Failed — Tap to retry`]: `⚠️ नहीं गया — दोबारा कोशिश करें`,
+  [`Failed — Tap to retry`]: `नहीं गया — दोबारा कोशिश करें`,
+  [`Sending…`]: `भेजा जा रहा है…`,
+  [`The attachment could not be uploaded.`]: `अटैचमेंट अपलोड नहीं हो सका।`,
 };

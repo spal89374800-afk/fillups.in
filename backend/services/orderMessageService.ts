@@ -208,7 +208,9 @@ export function deleteOrderMessage(
 
   // Is deleted message ko quote karne wale messages ka preview bhi scrub
   // karo — warna deleted text quote me dikhta rahega.
-  const deletedPlaceholder = '🚫 Yeh message delete kar diya gaya';
+  // English text rakha hai taaki frontend ka auto-translator ise Hindi
+  // users ke liye "🚫 यह संदेश हटा दिया गया" me badal sake.
+  const deletedPlaceholder = 'This message was deleted';
   messages.forEach(message => {
     if (message.replyTo && message.replyTo.id === target.id) {
       message.replyTo = {
