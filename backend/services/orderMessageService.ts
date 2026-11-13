@@ -162,6 +162,53 @@ export function sendOrderMessage(
 }
 
 // ======================================================
+// ✅ WhatsApp-style ticks
+//   ✓  = doosri side ke device tak message pahunch gaya (deliveredAt)
+//   ✓✓ = doosri side ne message dekh liya (readAt)
+// Sirf bhejne wale ke message par tick lagta hai — apne message ko "seen"
+// nahi karte. Status sirf usi order room me bhejte hain, isliye payload
+// halka rehta hai aur chat ki speed par asar nahi padta.
+// ======================================================
+export function markOrderMessagesSeen(
+  orderId: string,
+  role: 'client' | 'operator',
+  upToMessageId: string,
+  mode: 'delivered' | 'read'
+) {
+  const found = findAnyOrder(orderId);
+  if (!found) return { success: false, error: 'Order not found.' };
+  const messages: ChatMessage[] = Array.isArray(found.order.chatMessages)
+    ? found.order.chatMessages
+    : [];
+  const upToIndex = messages.findIndex(message => message?.id === upToMessageId);
+  if (upToIndex < 0) return { success: false, error: 'Message not found.' };
+
+  const now = new Date().toISOString();
+  const updates: Array<{ id: string; deliveredAt?: string; readAt?: string }> = [];
+
+  for (let i = 0; i <= upToIndex; i += 1) {
+    const message = messages[i];
+    // Apne bheje hue message par tick nahi lagta.
+    if (!message || message.sender === role || message.isDeleted) continue;
+    const update: { id: string; deliveredAt?: string; readAt?: string } = { id: message.id };
+    if (!message.deliveredAt) {
+      message.deliveredAt = now;
+      update.deliveredAt = now;
+    }
+    if (mode === 'read' && !message.readAt) {
+      message.readAt = now;
+      update.readAt = now;
+    }
+    if (update.deliveredAt || update.readAt) updates.push(update);
+  }
+
+  if (updates.length > 0) {
+    emitOrderEvent(orderId, 'chat:status', { orderId, updates });
+  }
+  return { success: true, updated: updates.length, orderId };
+}
+
+// ======================================================
 // 🗑️ Soft delete (WhatsApp style)
 // ======================================================
 // Rules:

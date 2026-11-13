@@ -48,6 +48,10 @@ export interface ChatMessage {
   // Real timestamp — `time` sirf formatted string hai (e.g. "10:30 AM"),
   // isliye delete ki 15-minute window check ke liye ye chahiye.
   createdAt?: string;
+  // ✅ Ticks: deliveredAt = doosri side tak pahunch gaya (single tick),
+  // readAt = doosri side ne dekh liya (double tick).
+  deliveredAt?: string;
+  readAt?: string;
   // Soft delete: message DB me rehta hai (dispute/audit ke liye), bas
   // content scrub ho jaata hai aur dono taraf placeholder dikhta hai.
   isDeleted?: boolean;

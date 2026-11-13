@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { MouseEvent, TouchEvent } from 'react';
-import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, CheckCheck, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
 import { OrderStatusFilter, OrderStatusFilterValue } from './components/OrderStatusFilter';
@@ -1979,13 +1979,83 @@ export default function App() {
       const messages = Array.isArray(current.chatMessages) ? current.chatMessages.slice() : [];
       const index = messages.findIndex((m: any) => m.id === clientMessageId);
       if (index >= 0) {
-        messages[index] = { ...(serverMessage || messages[index]), _pending: false, _failed: false };
+        const local = messages[index];
+        // Tick race: delivered/read status server message se pehle aa sakta
+        // hai, isliye local timestamps ko overwrite mat hone do.
+        messages[index] = {
+          ...local,
+          ...(serverMessage || {}),
+          deliveredAt: serverMessage?.deliveredAt || local.deliveredAt,
+          readAt: serverMessage?.readAt || local.readAt,
+          _pending: false,
+          _failed: false
+        };
       } else if (serverMessage) {
         messages.push({ ...serverMessage, _pending: false, _failed: false });
       }
       return { ...current, chatMessages: messages };
     });
   };
+
+  // ✅ Ticks: ✓ = message pahunch gaya, ✓✓ = dekh liya.
+  // Same message ke liye baar-baar ack na jaye, isliye per-mode dedupe.
+  const seenAckRef = useRef<{ delivered: Set<string>; read: Set<string> }>({
+    delivered: new Set(),
+    read: new Set()
+  });
+
+  const ackMessageSeen = (orderId: string, upToMessageId: string, mode: 'delivered' | 'read') => {
+    if (!orderId || !upToMessageId || !realtimeSocket.connected) return;
+    const key = `${orderId}:${upToMessageId}`;
+    if (seenAckRef.current[mode].has(key)) return;
+    seenAckRef.current[mode].add(key);
+    if (mode === 'read') {
+      // Read ka matlab delivered bhi hai — alag delivered event ki zaroorat nahi.
+      seenAckRef.current.delivered.add(key);
+    }
+    const role = activeRoleRef.current === 'client' ? 'client' : 'operator';
+    realtimeSocket.emit(`chat:${mode}`, {
+      orderId,
+      role,
+      upToMessageId,
+      phone: role === 'client' ? clientPhoneRef.current : '',
+      token: readStoredSession()?.token
+    });
+  };
+
+  // Chat khulte hi doosri side ke messages delivered/read mark kar do —
+  // ✓ aur ✓✓ turant dikhe. Dedupe helper ke andar hai.
+  useEffect(() => {
+    const order = activeWorkspaceOrder;
+    if (!order?.id) return;
+    const ownSender = activeRole === 'client' ? 'client' : 'operator';
+    const otherMessages = (Array.isArray(order.chatMessages) ? order.chatMessages : [])
+      .filter((message: any) => message && !message.isDeleted && message.sender !== ownSender);
+    const last = otherMessages[otherMessages.length - 1];
+    if (!last?.id) return;
+    if (!last.deliveredAt) ackMessageSeen(order.id, last.id, 'delivered');
+    if (!last.readAt && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
+      ackMessageSeen(order.id, last.id, 'read');
+    }
+  }, [activeWorkspaceOrder?.id, activeWorkspaceOrder?.chatMessages?.length, activeRole]);
+
+  // Tab wapas foreground me aaye to jo chat khuli hai uske messages read mark
+  // kar do — warna background me aaye message par ✓✓ kabhi na aata.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      const order = activeWorkspaceOrderRef.current;
+      if (!order?.id) return;
+      const ownSender = activeRoleRef.current === 'client' ? 'client' : 'operator';
+      const otherMessages = (Array.isArray(order.chatMessages) ? order.chatMessages : [])
+        .filter((message: any) => message && !message.isDeleted && message.sender !== ownSender);
+      const last = otherMessages[otherMessages.length - 1];
+      if (last?.id && !last.readAt) ackMessageSeen(order.id, last.id, 'read');
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   // Socket reconnect hone par outbox khud flush karo — user ko retry nahi
   // dabana padega. Ref isliye ki purane effect closure stale na hon.
@@ -3312,7 +3382,13 @@ export default function App() {
   const realtimeOrderIdsKey = [...new Set(realtimeOrderIds)].sort().join(',');
 
   useEffect(() => {
-    const onConnect = () => setIsRealtimeConnected(true);
+    const onConnect = () => {
+      setIsRealtimeConnected(true);
+      // Naye connection par tick dedupe reset — connection drop ki wajah se
+      // kho gaya ack dobara chala jaye.
+      seenAckRef.current.delivered.clear();
+      seenAckRef.current.read.clear();
+    };
     const onDisconnect = () => setIsRealtimeConnected(false);
     const onIceConfig = (config: { iceServers?: RTCIceServer[] }) => {
       if (Array.isArray(config.iceServers) && config.iceServers.length > 0) {
@@ -3359,13 +3435,66 @@ export default function App() {
         if (!current || current.id !== orderId) return current;
         const messages = Array.isArray(current.chatMessages) ? current.chatMessages.slice() : [];
         const index = messages.findIndex((item: any) => item.id === message.id);
-        if (index >= 0) messages[index] = message;
-        else messages.push(message);
+        if (index >= 0) {
+          const local = messages[index];
+          // Tick race: status event server echo se pehle aa sakta hai, isliye
+          // pehle se mile deliveredAt/readAt ko mat girao.
+          messages[index] = {
+            ...local,
+            ...message,
+            deliveredAt: message.deliveredAt || local.deliveredAt,
+            readAt: message.readAt || local.readAt,
+            _pending: false,
+            _failed: false
+          };
+        } else {
+          messages.push(message);
+        }
         return { ...current, chatMessages: messages };
       };
       setActiveWorkspaceOrder(appendMessage);
       setVleExclusiveOrders((current: any[]) => current.map(appendMessage));
       setFillerOrders((current: any[]) => current.map(appendMessage));
+
+      // ✅ Tick: message doosri side ke device tak pahunch gaya.
+      //    Chat khula hai to read (✓✓) bhi mark kar do.
+      const ownSender = activeRoleRef.current === 'client' ? 'client' : 'operator';
+      if (message.sender && message.sender !== ownSender) {
+        ackMessageSeen(orderId, message.id, 'delivered');
+        const chatOpen = activeWorkspaceOrderRef.current?.id === orderId;
+        if (chatOpen && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
+          ackMessageSeen(orderId, message.id, 'read');
+        }
+      }
+    };
+
+    // ✅ Tick status update (sirf ids + timestamps — halka payload).
+    const onChatStatus = (payload: {
+      orderId?: string;
+      updates?: Array<{ id: string; deliveredAt?: string; readAt?: string }>;
+    }) => {
+      const orderId = payload?.orderId;
+      const updates = Array.isArray(payload?.updates) ? payload.updates : [];
+      if (!orderId || updates.length === 0) return;
+      const patch = (current: any) => {
+        if (!current || current.id !== orderId) return current;
+        const messages = Array.isArray(current.chatMessages) ? current.chatMessages.slice() : [];
+        let changed = false;
+        updates.forEach(update => {
+          const index = messages.findIndex((item: any) => item.id === update.id);
+          if (index < 0) return;
+          messages[index] = {
+            ...messages[index],
+            ...(update.deliveredAt ? { deliveredAt: update.deliveredAt } : {}),
+            ...(update.readAt ? { readAt: update.readAt } : {})
+          };
+          changed = true;
+        });
+        return changed ? { ...current, chatMessages: messages } : current;
+      };
+      setActiveWorkspaceOrder(patch);
+      setVleExclusiveOrders((current: any[]) => current.map(patch));
+      setFillerOrders((current: any[]) => current.map(patch));
     };
     const onDispatchMessage = (result: { order?: any }) => {      const order = result.order;
       if (!order?.id) return;
@@ -3593,13 +3722,43 @@ export default function App() {
       }
       // Reconnect ke baad pending/queued messages khud bhej do.
       flushOutgoingMessagesRef.current();
-    };
 
-    realtimeSocket.on('connect', onConnect);
+      // Reconnect ke baad active chat ke ticks sync kar do (missed events).
+      const activeOrder = activeWorkspaceOrderRef.current;
+      if (activeOrder?.id) {
+        const ownSender = activeRoleRef.current === 'client' ? 'client' : 'operator';
+        const otherMessages = (Array.isArray(activeOrder.chatMessages) ? activeOrder.chatMessages : [])
+          .filter((message: any) => message && !message.isDeleted && message.sender !== ownSender);
+        const last = otherMessages[otherMessages.length - 1];
+        if (last?.id) {
+          if (!last.deliveredAt) ackMessageSeen(activeOrder.id, last.id, 'delivered');
+          if (!last.readAt && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
+            ackMessageSeen(activeOrder.id, last.id, 'read');
+          }
+        }
+      }
+      // App open hote hi jo orders load ho gaye, unke doosri side ke last
+      // message ko delivered mark kar do — chat kholne se pehle hi ✓ dikhe.
+      const ackRole = activeRoleRef.current === 'client' ? 'client' : 'operator';
+      const visibleOrders = activeRoleRef.current === 'client'
+        ? matchedClientOrders
+        : activeRoleRef.current === 'vle'
+          ? vleExclusiveOrders
+          : activeRoleRef.current === 'form_filler'
+            ? fillerOrders
+            : [];
+      visibleOrders.forEach((order: any) => {
+        const otherMessages = (Array.isArray(order?.chatMessages) ? order.chatMessages : [])
+          .filter((message: any) => message && !message.isDeleted && message.sender !== ackRole);
+        const last = otherMessages[otherMessages.length - 1];
+        if (order?.id && last?.id && !last.deliveredAt) ackMessageSeen(order.id, last.id, 'delivered');
+      });
+    };
     realtimeSocket.on('disconnect', onDisconnect);
     realtimeSocket.on('webrtc:config', onIceConfig);
     realtimeSocket.on('order:message', onOrderMessage);
     realtimeSocket.on('order:message-new', onOrderMessageNew);
+    realtimeSocket.on('chat:status', onChatStatus);
     realtimeSocket.on('order:updated', onOrderUpdated);
     realtimeSocket.on('dispatch:message', onDispatchMessage);
     realtimeSocket.on('dispatch:new-order', onDispatchNewOrder);
@@ -3626,6 +3785,7 @@ export default function App() {
       realtimeSocket.off('webrtc:config', onIceConfig);
       realtimeSocket.off('order:message', onOrderMessage);
       realtimeSocket.off('order:message-new', onOrderMessageNew);
+      realtimeSocket.off('chat:status', onChatStatus);
       realtimeSocket.off('order:updated', onOrderUpdated);
       realtimeSocket.off('dispatch:message', onDispatchMessage);
       realtimeSocket.off('dispatch:new-order', onDispatchNewOrder);
@@ -13111,6 +13271,17 @@ export default function App() {
                                     >
                                       ⚠️ Failed — Tap to retry
                                     </button>
+                                  ) : null}
+
+                                  {/* ✅✓✓ WhatsApp-style ticks — sirf apne message par.
+                                      ✓ = doosri side tak pahunch gaya, ✓✓ = dekh liya. */}
+                                  {isMine && !msg.isDeleted && idx === group.items.length - 1 && (msg.readAt || msg.deliveredAt) ? (
+                                    <span
+                                      className={`mt-0.5 flex items-center justify-end gap-0.5 text-[10px] font-bold ${msg.readAt ? 'text-sky-300' : 'text-white/50'}`}
+                                      title={msg.readAt ? 'Message dekh liya gaya' : 'Message pahunch gaya'}
+                                    >
+                                      {msg.readAt ? <CheckCheck className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                                    </span>
                                   ) : null}
 
                                   </div>

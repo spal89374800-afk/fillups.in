@@ -10,7 +10,7 @@ import {
   persistOrder,
   type UserAccount
 } from './storeService.ts';
-import { sendOrderMessage } from './orderMessageService.ts';
+import { markOrderMessagesSeen, sendOrderMessage } from './orderMessageService.ts';
 import type { ChatMessage } from '../types/index.ts';
 
 let realtimeServer: Server | null = null;
@@ -219,6 +219,56 @@ export function setRealtimeServer(server: Server): void {
         });
       }
     });
+
+    // ✅ Ticks: recipient ka device bata deta hai ki message pahunch gaya
+    // (delivered) ya dekh liya (read). Server timestamp save karke sirf order
+    // room me halka status event bhejta hai — poora order nahi.
+    const handleSeenStatus = (mode: 'delivered' | 'read') => (
+      payload: {
+        orderId?: string;
+        role?: string;
+        upToMessageId?: string;
+        phone?: string;
+        token?: string;
+      },
+      acknowledge?: (result: object) => void
+    ) => {
+      const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
+      const upToMessageId = typeof payload?.upToMessageId === 'string' ? payload.upToMessageId.trim() : '';
+      const participantRole = payload?.role === 'client' ? 'client' : payload?.role === 'operator' ? 'operator' : null;
+      if (!orderId || !upToMessageId || !participantRole) {
+        acknowledge?.({ success: false, error: 'Provide the order and message to update.' });
+        return;
+      }
+      // Joined socket ke liye dobara auth ki zaroorat nahi; warna phone/token
+      // se verify kar lo taaki join race status update ko na roke.
+      const joined = joinedOrders.get(orderId);
+      if (!joined || joined.role !== participantRole) {
+        const authorization = authorizeParticipant(
+          orderId,
+          participantRole,
+          String(payload?.phone || ''),
+          String(payload?.token || '')
+        );
+        if ('error' in authorization) {
+          acknowledge?.({ success: false, error: authorization.error });
+          return;
+        }
+      }
+      const result = markOrderMessagesSeen(orderId, participantRole, upToMessageId, mode);
+      acknowledge?.(result);
+      if (result.success && result.updated > 0) {
+        const found = findAnyOrder(orderId);
+        if (found) {
+          void persistOrder(found.order).catch(error => {
+            console.error('[Chat] Seen status persist failed:', error);
+          });
+        }
+      }
+    };
+
+    socket.on('chat:delivered', handleSeenStatus('delivered'));
+    socket.on('chat:read', handleSeenStatus('read'));
 
     socket.on('dispatch:join', (payload: { role?: string; district?: string; operatorIds?: string[]; token?: string }) => {
       const district = String(payload?.district || '').normalize('NFKC').trim().toLocaleLowerCase('en-IN').replace(/\s+/g, ' ');
