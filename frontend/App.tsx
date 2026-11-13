@@ -1802,6 +1802,8 @@ export default function App() {
   const [callingState, setCallingState] = useState<'idle' | 'calling' | 'incoming' | 'connected'>('idle');
   const [activeCallOrderId, setActiveCallOrderId] = useState<string | null>(null);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
+  // Pehli baar connect hone se pehle "Reconnecting…" na dikhe — tab "Connecting…".
+  const [hasRealtimeConnectedOnce, setHasRealtimeConnectedOnce] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [isCallMuted, setIsCallMuted] = useState(false);
   const [callPeerLabel, setCallPeerLabel] = useState('');
@@ -3394,6 +3396,7 @@ export default function App() {
   useEffect(() => {
     const onConnect = () => {
       setIsRealtimeConnected(true);
+      setHasRealtimeConnectedOnce(true);
       // Naye connection par tick dedupe reset — connection drop ki wajah se
       // kho gaya ack dobara chala jaye.
       seenAckRef.current.delivered.clear();
@@ -3764,6 +3767,8 @@ export default function App() {
         if (order?.id && last?.id && !last.deliveredAt) ackMessageSeen(order.id, last.id, 'delivered');
       });
     };
+    // Status pill ("Live connection" vs "Reconnecting…") ke liye connect event.
+    realtimeSocket.on('connect', onConnect);
     realtimeSocket.on('disconnect', onDisconnect);
     realtimeSocket.on('webrtc:config', onIceConfig);
     realtimeSocket.on('order:message', onOrderMessage);
@@ -12922,9 +12927,9 @@ export default function App() {
                     )}
                   </p>
                 </div>
-                <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${isRealtimeConnected ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${isRealtimeConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                  {isRealtimeConnected ? 'Live connection' : 'Reconnecting…'}
+                <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${isRealtimeConnected ? 'bg-emerald-500/10 text-emerald-300' : hasRealtimeConnectedOnce ? 'bg-amber-500/10 text-amber-300' : 'bg-slate-500/10 text-slate-300'}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${isRealtimeConnected ? 'bg-emerald-400' : hasRealtimeConnectedOnce ? 'bg-amber-400' : 'bg-slate-400'}`} />
+                  {isRealtimeConnected ? 'Live connection' : hasRealtimeConnectedOnce ? 'Reconnecting…' : 'Connecting…'}
                 </span>
               </div>
 
