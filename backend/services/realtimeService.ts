@@ -119,6 +119,41 @@ export function setRealtimeServer(server: Server): void {
     const joinedOrders = new Map<string, { role: 'client' | 'operator'; phone: string }>();
     joinedOrdersBySocket.set(socket.id, joinedOrders);
 
+    // Join aur send dono yahi check use karte hain. Isse join ka race ya
+    // purana socket session message bhejne ko block nahi karta.
+    const authorizeParticipant = (
+      orderId: string,
+      participantRole: 'client' | 'operator' | null,
+      phoneRaw: string,
+      tokenRaw: string
+    ): { error: string } | { phone: string } => {
+      const phone = String(phoneRaw || '').replace(/\D/g, '').slice(-10);
+      const found = orderId ? findAnyOrder(orderId) : null;
+      if (!orderId || !found || !participantRole) {
+        return { error: 'Order not found.' };
+      }
+      if (participantRole === 'client') {
+        const orderPhone = String(found.order.clientPhone || '').replace(/\D/g, '').slice(-10);
+        if (!phone || !orderPhone || phone !== orderPhone) {
+          return { error: 'This order is not linked to the logged-in client phone.' };
+        }
+      } else {
+        // Operator join must prove a logged-in operator session that can access this order.
+        const account = getAccountByToken(tokenRaw) ||
+          getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token);
+        if (!account) {
+          return { error: 'Operator login required to join this order chat.' };
+        }
+        if (account.role === 'client') {
+          return { error: 'Citizen accounts cannot join as operator.' };
+        }
+        if (!operatorCanAccessOrder(found.order, account)) {
+          return { error: 'This order is not assigned or visible to your operator account.' };
+        }
+      }
+      return { phone };
+    };
+
     socket.on('order:join', (payload: {
       orderId?: string;
       role?: string;
@@ -127,38 +162,13 @@ export function setRealtimeServer(server: Server): void {
     }, acknowledge?: (result: object) => void) => {
       const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
       const participantRole = payload?.role === 'client' ? 'client' : payload?.role === 'operator' ? 'operator' : null;
-      const phone = String(payload?.phone || '').replace(/\D/g, '').slice(-10);
-      const found = orderId ? findAnyOrder(orderId) : null;
-      if (!orderId || !found || !participantRole) {
-        acknowledge?.({ success: false, error: 'Order not found.' });
+      const authorization = authorizeParticipant(orderId, participantRole, String(payload?.phone || ''), String(payload?.token || ''));
+      if ('error' in authorization) {
+        acknowledge?.({ success: false, error: authorization.error });
         return;
       }
-      if (participantRole === 'client') {
-        const orderPhone = String(found.order.clientPhone || '').replace(/\D/g, '').slice(-10);
-        if (!phone || !orderPhone || phone !== orderPhone) {
-          acknowledge?.({ success: false, error: 'This order is not linked to the logged-in client phone.' });
-          return;
-        }
-      } else {
-        // Operator join must prove a logged-in operator session that can access this order.
-        const token = typeof payload?.token === 'string' ? payload.token : '';
-        const account = getAccountByToken(token) ||
-          getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token);
-        if (!account) {
-          acknowledge?.({ success: false, error: 'Operator login required to join this order chat.' });
-          return;
-        }
-        if (account.role === 'client') {
-          acknowledge?.({ success: false, error: 'Citizen accounts cannot join as operator.' });
-          return;
-        }
-        if (!operatorCanAccessOrder(found.order, account)) {
-          acknowledge?.({ success: false, error: 'This order is not assigned or visible to your operator account.' });
-          return;
-        }
-      }
       socket.join(orderRoom(orderId));
-      joinedOrders.set(orderId, { role: participantRole, phone });
+      joinedOrders.set(orderId, { role: participantRole as 'client' | 'operator', phone: authorization.phone });
       acknowledge?.({ success: true });
     });
 
@@ -173,11 +183,30 @@ export function setRealtimeServer(server: Server): void {
       audioDuration?: string;
       clientMessageId?: string;
       replyTo?: ChatMessage['replyTo'];
+      phone?: string;
+      token?: string;
     }, acknowledge?: (result: object) => void) => {
       const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
-      if (!orderId || !joinedOrders.has(orderId) || (!payload.text?.trim() && !payload.attachment && !payload.audioDataUrl)) {
-        acknowledge?.({ success: false, error: 'Join an order and provide a message before sending.' });
+      if (!orderId || (!payload.text?.trim() && !payload.attachment && !payload.audioDataUrl)) {
+        acknowledge?.({ success: false, error: 'Provide a message before sending.' });
         return;
+      }
+      // Room join miss ho gaya ho (page refresh, purana socket, join race) to
+      // send ko fail mat karo — sender ko verify karke khud join kara do.
+      if (!joinedOrders.has(orderId)) {
+        const participantRole = payload.sender === 'operator' ? 'operator' : 'client';
+        const authorization = authorizeParticipant(
+          orderId,
+          participantRole,
+          String(payload.phone || ''),
+          String(payload.token || '')
+        );
+        if ('error' in authorization) {
+          acknowledge?.({ success: false, error: authorization.error });
+          return;
+        }
+        socket.join(orderRoom(orderId));
+        joinedOrders.set(orderId, { role: participantRole, phone: authorization.phone });
       }
       const result = sendOrderMessage(orderId, payload);
       acknowledge?.(result);

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { findAnyOrder, processDocumentWithZeroRetention, orderBelongsToClient, vleOrdersStore, fillerOrdersStore, persistOrder } from '../services/storeService.ts';
+import { findAnyOrder, isOrderVisibleToAccount, processDocumentWithZeroRetention, orderBelongsToClient, vleOrdersStore, fillerOrdersStore, persistOrder } from '../services/storeService.ts';
 import { sendOrderMessage, deleteOrderMessage } from '../services/orderMessageService.ts';
 import { emitOrderUpdate } from '../services/realtimeService.ts';
 import { maybeCompleteOrder } from '../services/orderDispatchService.ts';
@@ -28,6 +28,9 @@ function accountIsAssignedOperator(order: any, account?: UserAccount): boolean {
 function accountCanAccessOrder(order: any, account?: UserAccount): boolean {
   if (!account) return false;
   if (orderBelongsToClient(order, account)) return true;
+  // Socket join yahi visibility rule use karta hai — REST bhi wahi rule
+  // follow kare, warna wahi operator socket se bhej sake aur REST se 403 paaye.
+  if (isOrderVisibleToAccount(order, account)) return true;
   return accountIsAssignedOperator(order, account);
 }
 

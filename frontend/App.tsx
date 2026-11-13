@@ -1831,19 +1831,18 @@ export default function App() {
   // Chat is sent over the live socket when possible, but the REST endpoint is
   // the source of truth. This keeps messaging working when the socket is still
   // waking up (Render cold start), disconnected, or the room join failed.
-  // Chat send ke liye timeout chhota rakha hai — 10 second se zyada spinner
-  // ghoomna user ko "message atka hai" lagta hai. Retries bhi band hain kyunki
-  // chat me fail hone par user ko turant Retry option milta hai.
+  // Chat send ke liye timeout 20 second — Render cold start me 12 second
+  // kaafi nahi hota tha aur message galti se "failed" dikh jaata tha.
   const sendMessageOverRest = async (orderId: string, payload: Record<string, unknown>) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
+    const timer = setTimeout(() => controller.abort(), 20000);
     try {
       const res = await fetchWithRetry(`/api/orders/${encodeURIComponent(orderId)}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         signal: controller.signal
-      }, 0);
+      }, 1);
       const data = await parseJsonResponse(res).catch(() => ({} as any));
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || 'The message could not be sent. Please try again.');
@@ -1861,7 +1860,16 @@ export default function App() {
       const clientMessageId = typeof payload.clientMessageId === 'string' && payload.clientMessageId
         ? payload.clientMessageId
         : `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const messagePayload = { ...payload, clientMessageId };
+      // Phone/token bhi bhejo — server inhi se sender verify karke room join
+      // kar sakta hai, isliye join miss hone par bhi send fail nahi hota.
+      const session = readStoredSession();
+      const senderIsClient = payload.sender !== 'operator';
+      const messagePayload = {
+        ...payload,
+        clientMessageId,
+        phone: senderIsClient ? clientPhoneRef.current : '',
+        token: session?.token
+      };
 
       const fallbackToRest = async (socketError?: unknown) => {
         if (socketError) console.warn('Live chat socket unavailable, using REST fallback:', socketError);
@@ -4456,7 +4464,12 @@ export default function App() {
             )
           }
         : current);
-      setWorkspaceStatusMsg({ text: 'Message could not be sent. Tap the message to retry.', type: 'error' });
+      setWorkspaceStatusMsg({
+        text: err instanceof Error && err.message
+          ? err.message
+          : 'Message could not be sent. Tap the message to retry.',
+        type: 'error'
+      });
     }
   };
 
@@ -12986,9 +12999,8 @@ export default function App() {
                                       ⚠️ Failed — Tap to retry
                                     </button>
                                   ) : msg._pending ? (
-                                    <div className="mt-1 flex items-center justify-end gap-1 text-[9px] opacity-70">
+                                    <div className="mt-1 flex items-center justify-end opacity-60" title="Sending">
                                       <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                      Sending…
                                     </div>
                                   ) : null}
 
