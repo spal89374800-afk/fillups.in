@@ -13441,13 +13441,13 @@ export default function App() {
                                       ✓ = doosri side tak pahunch gaya, ✓✓ = dekh liya. */}
                                   {isMine && !msg.isDeleted && idx === group.items.length - 1 && (tickReadAt || tickDeliveredAt || sentToServer) ? (
                                     <span
-                                      className={`mt-1 flex items-center justify-end gap-0.5 ${tickReadAt ? 'text-cyan-200' : 'text-white/90'}`}
+                                      className={`mt-0.5 flex items-center justify-end gap-0.5 ${tickReadAt ? 'text-cyan-200' : 'text-white/90'}`}
                                       title={tickReadAt ? 'Message dekh liya gaya' : 'Message bhej diya'}
                                     >
                                       {tickReadAt ? (
-                                        <CheckCheck className="h-4 w-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={2.5} />
+                                        <CheckCheck className="h-3 w-3 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={3} />
                                       ) : (
-                                        <Check className="h-4 w-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={2.5} />
+                                        <Check className="h-3 w-3 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={3} />
                                       )}
                                     </span>
                                   ) : null}
