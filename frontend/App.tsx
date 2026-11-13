@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { MouseEvent, TouchEvent } from 'react';
-import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, CheckCheck, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, CheckCheck, Reply, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
 import { OrderStatusFilter, OrderStatusFilterValue } from './components/OrderStatusFilter';
@@ -883,6 +883,9 @@ export default function App() {
   // WhatsApp-style long-press / right-click action menu
   const [messageMenuTarget, setMessageMenuTarget] = useState<any | null>(null);
   const [messageDeleteTarget, setMessageDeleteTarget] = useState<any | null>(null);
+  // 🖱️ Laptop/desktop par bubble ke paas hover ↩ reply icon dikhe.
+  // Touch-only devices par ye render hi nahi hota (wahan swipe hai).
+  const [supportsHoverPointer, setSupportsHoverPointer] = useState(false);
   const [isUploadingDocs, setIsUploadingDocs] = useState(false);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   // Action-level loading states (Priority 2 buttons).
@@ -4466,7 +4469,28 @@ export default function App() {
   const messageLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messageLongPressFiredRef = useRef(false);
   const messageMouseStartRef = useRef<{ x: number; y: number } | null>(null);
+  // 🖱️ Desktop mouse drag-to-reply (mobile swipe ka mouse version).
+  const messageMouseDragRef = useRef<{
+    key: string;
+    x: number;
+    y: number;
+    lastOffset: number;
+    active: boolean;
+    element: HTMLElement;
+    arrow: HTMLElement | null;
+  } | null>(null);
   const messageMenuOpenedAtRef = useRef(0);
+
+  // Hover ↩ icon sirf un devices par jahan asli mouse/trackpad ho.
+  // Mobile/touch par swipe hi chalta hai, wahan icon render nahi hota.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const sync = () => setSupportsHoverPointer(query.matches);
+    sync();
+    query.addEventListener?.('change', sync);
+    return () => query.removeEventListener?.('change', sync);
+  }, []);
 
   const isInteractiveMessageTarget = (target: EventTarget | null) => {
     if (!(target instanceof Element)) return false;
@@ -4490,6 +4514,14 @@ export default function App() {
       swipe.element.style.transform = '';
       if (swipe.arrow) swipe.arrow.style.opacity = '0';
       messageSwipeRef.current = null;
+    }
+    const mouseDrag = messageMouseDragRef.current;
+    if (mouseDrag) {
+      mouseDrag.element.style.transition = 'transform 120ms ease-out';
+      mouseDrag.element.style.transform = '';
+      mouseDrag.element.style.cursor = '';
+      if (mouseDrag.arrow) mouseDrag.arrow.style.opacity = '0';
+      messageMouseDragRef.current = null;
     }
     messageMenuOpenedAtRef.current = Date.now();
     setMessageMenuTarget(msg);
@@ -4566,10 +4598,28 @@ export default function App() {
     openMessageMenu(msg);
   };
 
-  const handleMessageMouseDown = (event: MouseEvent, msg: any) => {
+  const handleMessageMouseDown = (event: MouseEvent, msg: any, messageKey: string) => {
     if (event.button !== 0) return;
     if (isInteractiveMessageTarget(event.target)) return;
+    const element = event.currentTarget as HTMLElement;
     messageMouseStartRef.current = { x: event.clientX, y: event.clientY };
+    // Drag state set karo — move par bubble kheench kar reply ho sake.
+    const previous = element.previousElementSibling;
+    messageMouseDragRef.current = {
+      key: messageKey,
+      x: event.clientX,
+      y: event.clientY,
+      lastOffset: 0,
+      active: false,
+      element,
+      arrow: previous instanceof HTMLElement ? previous : null
+    };
+    // Bubble ke bahar mouse chhodne par bhi drag theek se khatam ho.
+    const finishDrag = () => {
+      window.removeEventListener('mouseup', finishDrag);
+      endMessageMousePress(msg);
+    };
+    window.addEventListener('mouseup', finishDrag);
     clearMessageLongPress();
     if (!msg || msg.isDeleted) return;
     messageLongPressTimerRef.current = setTimeout(() => {
@@ -4578,17 +4628,44 @@ export default function App() {
     }, 550);
   };
 
-  const handleMessageMouseMove = (event: MouseEvent) => {
+  const handleMessageMouseMove = (event: MouseEvent, messageKey: string) => {
     const start = messageMouseStartRef.current;
-    if (!start) return;
-    if (Math.abs(event.clientX - start.x) > 10 || Math.abs(event.clientY - start.y) > 10) {
+    if (start && (Math.abs(event.clientX - start.x) > 10 || Math.abs(event.clientY - start.y) > 10)) {
       clearMessageLongPress();
     }
+    const drag = messageMouseDragRef.current;
+    if (!drag || drag.key !== messageKey) return;
+    // Sirf left button daba hua ho tabhi drag chale.
+    if (event.buttons !== 1) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (!drag.active) {
+      // Vertical scroll / chhoti movement ko ignore karo.
+      if (Math.abs(dx) < 12 || Math.abs(dx) <= Math.abs(dy) * 1.2) return;
+      drag.active = true;
+      drag.element.style.transition = 'none';
+      drag.element.style.cursor = 'grabbing';
+    }
+    const offset = Math.max(0, Math.min(dx, 64));
+    drag.lastOffset = offset;
+    drag.element.style.transform = offset > 0 ? `translateX(${offset}px)` : '';
+    if (drag.arrow) drag.arrow.style.opacity = String(Math.min(1, offset / 48));
   };
 
-  const endMessageMousePress = () => {
+  const endMessageMousePress = (msg?: any) => {
     messageMouseStartRef.current = null;
     clearMessageLongPress();
+    const drag = messageMouseDragRef.current;
+    messageMouseDragRef.current = null;
+    if (!drag) return;
+    drag.element.style.transition = 'transform 140ms ease-out';
+    drag.element.style.transform = '';
+    drag.element.style.cursor = '';
+    if (drag.arrow) drag.arrow.style.opacity = '0';
+    if (drag.active && drag.lastOffset >= 56 && msg && !msg.isDeleted) {
+      startReplyToMessage(msg);
+      try { navigator.vibrate?.(15); } catch {}
+    }
   };
 
   // Bubble par text select band hai (long-press ko clean rakhne ke liye),
@@ -13108,7 +13185,19 @@ export default function App() {
                               const messageKey = msg.id || `${gIdx}-${idx}`;
                               const isVoicePlaying = voiceNotePlayback?.key === messageKey && voiceNotePlayback?.playing === true;
                               return (
-                                <div key={msg.id || `${gIdx}-${idx}`} className="relative w-fit max-w-full">
+                                <div key={msg.id || `${gIdx}-${idx}`} className="group relative w-fit max-w-full">
+                                  {/* 🖱️ Laptop hover ↩ — mobile par render nahi hota. */}
+                                  {supportsHoverPointer && !msg.isDeleted && (
+                                    <button
+                                      type="button"
+                                      onClick={() => startReplyToMessage(msg)}
+                                      title="Reply"
+                                      aria-label="Reply to message"
+                                      className={`pointer-events-none absolute top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-600 bg-slate-800/95 text-slate-300 opacity-0 shadow-lg transition-opacity duration-150 hover:bg-slate-700 hover:text-emerald-300 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 ${isMine ? '-left-7' : '-right-7'}`}
+                                    >
+                                      <Reply className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
                                   <span
                                     className="pointer-events-none absolute left-1 top-1/2 -translate-y-1/2 text-base text-emerald-400 opacity-0"
                                     aria-hidden="true"
@@ -13122,10 +13211,14 @@ export default function App() {
                                     onTouchEnd={() => handleMessageSwipeEnd(messageKey, msg)}
                                     onTouchCancel={() => handleMessageSwipeEnd(messageKey, msg)}
                                     onContextMenu={(event) => handleMessageContextMenu(event, msg)}
-                                    onMouseDown={(event) => handleMessageMouseDown(event, msg)}
-                                    onMouseMove={handleMessageMouseMove}
-                                    onMouseUp={endMessageMousePress}
-                                    onMouseLeave={endMessageMousePress}
+                                    onMouseDown={(event) => handleMessageMouseDown(event, msg, messageKey)}
+                                    onMouseMove={(event) => handleMessageMouseMove(event, messageKey)}
+                                    onMouseUp={() => endMessageMousePress(msg)}
+                                    onMouseLeave={() => {
+                                      // Drag active ho to cancel mat karo — cursor bubble
+                                      // se aage nikal sakta hai; mouseup par reply chalega.
+                                      if (!messageMouseDragRef.current?.active) endMessageMousePress();
+                                    }}
                                     style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none' }}
                                     className={`p-2.5 text-xs leading-relaxed w-fit max-w-full break-words select-none transition-shadow ${
                                       isMine
