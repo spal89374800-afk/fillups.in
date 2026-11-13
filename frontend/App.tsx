@@ -1881,7 +1881,9 @@ export default function App() {
       }
 
       let settled = false;
-      realtimeSocket.timeout(3000).emit(
+      // 2 second me ack nahi mila to REST fallback — user ko 3 second tak
+      // "Sending…" nahi dekhna padta.
+      realtimeSocket.timeout(2000).emit(
         'order:send-message',
         { ...messagePayload, orderId },
         (error: Error | null, result: any) => {
@@ -3216,10 +3218,21 @@ export default function App() {
         iceServersRef.current = config.iceServers;
       }
     };
+    // Server ka order aane par jo local bubbles abhi bheje ja rahe hain
+    // (pending/failed) wo gayab na hon — warna doosri side ke message ke
+    // saath apna bubble ek pal ke liye flicker karta hai.
+    const withPendingMessages = (serverOrder: any, current: any) => {
+      const pending = (current?.chatMessages || []).filter((m: any) => m?._pending || m?._failed);
+      if (pending.length === 0) return serverOrder;
+      const existingIds = new Set((serverOrder?.chatMessages || []).map((m: any) => m.id));
+      const missing = pending.filter((m: any) => !existingIds.has(m.id));
+      if (missing.length === 0) return serverOrder;
+      return { ...serverOrder, chatMessages: [...(serverOrder.chatMessages || []), ...missing] };
+    };
     const onOrderMessage = (result: { order?: any }) => {
       const order = result.order;
       if (!order?.id) return;
-      setActiveWorkspaceOrder((current: any) => current?.id === order.id ? order : current);
+      setActiveWorkspaceOrder((current: any) => current?.id === order.id ? withPendingMessages(order, current) : current);
       // Payment QR / splits order ke andar hain (govt QR image, client
       // confirmation, operator right-tick). Order update aate hi payment
       // intent dobara laao, warna citizen ko stale QR dikhega.
@@ -3232,6 +3245,25 @@ export default function App() {
         : [order, ...current]);
     };
     const onOrderUpdated = (order: any) => onOrderMessage({ order });
+    // ⚡ Halka event: sirf naya message. Doosri side ka bubble turant paint
+    // hota hai — poore order payload ke serialize/parse ka wait nahi karna
+    // padta. Same id aane par replace karte hain, isliye duplicate nahi banta.
+    const onOrderMessageNew = (payload: { orderId?: string; chatMessage?: any }) => {
+      const orderId = payload?.orderId;
+      const message = payload?.chatMessage;
+      if (!orderId || !message?.id) return;
+      setActiveWorkspaceOrder((current: any) => {
+        if (current?.id !== orderId) return current;
+        const messages = Array.isArray(current.chatMessages) ? current.chatMessages : [];
+        const index = messages.findIndex((item: any) => item.id === message.id);
+        if (index >= 0) {
+          const next = messages.slice();
+          next[index] = message;
+          return { ...current, chatMessages: next };
+        }
+        return { ...current, chatMessages: [...messages, message] };
+      });
+    };
     const onDispatchMessage = (result: { order?: any }) => {      const order = result.order;
       if (!order?.id) return;
       if (activeRoleRef.current === 'vle') {
@@ -3462,6 +3494,7 @@ export default function App() {
     realtimeSocket.on('disconnect', onDisconnect);
     realtimeSocket.on('webrtc:config', onIceConfig);
     realtimeSocket.on('order:message', onOrderMessage);
+    realtimeSocket.on('order:message-new', onOrderMessageNew);
     realtimeSocket.on('order:updated', onOrderUpdated);
     realtimeSocket.on('dispatch:message', onDispatchMessage);
     realtimeSocket.on('dispatch:new-order', onDispatchNewOrder);
@@ -3487,6 +3520,7 @@ export default function App() {
       realtimeSocket.off('disconnect', onDisconnect);
       realtimeSocket.off('webrtc:config', onIceConfig);
       realtimeSocket.off('order:message', onOrderMessage);
+      realtimeSocket.off('order:message-new', onOrderMessageNew);
       realtimeSocket.off('order:updated', onOrderUpdated);
       realtimeSocket.off('dispatch:message', onDispatchMessage);
       realtimeSocket.off('dispatch:new-order', onDispatchNewOrder);
@@ -4405,10 +4439,12 @@ export default function App() {
     setChatInputText('');
     cancelReplyToMessage();
 
-    // 3) Text REST se bhejo — socket ack ka 10-second wait hata diya.
+    // 3) Socket se bhejo — pehle se khula WebSocket sabse kam latency deta
+    //    hai (koi naya HTTP connection / auth middleware nahi). Socket down ho
+    //    to sendRealtimeMessage khud REST par fallback kar deta hai.
     try {
-      const data = await sendMessageOverRest(orderId, optimisticPayload);
-      setActiveWorkspaceOrder(data.order);
+      const data = await sendRealtimeMessage(orderId, optimisticPayload);
+      if (data?.order) setActiveWorkspaceOrder(data.order);
       fetchAllData();
     } catch (err) {
       console.warn('Unable to send message:', err);

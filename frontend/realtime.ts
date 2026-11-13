@@ -15,10 +15,18 @@ export const realtimeSocket = socketUrl
   ? io(socketUrl, {
       autoConnect: false,
       reconnection: true,
-      reconnectionAttempts: Infinity
+      reconnectionAttempts: Infinity,
+      // WebSocket pehle try karo — polling handshake + upgrade ka extra
+      // round-trip bachta hai, isliye chat message turant pahunchta hai.
+      // WebSocket block ho (corporate proxy/firewall) to tryAllTransports
+      // polling par fallback kar deta hai.
+      transports: ['websocket', 'polling'],
+      tryAllTransports: true
     })
   : io({
       autoConnect: false,
       reconnection: true,
-      reconnectionAttempts: Infinity
+      reconnectionAttempts: Infinity,
+      transports: ['websocket', 'polling'],
+      tryAllTransports: true
     });

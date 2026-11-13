@@ -112,7 +112,15 @@ export function sendOrderMessage(
     chatMessage: newMessage,
     order: found.order
   };
-  emitOrderEvent(orderId, 'order:message', result);
+  // ⚡ Sabse pehle sirf naya message bhejo (halka payload) — doosri side ka
+  // bubble turant paint ho jaye. Poore order ka event iske turant baad jaata
+  // hai taaki status/payment jaise baaki fields sync rahein.
+  const resolvedOrderId = String(found.order.id || orderId);
+  emitOrderEvent(resolvedOrderId, 'order:message-new', {
+    orderId: resolvedOrderId,
+    chatMessage: newMessage
+  });
+  emitOrderEvent(resolvedOrderId, 'order:message', result);
   if (sender === 'client' && !isAccepted) {
     const district = normalizeLocation(found.order.district);
     const isFormFilling = ['online_form_filling', 'custom_form'].includes(String((found.order as any).orderType || ''));
