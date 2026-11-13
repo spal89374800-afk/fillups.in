@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { MouseEvent, TouchEvent } from 'react';
-import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, CheckCheck, Reply, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Reply, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
 import { OrderStatusFilter, OrderStatusFilterValue } from './components/OrderStatusFilter';
@@ -13445,7 +13445,11 @@ export default function App() {
                                       title={tickReadAt ? 'Message dekh liya gaya' : 'Message bhej diya'}
                                     >
                                       {tickReadAt ? (
-                                        <CheckCheck className="h-3 w-3 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={3} />
+                                        // Do tick, par har tick ka size single tick jitna hi chhota.
+                                        <span className="flex items-center drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" aria-hidden="true">
+                                          <Check className="h-3 w-3" strokeWidth={3} />
+                                          <Check className="-ml-1 h-3 w-3" strokeWidth={3} />
+                                        </span>
                                       ) : (
                                         <Check className="h-3 w-3 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={3} />
                                       )}
