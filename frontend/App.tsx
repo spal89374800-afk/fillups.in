@@ -1986,6 +1986,15 @@ export default function App() {
   // Spinner/pending state yahan clear hoti hai, par UI me spinner dikhta hi
   // nahi (WhatsApp jaisa seedha bubble).
   const confirmLocalMessage = (orderId: string, clientMessageId: string, serverMessage?: any) => {
+    // Tick cache update — order refresh par bhi ✓ bacha rahe.
+    const existingTick = localTicksRef.current[clientMessageId] || {};
+    localTicksRef.current[clientMessageId] = {
+      ...existingTick,
+      deliveredAt: serverMessage?.deliveredAt || existingTick.deliveredAt || new Date().toISOString(),
+      ...(serverMessage?.readAt || existingTick.readAt
+        ? { readAt: serverMessage?.readAt || existingTick.readAt }
+        : {})
+    };
     setActiveWorkspaceOrder((current: any) => {
       if (!current || current.id !== orderId) return current;
       const messages = Array.isArray(current.chatMessages) ? current.chatMessages.slice() : [];
@@ -1997,13 +2006,22 @@ export default function App() {
         messages[index] = {
           ...local,
           ...(serverMessage || {}),
-          deliveredAt: serverMessage?.deliveredAt || local.deliveredAt,
+          // Server ne message accept kar liya = single tick (✓) turant.
+          // Iske baad doosri side ka read-ack aaye to ✓✓ ho jayega. Agar
+          // backend purana ho (read-ack support na ho) to bhi ✓ dikhega,
+          // isliye chat par koi asar nahi padta.
+          deliveredAt: serverMessage?.deliveredAt || local.deliveredAt || new Date().toISOString(),
           readAt: serverMessage?.readAt || local.readAt,
           _pending: false,
           _failed: false
         };
       } else if (serverMessage) {
-        messages.push({ ...serverMessage, _pending: false, _failed: false });
+        messages.push({
+          ...serverMessage,
+          deliveredAt: serverMessage.deliveredAt || new Date().toISOString(),
+          _pending: false,
+          _failed: false
+        });
       }
       return { ...current, chatMessages: messages };
     });
@@ -2015,6 +2033,11 @@ export default function App() {
     delivered: new Set(),
     read: new Set()
   });
+
+  // Tick timestamps ka local cache (message id se). Order refresh/update par
+  // server ka purana order aata hai jisme tick fields nahi hoti — is cache se
+  // ✓/✓✓ gayab nahi hote.
+  const localTicksRef = useRef<Record<string, { deliveredAt?: string; readAt?: string }>>({});
 
   const ackMessageSeen = (orderId: string, upToMessageId: string, mode: 'delivered' | 'read') => {
     if (!orderId || !upToMessageId || !realtimeSocket.connected) return;
@@ -3311,10 +3334,12 @@ export default function App() {
         senderName: clientName || 'Citizen',
         text
       });
+      // Tick cache set karo — quick reply par bhi ✓ dikhe.
+      if (result?.chatMessage?.id) {
+        confirmLocalMessage(order.id, result.chatMessage.id, result.chatMessage);
+      }
       if (result?.order) {
         setActiveWorkspaceOrder((current: any) => current?.id === order.id ? result.order : current);
-      } else if (result?.chatMessage?.id) {
-        confirmLocalMessage(order.id, result.chatMessage.id, result.chatMessage);
       }
       setQuickReplyText(prev => ({ ...prev, [order.id]: '' }));
       if (soundAlertEnabled) playChime();
@@ -3412,12 +3437,31 @@ export default function App() {
     // (pending/failed) wo gayab na hon — warna doosri side ke message ke
     // saath apna bubble ek pal ke liye flicker karta hai.
     const withPendingMessages = (serverOrder: any, current: any) => {
-      const pending = (current?.chatMessages || []).filter((m: any) => m?._pending || m?._failed);
-      if (pending.length === 0) return serverOrder;
-      const existingIds = new Set((serverOrder?.chatMessages || []).map((m: any) => m.id));
+      const localMessages = Array.isArray(current?.chatMessages) ? current.chatMessages : [];
+      // Server ke full-order update me deliveredAt/readAt ho sakte hain (naya
+      // backend) ya nahi (purana backend). Local tick ko girao mat, warna
+      // order update aate hi ✓/✓✓ gayab ho jayega.
+      const localById = new Map<string, any>(
+        localMessages.filter((m: any) => m?.id).map((m: any): [string, any] => [m.id, m])
+      );
+      const serverMessages: any[] = Array.isArray(serverOrder?.chatMessages) ? serverOrder.chatMessages : [];
+      let ticksMerged = false;
+      const mergedServerMessages = serverMessages.map((m: any) => {
+        const local = localById.get(m.id);
+        if (!local) return m;
+        const deliveredAt = m.deliveredAt || local.deliveredAt;
+        const readAt = m.readAt || local.readAt;
+        if (deliveredAt === m.deliveredAt && readAt === m.readAt) return m;
+        ticksMerged = true;
+        return { ...m, deliveredAt, readAt };
+      });
+      const mergedOrder = ticksMerged ? { ...serverOrder, chatMessages: mergedServerMessages } : serverOrder;
+      const pending = localMessages.filter((m: any) => m?._pending || m?._failed);
+      if (pending.length === 0) return mergedOrder;
+      const existingIds = new Set((mergedOrder?.chatMessages || []).map((m: any) => m.id));
       const missing = pending.filter((m: any) => !existingIds.has(m.id));
-      if (missing.length === 0) return serverOrder;
-      return { ...serverOrder, chatMessages: [...(serverOrder.chatMessages || []), ...missing] };
+      if (missing.length === 0) return mergedOrder;
+      return { ...mergedOrder, chatMessages: [...(mergedOrder.chatMessages || []), ...missing] };
     };
     const onOrderMessage = (result: { order?: any }) => {
       const order = result.order;
@@ -3494,6 +3538,14 @@ export default function App() {
         const messages = Array.isArray(current.chatMessages) ? current.chatMessages.slice() : [];
         let changed = false;
         updates.forEach(update => {
+          // Cache me bhi rakh lo — order refresh par tick na gayab ho.
+          if (update?.id) {
+            const prev = localTicksRef.current[update.id] || {};
+            localTicksRef.current[update.id] = {
+              deliveredAt: update.deliveredAt || prev.deliveredAt,
+              readAt: update.readAt || prev.readAt
+            };
+          }
           const index = messages.findIndex((item: any) => item.id === update.id);
           if (index < 0) return;
           messages[index] = {
@@ -13196,6 +13248,13 @@ export default function App() {
                               const isFirst = idx === 0;
                               const messageKey = msg.id || `${gIdx}-${idx}`;
                               const isVoicePlaying = voiceNotePlayback?.key === messageKey && voiceNotePlayback?.playing === true;
+                              // Tick cache fallback — order refresh ke baad bhi ✓ bacha rahe.
+                              const localTick = (msg.id && localTicksRef.current[msg.id]) || {};
+                              const tickDeliveredAt = msg.deliveredAt || localTick.deliveredAt;
+                              const tickReadAt = msg.readAt || localTick.readAt;
+                              // Server par save ho chuka message = sent (✓). Pending/failed
+                              // par tick nahi — WhatsApp jaisa.
+                              const sentToServer = isMine && !msg._pending && !msg._failed;
                               return (
                                 <div key={msg.id || `${gIdx}-${idx}`} className="group relative w-fit max-w-full">
                                   {/* 🖱️ Laptop hover ↩ — mobile par render nahi hota. */}
@@ -13380,12 +13439,12 @@ export default function App() {
 
                                   {/* ✅✓✓ WhatsApp-style ticks — sirf apne message par.
                                       ✓ = doosri side tak pahunch gaya, ✓✓ = dekh liya. */}
-                                  {isMine && !msg.isDeleted && idx === group.items.length - 1 && (msg.readAt || msg.deliveredAt) ? (
+                                  {isMine && !msg.isDeleted && idx === group.items.length - 1 && (tickReadAt || tickDeliveredAt || sentToServer) ? (
                                     <span
-                                      className={`mt-1 flex items-center justify-end gap-0.5 ${msg.readAt ? 'text-cyan-200' : 'text-white/90'}`}
-                                      title={msg.readAt ? 'Message dekh liya gaya' : 'Message pahunch gaya'}
+                                      className={`mt-1 flex items-center justify-end gap-0.5 ${tickReadAt ? 'text-cyan-200' : 'text-white/90'}`}
+                                      title={tickReadAt ? 'Message dekh liya gaya' : 'Message bhej diya'}
                                     >
-                                      {msg.readAt ? (
+                                      {tickReadAt ? (
                                         <CheckCheck className="h-4 w-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={2.5} />
                                       ) : (
                                         <Check className="h-4 w-4 drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" strokeWidth={2.5} />
