@@ -7,7 +7,7 @@ import { OrderStatusFilter, OrderStatusFilterValue } from './components/OrderSta
 import { PayoutSettingsPanel } from './components/PayoutSettingsPanel';
 import { LocationAutocomplete } from './components/LocationAutocomplete';
 import { StateSelect } from './components/StateSelect';
-import { AdminSecurityPanel } from './components/AdminSecurityPanel';
+import { AdminSecurityPanel, isAdminConsoleAvailableLocally } from './components/AdminSecurityPanel';
 import { GoogleSignInButton } from './components/GoogleSignInButton';
 import { GovtFeeCategoryFields, CategoryConfirmModal, GOVT_FEE_CATEGORIES, resolveCategoryGovtFee, normalizeGovtFeeByCategory, categoryLabel } from './components/GovtFeeCategory';
 import type { GovtFeeByCategory, GovtFeeCategoryKey, CategoryConfirmConfig } from './components/GovtFeeCategory';
@@ -8049,13 +8049,7 @@ export default function App() {
           </div>
 
           {/* 🛡️ Platform Admin — Bot Attack Log (ADMIN_TOKEN required) */}
-          {typeof window !== 'undefined' && (
-            (window.location.hostname === 'localhost' ||
-              window.location.hostname === '127.0.0.1' ||
-              new URLSearchParams(window.location.search).get('admin') === '1' ||
-              sessionStorage.getItem('digiseva_admin_token') ||
-              localStorage.getItem('digiseva_admin_token'))
-          ) && (
+          {isAdminConsoleAvailableLocally() && (
             <div className="flex justify-center">
               <button
                 onClick={() => setStep('admin_security')}
@@ -8073,7 +8067,7 @@ export default function App() {
       {/* ========================================================================= */}
       {/* 🛡️ ADMIN SECURITY CONSOLE (bot attack log + IP blocklist)                    */}
       {/* ========================================================================= */}
-      {step === 'admin_security' && (
+      {step === 'admin_security' && isAdminConsoleAvailableLocally() && (
         <AdminSecurityPanel onBack={() => setStep('landing')} language={lang} />
       )}
 

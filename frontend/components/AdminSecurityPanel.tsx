@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ShieldAlert, ShieldCheck, Ban, RefreshCw, Globe2, Server, Activity, Lock, Unlock, CreditCard, Save, Trash2, BookOpen, CheckCircle, XCircle, Users, UserX, UserCheck, Search, Clock } from 'lucide-react';
-import { fetchWithRetry, parseJsonResponse } from '../services/apiClient';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ShieldAlert, ShieldCheck, Ban, RefreshCw, Globe2, Server, Activity, Lock, Unlock, CreditCard, Save, Trash2, BookOpen, CheckCircle, XCircle, Users, UserX, UserCheck, Search, Clock, Bell, MapPin } from 'lucide-react';
+import { API_FALLBACK_ORIGIN, fetchWithRetry, parseJsonResponse } from '../services/apiClient';
 import { LocalizedTree, type AppLanguage } from '../localization';
 
 // ========================================================
@@ -90,6 +90,24 @@ interface AdminOperatorView {
 
 const TOKEN_STORAGE_KEY = 'digiseva_admin_token';
 
+export function isAdminConsoleAvailableLocally(): boolean {
+  if (typeof window === 'undefined') return false;
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+}
+
+function adminApiUrl(path: string): string {
+  return `${API_FALLBACK_ORIGIN}${path}`;
+}
+
+interface LocalOperatorRequest {
+  id: string;
+  clientName: string;
+  city: string;
+  district: string;
+  serviceName: string;
+  createdAt: string;
+}
+
 const SUSPENSION_REASON_PRESETS = [
   'In-app payment bypass — client ne direct UPI/WhatsApp se paisa diya',
   'Chat me phone/UPI share karke platform se bahar payment maanga',
@@ -129,6 +147,15 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   const [suspendNote, setSuspendNote] = useState('');
   const [suspendBusy, setSuspendBusy] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<AdminOperatorView | null>(null);
+  const [localOperatorRequests, setLocalOperatorRequests] = useState<LocalOperatorRequest[]>([]);
+  const [isLoadingLocalRequests, setIsLoadingLocalRequests] = useState(false);
+  const [resolvingLocalRequestId, setResolvingLocalRequestId] = useState('');
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported'
+  );
+  const knownLocalRequestIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedLocalRequestsRef = useRef(false);
+  const isLoadingLocalRequestsRef = useRef(false);
 
   const authHeaders = useMemo<Record<string, string>>(() => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -139,7 +166,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   const loadLedger = async () => {
     setLedgerLoading(true);
     try {
-      const res = await fetchWithRetry('/api/admin/payments/ledger', { headers: authHeaders });
+      const res = await fetchWithRetry(adminApiUrl('/api/admin/payments/ledger'), { headers: authHeaders });
       const data = await parseJsonResponse(res);
       if (data.success && Array.isArray(data.ledger)) setLedger(data.ledger);
     } catch {}
@@ -148,7 +175,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
 
   const updateLedgerStatus = async (id: string, status: 'Reconciled' | 'Reversed') => {
     try {
-      await fetchWithRetry(`/api/admin/payments/ledger/${id}/status`, {
+      await fetchWithRetry(adminApiUrl(`/api/admin/payments/ledger/${id}/status`), {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ status, note: ledgerNote })
@@ -162,7 +189,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
     setOperatorsLoading(true);
     try {
       const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
-      const res = await fetchWithRetry(`/api/admin/operators${query}`, { headers: authHeaders });
+      const res = await fetchWithRetry(adminApiUrl(`/api/admin/operators${query}`), { headers: authHeaders });
       const data = await parseJsonResponse(res);
       if (res.ok && data.success && Array.isArray(data.operators)) {
         setOperators(data.operators as AdminOperatorView[]);
@@ -170,6 +197,102 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
     } catch {}
     setOperatorsLoading(false);
   }, [authHeaders]);
+
+  const loadLocalOperatorRequests = useCallback(async (notifyNew: boolean) => {
+    if (!isAdminConsoleAvailableLocally() || !token || isLoadingLocalRequestsRef.current) return;
+    isLoadingLocalRequestsRef.current = true;
+    setIsLoadingLocalRequests(true);
+    try {
+      const response = await fetchWithRetry(adminApiUrl('/api/admin/local-operator-requests'), {
+        headers: authHeaders
+      });
+      const data = await parseJsonResponse(response);
+      if (!response.ok || !data.success || !Array.isArray(data.requests)) {
+        throw new Error(data.error || 'Could not load requests from areas without a Jan Seva operator.');
+      }
+
+      const requests = data.requests as LocalOperatorRequest[];
+      if (notifyNew && hasLoadedLocalRequestsRef.current) {
+        const newRequests = requests.filter(request => !knownLocalRequestIdsRef.current.has(request.id));
+        if (newRequests.length > 0) {
+          setMessage({
+            text: `${newRequests.length} new request${newRequests.length === 1 ? '' : 's'} from an area without a Jan Seva operator.`,
+            type: 'ok'
+          });
+          if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
+            const request = newRequests[0];
+            try {
+              new window.Notification('Jan Seva coverage request', {
+                body: `${request.city || request.district || 'Unknown area'} needs a local operator. Open the admin panel to review.`
+              });
+            } catch (error) {
+              setMessage({
+                text: error instanceof Error ? `Request saved, but desktop alert failed: ${error.message}` : 'Request saved, but the desktop alert failed.',
+                type: 'error'
+              });
+            }
+          }
+        }
+      }
+      knownLocalRequestIdsRef.current = new Set(requests.map(request => request.id));
+      hasLoadedLocalRequestsRef.current = true;
+      setLocalOperatorRequests(requests);
+    } catch (error) {
+      setMessage({
+        text: error instanceof Error ? error.message : 'Could not load locality requests.',
+        type: 'error'
+      });
+    } finally {
+      isLoadingLocalRequestsRef.current = false;
+      setIsLoadingLocalRequests(false);
+    }
+  }, [authHeaders, token]);
+
+  const handleEnableBrowserNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setNotificationPermission('unsupported');
+      setMessage({ text: 'This browser does not support desktop notifications.', type: 'error' });
+      return;
+    }
+    try {
+      const permission = await window.Notification.requestPermission();
+      setNotificationPermission(permission);
+      setMessage({
+        text: permission === 'granted'
+          ? 'Desktop alerts enabled for new locality requests.'
+          : 'Desktop alerts were not enabled. Requests will still appear in this panel.',
+        type: permission === 'granted' ? 'ok' : 'error'
+      });
+    } catch (error) {
+      setMessage({
+        text: error instanceof Error ? error.message : 'Could not enable desktop notifications.',
+        type: 'error'
+      });
+    }
+  };
+
+  const handleResolveLocalRequest = async (request: LocalOperatorRequest) => {
+    setResolvingLocalRequestId(request.id);
+    try {
+      const response = await fetchWithRetry(adminApiUrl(`/api/admin/local-operator-requests/${encodeURIComponent(request.id)}/resolve`), {
+        method: 'POST',
+        headers: authHeaders
+      });
+      const data = await parseJsonResponse(response);
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Could not mark this locality request as handled.');
+      }
+      setLocalOperatorRequests(current => current.filter(item => item.id !== request.id));
+      setMessage({ text: data.message || 'Locality request marked as handled.', type: 'ok' });
+    } catch (error) {
+      setMessage({
+        text: error instanceof Error ? error.message : 'Could not mark this locality request as handled.',
+        type: 'error'
+      });
+    } finally {
+      setResolvingLocalRequestId('');
+    }
+  };
 
   const handleSuspend = async () => {
     if (!suspendTarget) return;
@@ -179,7 +302,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
     }
     setSuspendBusy(true);
     try {
-      const res = await fetchWithRetry(`/api/admin/operators/${encodeURIComponent(suspendTarget.id)}/suspend`, {
+      const res = await fetchWithRetry(adminApiUrl(`/api/admin/operators/${encodeURIComponent(suspendTarget.id)}/suspend`), {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -206,7 +329,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   const handleUnsuspend = async (operator: AdminOperatorView) => {
     setSuspendBusy(true);
     try {
-      const res = await fetchWithRetry(`/api/admin/operators/${encodeURIComponent(operator.id)}/unsuspend`, {
+      const res = await fetchWithRetry(adminApiUrl(`/api/admin/operators/${encodeURIComponent(operator.id)}/unsuspend`), {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ reason: 'Admin review ke baad suspension hataayi gayi.' })
@@ -236,9 +359,9 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
       if (countryFilter.trim()) query.set('country', countryFilter.trim());
 
       const [summaryResponse, logResponse, upiResponse] = await Promise.all([
-        fetchWithRetry('/api/admin/security/summary', { headers: authHeaders }),
-        fetchWithRetry(`/api/admin/security/log?${query.toString()}`, { headers: authHeaders }),
-        fetchWithRetry('/api/admin/settings/upi', { headers: authHeaders })
+        fetchWithRetry(adminApiUrl('/api/admin/security/summary'), { headers: authHeaders }),
+        fetchWithRetry(adminApiUrl(`/api/admin/security/log?${query.toString()}`), { headers: authHeaders }),
+        fetchWithRetry(adminApiUrl('/api/admin/settings/upi'), { headers: authHeaders })
       ]);
 
       const summaryData = await parseJsonResponse(summaryResponse);
@@ -267,12 +390,21 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   }, [authHeaders, countryFilter, token, verdictFilter]);
 
   useEffect(() => {
-    if (token) void loadData();
+    if (isAdminConsoleAvailableLocally() && token) void loadData();
   }, [token, loadData]);
 
   useEffect(() => {
-    if (token) void loadOperators('');
+    if (isAdminConsoleAvailableLocally() && token) void loadOperators('');
   }, [token, loadOperators]);
+
+  useEffect(() => {
+    if (!isAdminConsoleAvailableLocally() || !token) return;
+    void loadLocalOperatorRequests(false);
+    const interval = window.setInterval(() => {
+      void loadLocalOperatorRequests(true);
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [token, loadLocalOperatorRequests]);
 
   const handleSaveToken = () => {
     const clean = tokenInput.trim();
@@ -289,7 +421,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
 
   const handleBlockIp = async (ip: string, action: 'block' | 'unblock') => {
     try {
-      const response = await fetchWithRetry(`/api/admin/security/${action}-ip`, {
+      const response = await fetchWithRetry(adminApiUrl(`/api/admin/security/${action}-ip`), {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ ip })
@@ -311,7 +443,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   const handleSaveUpi = async () => {
     setIsSavingUpi(true);
     try {
-      const response = await fetchWithRetry('/api/admin/settings/upi', {
+      const response = await fetchWithRetry(adminApiUrl('/api/admin/settings/upi'), {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ upiId: upiInput.trim(), payeeName: upiNameInput.trim() })
@@ -330,7 +462,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   const handleClearUpi = async () => {
     setIsSavingUpi(true);
     try {
-      const response = await fetchWithRetry('/api/admin/settings/upi', {
+      const response = await fetchWithRetry(adminApiUrl('/api/admin/settings/upi'), {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ upiId: '', payeeName: '' })
@@ -357,6 +489,20 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
       ]
     : [];
 
+  if (!isAdminConsoleAvailableLocally()) {
+      return (
+        <div className="min-h-screen bg-[#050914] text-white flex items-center justify-center p-6">
+          <div className="max-w-md rounded-2xl border border-white/10 bg-[#0A1020] p-6 text-center">
+            <ShieldAlert className="mx-auto mb-3 h-8 w-8 text-rose-400" />
+            <h1 className="text-lg font-black">Admin console is available only on localhost.</h1>
+            <button onClick={onBack} className="mt-4 rounded-xl bg-white/[0.08] px-4 py-2 text-sm font-bold">
+              Back
+            </button>
+          </div>
+        </div>
+      );
+  }
+
   return (
     <LocalizedTree language={language}>
     <div className="min-h-screen bg-[#050914] text-white px-4 py-8">
@@ -366,7 +512,7 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
             <ShieldAlert className="w-7 h-7 text-rose-400" />
             <div>
               <h1 className="text-xl sm:text-2xl font-black tracking-tight">Admin Security Console</h1>
-              <p className="text-xs text-slate-400">Bot attack log • blocked IPs • Cloudflare traffic split</p>
+              <p className="text-xs text-slate-400">Localhost-only controls • live website backend: {new URL(API_FALLBACK_ORIGIN).host}</p>
             </div>
           </div>
           <button
@@ -409,6 +555,69 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
             </p>
           )}
         </div>
+
+        <section className="rounded-2xl border border-amber-400/20 bg-[#0A1020]/80 p-4 space-y-3" aria-live="polite">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+              <div>
+                <h2 className="text-sm font-black text-white">Areas needing a Jan Seva operator</h2>
+                <p className="text-[11px] text-slate-400">Live requests refresh every 5 seconds. New requests stay here until you mark them handled.</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleEnableBrowserNotifications()}
+                disabled={notificationPermission === 'granted' || notificationPermission === 'unsupported'}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-amber-200 disabled:opacity-50"
+              >
+                <Bell className="h-3.5 w-3.5" />
+                {notificationPermission === 'granted' ? 'Desktop alerts enabled' : 'Enable desktop alerts'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadLocalOperatorRequests(false)}
+                disabled={isLoadingLocalRequests}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-slate-200 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isLoadingLocalRequests ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+          </div>
+          {localOperatorRequests.length === 0 ? (
+            <p className="rounded-xl border border-white/5 bg-black/20 px-3 py-4 text-center text-xs text-slate-400">
+              No open locality requests.
+            </p>
+          ) : (
+            <div className="grid gap-2">
+              {localOperatorRequests.map(request => (
+                <article key={request.id} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <p className="truncate text-sm font-bold text-white">{request.clientName} • {request.serviceName}</p>
+                    <p className="flex items-center gap-1 text-xs text-amber-200">
+                      <MapPin className="h-3 w-3 shrink-0" />
+                      {[request.city, request.district].filter(Boolean).join(', ') || 'Location not provided'}
+                    </p>
+                    <p className="flex items-center gap-1 text-[10px] text-slate-500">
+                      <Clock className="h-3 w-3" />
+                      {new Date(request.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleResolveLocalRequest(request)}
+                    disabled={resolvingLocalRequestId === request.id}
+                    className="shrink-0 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
+                  >
+                    {resolvingLocalRequestId === request.id ? 'Saving…' : 'Mark handled'}
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
         {upiSettings && (
           <div className="rounded-2xl border border-white/10 bg-[#0A1020]/80 p-4 space-y-3">

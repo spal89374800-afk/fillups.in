@@ -651,6 +651,14 @@ export function getLocalVleRecipients(district: unknown, city: unknown = ''): Vl
   return districtOperators;
 }
 
+export function hasLocalVle(district: unknown, city: unknown = ''): boolean {
+  const districtOperators = getLocalVleRecipients(district, '');
+  const normalizedCity = normalizeLocation(city);
+  return normalizedCity
+    ? districtOperators.some(operator => locationMatches(operator.city, normalizedCity))
+    : districtOperators.length > 0;
+}
+
 export function normalizePhone(value: unknown): string {
   return String(value || '').replace(/\D/g, '').slice(-10);
 }
@@ -1472,6 +1480,42 @@ export function findAnyOrder(id: string): FoundOrderResult | null {
   const fOrder = fillerOrdersStore.find(o => o.id === id);
   if (fOrder) return { order: fOrder, type: 'filler' };
   return null;
+}
+
+export interface LocalOperatorUnavailableRequest {
+  id: string;
+  clientName: string;
+  city: string;
+  district: string;
+  serviceName: string;
+  createdAt: string;
+}
+
+export function listLocalOperatorUnavailableRequests(): LocalOperatorUnavailableRequest[] {
+  const seen = new Set<string>();
+  return [...vleOrdersStore, ...fillerOrdersStore]
+    .filter(order => {
+      if (!order.localOperatorUnavailable || order.localOperatorAlertResolvedAt || seen.has(order.id)) return false;
+      seen.add(order.id);
+      return true;
+    })
+    .map(order => ({
+      id: order.id,
+      clientName: order.clientName || 'Citizen',
+      city: order.city || '',
+      district: order.district || '',
+      serviceName: order.formTitle || order.serviceName || 'Form request',
+      createdAt: order.createdAt
+    }))
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
+export async function resolveLocalOperatorUnavailableRequest(id: string): Promise<boolean> {
+  const found = findAnyOrder(id);
+  if (!found || !found.order.localOperatorUnavailable || found.order.localOperatorAlertResolvedAt) return false;
+  found.order.localOperatorAlertResolvedAt = new Date().toISOString();
+  await persistOrder(found.order);
+  return true;
 }
 
 export function createBroadcastFormBid(data: {

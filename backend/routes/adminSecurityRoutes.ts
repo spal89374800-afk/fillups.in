@@ -9,7 +9,15 @@ import {
   getSecuritySummary,
   unblockIp
 } from '../middleware/botShieldMiddleware.ts';
-import { getAdminPaymentLedger, updateAdminPaymentLedgerStatus, listOperatorsForAdmin, suspendOperatorByIdentifier, unsuspendOperatorByIdentifier } from '../services/storeService.ts';
+import {
+  getAdminPaymentLedger,
+  updateAdminPaymentLedgerStatus,
+  listOperatorsForAdmin,
+  listLocalOperatorUnavailableRequests,
+  resolveLocalOperatorUnavailableRequest,
+  suspendOperatorByIdentifier,
+  unsuspendOperatorByIdentifier
+} from '../services/storeService.ts';
 
 export const adminSecurityRouter = Router();
 
@@ -136,6 +144,26 @@ adminSecurityRouter.get('/admin/operators', (req, res) => {
     suspendedCount: operators.filter(item => item.bidsSuspended).length,
     operators
   });
+});
+
+adminSecurityRouter.get('/admin/local-operator-requests', (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const requests = listLocalOperatorUnavailableRequests();
+  res.json({ success: true, count: requests.length, requests });
+});
+
+adminSecurityRouter.post('/admin/local-operator-requests/:id/resolve', async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  try {
+    const resolved = await resolveLocalOperatorUnavailableRequest(req.params.id);
+    if (!resolved) {
+      return res.status(404).json({ success: false, error: 'Local operator request not found or already resolved.' });
+    }
+    return res.json({ success: true, message: 'Local operator request marked as handled.' });
+  } catch (error) {
+    console.error('[Admin] Could not resolve local operator request:', error);
+    return res.status(500).json({ success: false, error: 'Could not update the local operator request.' });
+  }
 });
 
 adminSecurityRouter.post('/admin/operators/:id/suspend', async (req, res) => {

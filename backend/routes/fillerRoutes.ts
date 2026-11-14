@@ -13,13 +13,16 @@ import {
   getBidLimitStatus,
   recordBidAccepted,
   persistOrder,
-  persistToMongo
+  persistToMongo,
+  hasLocalVle
 } from '../services/storeService.ts';
 import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } from '../services/orderDispatchService.ts';
 import { emitOrderUpdate } from '../services/realtimeService.ts';
 import { consumeOtpVerification } from './authRoutes.ts';
 import { getRequestAccount, requireAccount } from '../middleware/securityMiddleware.ts';
 import { vleListStore } from '../services/storeService.ts';
+
+const noLocalJanSevaMessage = 'Jan Seva isn’t available in your area yet. We’re working on it—please check back in 24 hours for an update. Thank you 😊✨';
 
 export const fillerRouter = Router();
 
@@ -249,6 +252,10 @@ fillerRouter.get('/filler/orders', requireAccount('filler'), (req, res) => {
 async function createAndDispatchFormRequest(req: any, res: any, fallbackTitle: string) {
   const account = getRequestAccount(req)!;
   const { formTitle, formDetails, formCategory, formRoll, clientName, clientPhone, clientEmail, district, city, amountPaid, govtFee, applicantCategory, orderType } = req.body;
+  const requestDistrict = String(district || '').trim() || account.district || '';
+  const requestCity = String(city || '').trim() || account.city || '';
+  const localOperatorUnavailable = Boolean(requestDistrict || requestCity) &&
+    !hasLocalVle(requestDistrict, requestCity);
 
   const newBid = createBroadcastFormBid({
     formTitle: formTitle || fallbackTitle,
@@ -258,17 +265,27 @@ async function createAndDispatchFormRequest(req: any, res: any, fallbackTitle: s
     clientName: String(clientName || '').trim() || account.name || 'Citizen',
     clientPhone: String(clientPhone || '').trim() || account.phone || '',
     clientEmail: String(clientEmail || '').trim() || account.email || '',
-    district: String(district || '').trim() || account.district || '',
-    city: String(city || '').trim() || account.city || '',
+    district: requestDistrict,
+    city: requestCity,
     amountPaid: amountPaid || 150,
     govtFee: govtFee,
     applicantCategory: applicantCategory,
     orderType: orderType || 'online_form_filling'
   });
   newBid.clientId = account.id;
-  newBid.routingNote = 'Yeh form request poore India ke Jan Seva operators aur Form Filler experts ko bheji gayi hai. Online operators ko turant in-app notification milti hai, offline operators ko email.';
-
   newBid.chatMessages = Array.isArray(newBid.chatMessages) ? newBid.chatMessages : [];
+  newBid.routingNote = 'Yeh form request poore India ke Jan Seva operators aur Form Filler experts ko bheji gayi hai. Online operators ko turant in-app notification milti hai, offline operators ko email.';
+  newBid.localOperatorUnavailable = localOperatorUnavailable;
+  if (localOperatorUnavailable) {
+    newBid.routingNote += ` ${noLocalJanSevaMessage}`;
+    newBid.chatMessages.push({
+      id: 'sys-routing-' + Date.now(),
+      sender: 'operator',
+      senderName: 'DigiSeva Dispatch',
+      text: noLocalJanSevaMessage,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+  }
 
   // Broadcast to BOTH Form Fillers (all India) and Jan Seva Kendra network.
   const allVle = vleListStore.filter(operator => operator.role !== 'filler');
@@ -298,7 +315,9 @@ async function createAndDispatchFormRequest(req: any, res: any, fallbackTitle: s
 
   res.json({
     success: true,
-    message: `✅ Form request for "${newBid.formTitle}" dispatched to all Jan Seva operators and Form Filler experts. Online operators get an instant in-app alert; offline operators get an email.`,
+    message: localOperatorUnavailable
+      ? noLocalJanSevaMessage
+      : `✅ Form request for "${newBid.formTitle}" dispatched to all Jan Seva operators and Form Filler experts. Online operators get an instant in-app alert; offline operators get an email.`,
     order: newBid
   });
 }

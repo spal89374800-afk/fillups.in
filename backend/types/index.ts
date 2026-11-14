@@ -125,6 +125,8 @@ export interface VleOrder {
   completedFormPdfName?: string;
   completedFormUploadedAt?: string;
   routingNote?: string;
+  localOperatorUnavailable?: boolean;
+  localOperatorAlertResolvedAt?: string;
   isProofApprovedByClient?: boolean;
   isPaymentDoneInApp?: boolean;
   paymentTxnId?: string;
@@ -177,6 +179,8 @@ export interface FillerOrder {
   feesApprovedByClient?: boolean;
   feesApprovedAt?: string;
   serviceScope?: ServiceScope;
+  localOperatorUnavailable?: boolean;
+  localOperatorAlertResolvedAt?: string;
   createdAt: string;
   notificationsSent: {
     phone: boolean;
