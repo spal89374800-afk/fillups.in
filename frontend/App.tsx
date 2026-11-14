@@ -6477,28 +6477,6 @@ export default function App() {
         </div>
       )}
 
-      <div className="fixed bottom-4 right-4 z-[80] flex flex-col items-end gap-2">
-        <a
-          href="https://wa.me/919876543210?text=Hello%20DigiSeva%20Pro%2C%20I%20need%20help."
-          target="_blank"
-          rel="noreferrer"
-          aria-label="Chat on WhatsApp"
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-500 px-4 py-3 text-sm font-black text-white shadow-[0_12px_30px_rgba(16,185,129,0.45)] transition-transform hover:scale-105 active:scale-95"
-        >
-          <MessageSquare className="h-4 w-4" />
-          <span className="hidden sm:inline">WhatsApp</span>
-        </a>
-
-        <a
-          href="tel:+919876543210"
-          aria-label="Call support"
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-sky-600 px-4 py-3 text-sm font-black text-white shadow-[0_12px_30px_rgba(14,165,233,0.4)] transition-transform hover:scale-105 active:scale-95"
-        >
-          <PhoneCall className="h-4 w-4" />
-          <span className="hidden sm:inline">Call Now</span>
-        </a>
-      </div>
-
       {/* ========================================================================= */}
       {/* TOP HEADER                                                                */}
       {/* ========================================================================= */}
