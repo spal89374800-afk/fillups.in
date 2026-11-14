@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { MouseEvent, TouchEvent } from 'react';
-import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Reply, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Reply, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX, MonitorUp } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
 import { OrderStatusFilter, OrderStatusFilterValue } from './components/OrderStatusFilter';
@@ -1761,6 +1761,21 @@ export default function App() {
   const [activeWorkspaceOrder, setActiveWorkspaceOrder] = useState<any | null>(null);
   const activeWorkspaceOrderRef = useRef<any | null>(null);
   activeWorkspaceOrderRef.current = activeWorkspaceOrder;
+  type ScreenShareState = {
+    orderId: string;
+    shareId: string;
+    status: 'requesting' | 'incoming' | 'connecting' | 'live';
+    operatorName?: string;
+  };
+  const [screenShare, setScreenShare] = useState<ScreenShareState | null>(null);
+  const screenShareRef = useRef<ScreenShareState | null>(null);
+  screenShareRef.current = screenShare;
+  const screenSharePeerRef = useRef<RTCPeerConnection | null>(null);
+  const screenShareStreamRef = useRef<MediaStream | null>(null);
+  const screenShareVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenShareTargetRef = useRef<string | null>(null);
+  const screenSharePendingIceRef = useRef<RTCIceCandidateInit[]>([]);
+  const [isStartingScreenShare, setIsStartingScreenShare] = useState(false);
   const activeRoleRef = useRef(activeRole);
   activeRoleRef.current = activeRole;
   const clientPhoneRef = useRef(clientPhone);
@@ -2704,6 +2719,183 @@ export default function App() {
     return peer;
   };
 
+  const stopScreenShare = (notify = true) => {
+    const current = screenShareRef.current;
+    if (notify && current && realtimeSocket.connected) {
+      realtimeSocket.emit('screen-share:end', { orderId: current.orderId, shareId: current.shareId });
+    }
+    const stream = screenShareStreamRef.current;
+    screenShareStreamRef.current = null;
+    stream?.getTracks().forEach(track => track.stop());
+    try { screenSharePeerRef.current?.close(); } catch {}
+    screenSharePeerRef.current = null;
+    screenShareTargetRef.current = null;
+    screenSharePendingIceRef.current = [];
+    if (screenShareVideoRef.current) screenShareVideoRef.current.srcObject = null;
+    screenShareRef.current = null;
+    setScreenShare(null);
+    setIsStartingScreenShare(false);
+  };
+
+  const startScreenShare = async () => {
+    const order = activeWorkspaceOrderRef.current;
+    if (!order?.id || activeRoleRef.current === 'client' || screenShareRef.current || isStartingScreenShare) return;
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setWorkspaceStatusMsg({ text: 'Screen sharing is not supported in this browser. Try a recent desktop browser over HTTPS.', type: 'error' });
+      return;
+    }
+    setIsStartingScreenShare(true);
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      screenShareStreamRef.current = stream;
+      stream.getVideoTracks().forEach(track => {
+        track.addEventListener('ended', () => stopScreenShare());
+      });
+      realtimeSocket.emit(
+        'screen-share:request',
+        { orderId: order.id, operatorName: activeRoleRef.current === 'form_filler' ? fillerName : vleName },
+        (result: { success: boolean; shareId?: string; error?: string }) => {
+          if (!result.success || !result.shareId) {
+            stopScreenShare(false);
+            setWorkspaceStatusMsg({
+              text: result.error || 'Could not request screen-share consent. Please try again.',
+              type: 'error'
+            });
+            return;
+          }
+          const next: ScreenShareState = {
+            orderId: order.id,
+            shareId: result.shareId,
+            status: 'requesting'
+          };
+          screenShareRef.current = next;
+          setScreenShare(next);
+          setWorkspaceStatusMsg({
+            text: 'Screen selected. The citizen must allow the request before the live screen is transmitted.',
+            type: 'info'
+          });
+        }
+      );
+    } catch (error) {
+      stopScreenShare(false);
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        setWorkspaceStatusMsg({ text: 'Screen sharing was cancelled or permission was denied.', type: 'info' });
+      } else {
+        console.error('Could not start screen sharing:', error);
+        setWorkspaceStatusMsg({ text: 'Could not access screen sharing. Check browser support and permissions.', type: 'error' });
+      }
+    } finally {
+      setIsStartingScreenShare(false);
+    }
+  };
+
+  const respondToScreenShare = (allow: boolean) => {
+    const current = screenShareRef.current;
+    if (!current || current.status !== 'incoming') return;
+    if (!allow) {
+      realtimeSocket.emit('screen-share:decline', { orderId: current.orderId, shareId: current.shareId });
+      stopScreenShare(false);
+      setWorkspaceStatusMsg({ text: 'You declined the screen-share request.', type: 'info' });
+      return;
+    }
+
+    const next = { ...current, status: 'connecting' as const };
+    screenShareRef.current = next;
+    setScreenShare(next);
+    realtimeSocket.emit(
+      'screen-share:accept',
+      { orderId: current.orderId, shareId: current.shareId },
+      (result: { success: boolean; error?: string }) => {
+        if (result.success) return;
+        if (screenShareRef.current?.shareId === current.shareId) stopScreenShare(false);
+        setWorkspaceStatusMsg({
+          text: result.error || 'This screen-share request is no longer available.',
+          type: 'error'
+        });
+      }
+    );
+  };
+
+  const createScreenSharePeer = (
+    orderId: string,
+    shareId: string,
+    targetSocketId: string,
+    localStream: MediaStream | null
+  ) => {
+    try { screenSharePeerRef.current?.close(); } catch {}
+    screenShareTargetRef.current = targetSocketId;
+    screenSharePendingIceRef.current = [];
+    const peer = new RTCPeerConnection({ iceServers: iceServersRef.current });
+    screenSharePeerRef.current = peer;
+    if (localStream) {
+      localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+    } else {
+      peer.addTransceiver('video', { direction: 'recvonly' });
+    }
+    peer.onicecandidate = event => {
+      if (event.candidate && screenShareTargetRef.current) {
+        realtimeSocket.emit('screen-share:signal', {
+          orderId,
+          shareId,
+          targetSocketId: screenShareTargetRef.current,
+          candidate: event.candidate.toJSON()
+        });
+      }
+    };
+    peer.ontrack = event => {
+      if (screenShareRef.current?.shareId !== shareId) return;
+      if (screenShareVideoRef.current) screenShareVideoRef.current.srcObject = event.streams[0];
+      const next = { ...screenShareRef.current, status: 'live' as const };
+      screenShareRef.current = next;
+      setScreenShare(next);
+    };
+    peer.onconnectionstatechange = () => {
+      if (peer.connectionState === 'failed' || peer.connectionState === 'closed') {
+        if (screenShareRef.current?.shareId === shareId) stopScreenShare();
+      }
+    };
+    return peer;
+  };
+
+  const handleScreenShareSignal = async (signal: {
+    orderId: string;
+    shareId: string;
+    fromSocketId: string;
+    description?: RTCSessionDescriptionInit;
+    candidate?: RTCIceCandidateInit;
+  }) => {
+    try {
+      let peer = screenSharePeerRef.current;
+      if (!peer && activeRoleRef.current === 'client' && screenShareRef.current?.shareId === signal.shareId) {
+        peer = createScreenSharePeer(signal.orderId, signal.shareId, signal.fromSocketId, null);
+      }
+      if (!peer || screenShareRef.current?.shareId !== signal.shareId) return;
+      screenShareTargetRef.current = signal.fromSocketId;
+      if (signal.description) {
+        await peer.setRemoteDescription(signal.description);
+        for (const candidate of screenSharePendingIceRef.current) await peer.addIceCandidate(candidate);
+        screenSharePendingIceRef.current = [];
+        if (signal.description.type === 'offer') {
+          const answer = await peer.createAnswer();
+          await peer.setLocalDescription(answer);
+          realtimeSocket.emit('screen-share:signal', {
+            orderId: signal.orderId,
+            shareId: signal.shareId,
+            targetSocketId: signal.fromSocketId,
+            description: peer.localDescription?.toJSON()
+          });
+        }
+      } else if (signal.candidate) {
+        if (peer.remoteDescription) await peer.addIceCandidate(signal.candidate);
+        else screenSharePendingIceRef.current.push(signal.candidate);
+      }
+    } catch (error) {
+      console.error('Screen-share signaling failed:', error);
+      setWorkspaceStatusMsg({ text: 'The live screen connection failed. Please stop and try again.', type: 'error' });
+      stopScreenShare();
+    }
+  };
+
   const handleRtcSignal = async (signal: {
     orderId: string;
     token: string;
@@ -3602,6 +3794,76 @@ export default function App() {
       setVleExclusiveOrders((current: any[]) => current.filter(item => item.id !== orderId));
       setFillerOrders((current: any[]) => current.filter(item => item.id !== orderId));
     };
+    const onScreenShareRequested = (event: { orderId: string; shareId: string; operatorName?: string }) => {
+      if (activeRoleRef.current !== 'client') return;
+      if (screenShareRef.current) {
+        realtimeSocket.emit('screen-share:decline', { orderId: event.orderId, shareId: event.shareId });
+        return;
+      }
+      const order = ordersLookupRef.current.find(item => item?.id === event.orderId);
+      if (!order) {
+        realtimeSocket.emit('screen-share:decline', { orderId: event.orderId, shareId: event.shareId });
+        return;
+      }
+      setActiveWorkspaceOrder(order);
+      const next: ScreenShareState = {
+        orderId: event.orderId,
+        shareId: event.shareId,
+        status: 'incoming',
+        operatorName: event.operatorName
+      };
+      screenShareRef.current = next;
+      setScreenShare(next);
+      if (soundAlertEnabled) playChime();
+    };
+    const onScreenShareAccepted = async (event: { orderId: string; shareId: string; clientSocketId: string }) => {
+      if (
+        activeRoleRef.current === 'client' ||
+        screenShareRef.current?.shareId !== event.shareId ||
+        !screenShareStreamRef.current
+      ) return;
+      try {
+        const peer = createScreenSharePeer(event.orderId, event.shareId, event.clientSocketId, screenShareStreamRef.current);
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        realtimeSocket.emit('screen-share:signal', {
+          orderId: event.orderId,
+          shareId: event.shareId,
+          targetSocketId: event.clientSocketId,
+          description: peer.localDescription?.toJSON()
+        });
+        const next = { ...screenShareRef.current!, status: 'connecting' as const };
+        screenShareRef.current = next;
+        setScreenShare(next);
+      } catch (error) {
+        console.error('Could not start screen-share connection:', error);
+        setWorkspaceStatusMsg({ text: 'Could not start the live screen connection. Please retry.', type: 'error' });
+        stopScreenShare();
+      }
+    };
+    const onScreenShareSignal = (event: {
+      orderId: string;
+      shareId: string;
+      fromSocketId: string;
+      description?: RTCSessionDescriptionInit;
+      candidate?: RTCIceCandidateInit;
+    }) => {
+      void handleScreenShareSignal(event);
+    };
+    const onScreenShareEnded = (event: { orderId: string; shareId: string; reason?: string }) => {
+      if (screenShareRef.current?.shareId !== event.shareId) return;
+      const reason = event.reason;
+      stopScreenShare(false);
+      if (reason === 'declined') {
+        setWorkspaceStatusMsg({ text: 'The citizen declined the screen-share request.', type: 'info' });
+      } else if (reason === 'timeout') {
+        setWorkspaceStatusMsg({ text: 'Screen-share request expired because the citizen did not respond.', type: 'info' });
+      } else if (reason === 'disconnected') {
+        setWorkspaceStatusMsg({ text: 'Screen sharing ended because a participant disconnected.', type: 'info' });
+      } else {
+        setWorkspaceStatusMsg({ text: 'Live screen sharing ended.', type: 'info' });
+      }
+    };
     const onCameraRequested = (session: any) => {
       if (activeRoleRef.current !== 'client') return;
       const currentPhone = clientPhoneRef.current.replace(/\D/g, '').slice(-10);
@@ -3831,6 +4093,10 @@ export default function App() {
     realtimeSocket.on('dispatch:new-order', onDispatchNewOrder);
     realtimeSocket.on('dispatch:order-taken', onDispatchOrderTaken);
     realtimeSocket.on('live-camera:requested', onCameraRequested);
+    realtimeSocket.on('screen-share:request', onScreenShareRequested);
+    realtimeSocket.on('screen-share:accepted', onScreenShareAccepted);
+    realtimeSocket.on('screen-share:signal', onScreenShareSignal);
+    realtimeSocket.on('screen-share:ended', onScreenShareEnded);
     realtimeSocket.on('live-camera:ready', onCameraReady);
     realtimeSocket.on('live-camera:blink-verified', onCameraBlinkVerified);
     realtimeSocket.on('live-camera:blink-unavailable', onCameraBlinkUnavailable);
@@ -3858,6 +4124,10 @@ export default function App() {
       realtimeSocket.off('dispatch:new-order', onDispatchNewOrder);
       realtimeSocket.off('dispatch:order-taken', onDispatchOrderTaken);
       realtimeSocket.off('live-camera:requested', onCameraRequested);
+      realtimeSocket.off('screen-share:request', onScreenShareRequested);
+      realtimeSocket.off('screen-share:accepted', onScreenShareAccepted);
+      realtimeSocket.off('screen-share:signal', onScreenShareSignal);
+      realtimeSocket.off('screen-share:ended', onScreenShareEnded);
       realtimeSocket.off('live-camera:ready', onCameraReady);
       realtimeSocket.off('live-camera:blink-verified', onCameraBlinkVerified);
       realtimeSocket.off('live-camera:blink-unavailable', onCameraBlinkUnavailable);
@@ -6202,6 +6472,28 @@ export default function App() {
           <span>{saveToast.text}</span>
         </div>
       )}
+
+      <div className="fixed bottom-4 right-4 z-[80] flex flex-col items-end gap-2">
+        <a
+          href="https://wa.me/919876543210?text=Hello%20DigiSeva%20Pro%2C%20I%20need%20help."
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Chat on WhatsApp"
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-500 px-4 py-3 text-sm font-black text-white shadow-[0_12px_30px_rgba(16,185,129,0.45)] transition-transform hover:scale-105 active:scale-95"
+        >
+          <MessageSquare className="h-4 w-4" />
+          <span className="hidden sm:inline">WhatsApp</span>
+        </a>
+
+        <a
+          href="tel:+919876543210"
+          aria-label="Call support"
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-sky-600 px-4 py-3 text-sm font-black text-white shadow-[0_12px_30px_rgba(14,165,233,0.4)] transition-transform hover:scale-105 active:scale-95"
+        >
+          <PhoneCall className="h-4 w-4" />
+          <span className="hidden sm:inline">Call Now</span>
+        </a>
+      </div>
 
       {/* ========================================================================= */}
       {/* TOP HEADER                                                                */}
@@ -13601,6 +13893,35 @@ export default function App() {
                             {isSendingVoiceNote ? 'Sending…' : isVoiceRecording ? `⏹ Stop ${formatDurationLabel(voiceRecordSeconds)}` : '🎙️ Voice'}
                           </span>
                         </button>
+
+                        {activeRole !== 'client' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (screenShare) stopScreenShare();
+                              else void startScreenShare();
+                            }}
+                            disabled={isStartingScreenShare || screenShare?.status === 'incoming'}
+                            className={`p-2.5 rounded-xl border transition-all flex items-center gap-1 text-xs font-bold disabled:opacity-60 disabled:cursor-not-allowed ${
+                              screenShare
+                                ? 'bg-rose-600 border-rose-500 text-white'
+                                : isStartingScreenShare
+                                  ? 'bg-slate-800 border-sky-500/40 text-sky-300'
+                                  : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-cyan-300 hover:text-cyan-200'
+                            }`}
+                            title={
+                              screenShare?.status === 'requesting' ? 'Cancel screen-share request'
+                                : screenShare?.status === 'connecting' || screenShare?.status === 'live' ? 'Stop live screen sharing'
+                                  : isStartingScreenShare ? 'Selecting a screen to share…'
+                                    : 'Share your screen with the citizen (they must allow first)'
+                            }
+                          >
+                            {isStartingScreenShare ? <Loader2 className="w-4 h-4 animate-spin" /> : <MonitorUp className="w-4 h-4" />}
+                            <span className="hidden sm:inline">
+                              {screenShare ? 'Stop Share' : isStartingScreenShare ? 'Starting…' : 'Share Screen'}
+                            </span>
+                          </button>
+                        )}
 
                         {/* Mobile call button — sits next to the mic so calling stays
                             reachable even when the top bar is hidden. */}

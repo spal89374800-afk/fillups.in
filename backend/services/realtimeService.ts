@@ -1,4 +1,5 @@
 import type { Server, Socket } from 'socket.io';
+import { randomUUID } from 'node:crypto';
 import {
   findAnyOrder,
   liveCameraSessionsStore,
@@ -73,6 +74,16 @@ type CallSession = {
   ringTimeout?: ReturnType<typeof setTimeout>;
 };
 const activeCalls = new Map<string, CallSession>();
+
+type ScreenShareSession = {
+  orderId: string;
+  shareId: string;
+  operatorSocketId: string;
+  clientSocketIds: string[];
+  clientSocketId?: string;
+  timeout?: ReturnType<typeof setTimeout>;
+};
+const activeScreenShares = new Map<string, ScreenShareSession>();
 
 type IceServerConfig = {
   urls: string | string[];
@@ -154,6 +165,23 @@ export function setRealtimeServer(server: Server): void {
       return { phone };
     };
 
+    const finishScreenShare = (session: ScreenShareSession, reason: string) => {
+      if (session.timeout) clearTimeout(session.timeout);
+      activeScreenShares.delete(session.orderId);
+      const recipients = new Set([
+        session.operatorSocketId,
+        ...session.clientSocketIds,
+        ...(session.clientSocketId ? [session.clientSocketId] : [])
+      ]);
+      recipients.forEach(socketId => {
+        server.sockets.sockets.get(socketId)?.emit('screen-share:ended', {
+          orderId: session.orderId,
+          shareId: session.shareId,
+          reason
+        });
+      });
+    };
+
     socket.on('order:join', (payload: {
       orderId?: string;
       role?: string;
@@ -170,6 +198,141 @@ export function setRealtimeServer(server: Server): void {
       socket.join(orderRoom(orderId));
       joinedOrders.set(orderId, { role: participantRole as 'client' | 'operator', phone: authorization.phone });
       acknowledge?.({ success: true });
+    });
+
+    socket.on('screen-share:request', (
+      payload: { orderId?: string; operatorName?: string },
+      acknowledge?: (result: object) => void
+    ) => {
+      const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
+      if (!orderId || joinedOrders.get(orderId)?.role !== 'operator') {
+        acknowledge?.({ success: false, error: 'Join this order as its assigned operator before requesting screen sharing.' });
+        return;
+      }
+      if (activeScreenShares.has(orderId)) {
+        acknowledge?.({ success: false, error: 'A screen-share request is already active for this order.' });
+        return;
+      }
+      const roomSockets = server.sockets.adapter.rooms.get(orderRoom(orderId));
+      const clientSocketIds = roomSockets
+        ? [...roomSockets].filter(socketId => joinedOrdersBySocket.get(socketId)?.get(orderId)?.role === 'client')
+        : [];
+      if (clientSocketIds.length === 0) {
+        acknowledge?.({ success: false, error: 'The citizen is not connected to this order right now.' });
+        return;
+      }
+
+      const session: ScreenShareSession = {
+        orderId,
+        shareId: randomUUID(),
+        operatorSocketId: socket.id,
+        clientSocketIds
+      };
+      activeScreenShares.set(orderId, session);
+      session.timeout = setTimeout(() => finishScreenShare(session, 'timeout'), 60_000);
+      const operatorName = String(payload?.operatorName || 'Jan Seva operator').trim().slice(0, 80);
+      clientSocketIds.forEach(socketId => {
+        const clientSocket = server.sockets.sockets.get(socketId);
+        clientSocket?.emit('webrtc:config', { iceServers: getIceServers() });
+        clientSocket?.emit('screen-share:request', {
+          orderId,
+          shareId: session.shareId,
+          operatorName
+        });
+      });
+      socket.emit('webrtc:config', { iceServers: getIceServers() });
+      acknowledge?.({ success: true, orderId, shareId: session.shareId });
+    });
+
+    socket.on('screen-share:accept', (
+      payload: { orderId?: string; shareId?: string },
+      acknowledge?: (result: object) => void
+    ) => {
+      const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
+      const session = orderId ? activeScreenShares.get(orderId) : undefined;
+      if (
+        !session ||
+        session.shareId !== payload?.shareId ||
+        !session.clientSocketIds.includes(socket.id) ||
+        joinedOrders.get(orderId)?.role !== 'client' ||
+        session.clientSocketId
+      ) {
+        acknowledge?.({ success: false, error: 'This screen-share request is no longer available.' });
+        return;
+      }
+
+      session.clientSocketId = socket.id;
+      if (session.timeout) clearTimeout(session.timeout);
+      session.timeout = undefined;
+      const operatorSocket = server.sockets.sockets.get(session.operatorSocketId);
+      operatorSocket?.emit('screen-share:accepted', {
+        orderId,
+        shareId: session.shareId,
+        clientSocketId: socket.id
+      });
+      operatorSocket?.emit('webrtc:config', { iceServers: getIceServers() });
+      socket.emit('webrtc:config', { iceServers: getIceServers() });
+      acknowledge?.({ success: true });
+    });
+
+    socket.on('screen-share:decline', (payload: { orderId?: string; shareId?: string }) => {
+      const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
+      const session = orderId ? activeScreenShares.get(orderId) : undefined;
+      if (
+        !session ||
+        session.shareId !== payload?.shareId ||
+        !session.clientSocketIds.includes(socket.id) ||
+        joinedOrders.get(orderId)?.role !== 'client' ||
+        session.clientSocketId
+      ) return;
+      finishScreenShare(session, 'declined');
+    });
+
+    socket.on('screen-share:signal', (
+      payload: {
+        orderId?: string;
+        shareId?: string;
+        targetSocketId?: string;
+        description?: Record<string, unknown>;
+        candidate?: Record<string, unknown>;
+      },
+      acknowledge?: (result: object) => void
+    ) => {
+      const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
+      const session = orderId ? activeScreenShares.get(orderId) : undefined;
+      const targetSocketId = typeof payload?.targetSocketId === 'string' ? payload.targetSocketId : '';
+      const isOperatorSignal = session?.operatorSocketId === socket.id && session.clientSocketId === targetSocketId;
+      const isClientSignal = session?.clientSocketId === socket.id && session.operatorSocketId === targetSocketId;
+      const targetSocket = targetSocketId ? server.sockets.sockets.get(targetSocketId) : undefined;
+      if (
+        !session ||
+        session.shareId !== payload?.shareId ||
+        !targetSocket ||
+        (!isOperatorSignal && !isClientSignal) ||
+        (!payload.description && !payload.candidate)
+      ) {
+        acknowledge?.({ success: false, error: 'Invalid or expired screen-share signaling request.' });
+        return;
+      }
+      targetSocket.emit('screen-share:signal', {
+        orderId,
+        shareId: session.shareId,
+        fromSocketId: socket.id,
+        description: payload.description,
+        candidate: payload.candidate
+      });
+      acknowledge?.({ success: true });
+    });
+
+    socket.on('screen-share:end', (payload: { orderId?: string; shareId?: string }) => {
+      const orderId = typeof payload?.orderId === 'string' ? payload.orderId.trim() : '';
+      const session = orderId ? activeScreenShares.get(orderId) : undefined;
+      if (
+        !session ||
+        session.shareId !== payload?.shareId ||
+        (socket.id !== session.operatorSocketId && socket.id !== session.clientSocketId)
+      ) return;
+      finishScreenShare(session, 'ended');
     });
 
     socket.on('order:send-message', (payload: {
@@ -530,6 +693,15 @@ export function setRealtimeServer(server: Server): void {
     socket.on('disconnect', () => {
       joinedOrdersBySocket.delete(socket.id);
       unregisterOnline(socket.id);
+      for (const session of [...activeScreenShares.values()]) {
+        if (
+          session.operatorSocketId === socket.id ||
+          session.clientSocketId === socket.id ||
+          session.clientSocketIds.includes(socket.id)
+        ) {
+          finishScreenShare(session, 'disconnected');
+        }
+      }
       // Active call ka peer turant inform karo taaki wo hang na ho.
       for (const [orderId, session] of [...activeCalls]) {
         if (session.callerSocketId === socket.id || session.acceptedBy === socket.id) {
