@@ -3601,13 +3601,16 @@ export default function App() {
     setActiveWorkspaceOrder(pendingOrder);
   }, [clientActiveOrders]);
 
-  const realtimeOrderIds = activeRole === 'client'
+  const realtimeOrderIds = [
+    ...(activeRole === 'client'
     ? matchedClientOrders.map(order => order.id)
     : activeRole === 'vle'
       ? vleExclusiveOrders.map(order => order.id)
       : activeRole === 'form_filler'
         ? fillerOrders.map(order => order.id)
-        : [];
+        : []),
+    ...(activeRole !== 'none' && activeWorkspaceOrder?.id ? [activeWorkspaceOrder.id] : [])
+  ];
   const realtimeOrderIdsKey = [...new Set(realtimeOrderIds)].sort().join(',');
 
   useEffect(() => {
@@ -3800,7 +3803,8 @@ export default function App() {
         realtimeSocket.emit('screen-share:decline', { orderId: event.orderId, shareId: event.shareId });
         return;
       }
-      const order = ordersLookupRef.current.find(item => item?.id === event.orderId);
+      const order = ordersLookupRef.current.find(item => item?.id === event.orderId) ||
+        (activeWorkspaceOrderRef.current?.id === event.orderId ? activeWorkspaceOrderRef.current : null);
       if (!order) {
         realtimeSocket.emit('screen-share:decline', { orderId: event.orderId, shareId: event.shareId });
         return;
