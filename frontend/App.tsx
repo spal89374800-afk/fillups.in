@@ -14949,6 +14949,96 @@ export default function App() {
         </div>
       )}
 
+      {activeRole === 'client' && screenShare?.status === 'incoming' && (
+        <div
+          className="pointer-events-none fixed inset-x-0 top-20 z-[110] flex justify-center px-4"
+          role="dialog"
+          aria-labelledby="screen-share-request-title"
+        >
+          <div className="pointer-events-auto w-full max-w-md space-y-5 rounded-3xl border border-cyan-500/30 bg-slate-900 p-6 text-center shadow-2xl">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-500/15 text-cyan-300">
+              <MonitorUp className="h-7 w-7" />
+            </div>
+            <div className="space-y-2">
+              <h2 id="screen-share-request-title" className="text-lg font-black text-white">
+                {t('Screen sharing request', 'स्क्रीन साझा करने का अनुरोध')}
+              </h2>
+              <p className="text-sm text-slate-300">
+                {t('The Jan Seva operator', 'जन सेवा ऑपरेटर')}
+                {screenShare.operatorName ? ` ${screenShare.operatorName}` : ''}
+                {t(' wants to show you their screen to help with your application.', ' आपके आवेदन में मदद के लिए अपनी स्क्रीन दिखाना चाहते हैं।')}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-3 text-left text-xs text-amber-100">
+              <ShieldCheck className="mr-2 inline h-4 w-4 align-text-bottom text-amber-300" />
+              {t('Their screen will only appear after you choose OK. You can stop viewing at any time.', 'स्क्रीन केवल आपके OK दबाने के बाद दिखेगी। आप कभी भी देखना बंद कर सकते हैं।')}
+            </div>
+            <div className="flex flex-col-reverse gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => respondToScreenShare(false)}
+                className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-bold text-slate-200 hover:bg-slate-700"
+              >
+                {t('Not now', 'अभी नहीं')}
+              </button>
+              <button
+                type="button"
+                onClick={() => respondToScreenShare(true)}
+                className="flex-1 rounded-xl bg-cyan-600 px-4 py-3 text-sm font-black text-white hover:bg-cyan-500"
+              >
+                {t('OK, show screen', 'OK, स्क्रीन दिखाएँ')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeRole === 'client' && screenShare && screenShare.status !== 'incoming' && (
+        <div className="fixed inset-0 z-[110] flex flex-col bg-slate-950 text-white">
+          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <MonitorUp className="h-5 w-5 shrink-0 text-cyan-300" />
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-bold">
+                  {t('Screen shared by the Jan Seva operator', 'जन सेवा ऑपरेटर द्वारा साझा की गई स्क्रीन')}
+                </h2>
+                <p className="text-xs text-slate-400">
+                  {screenShare.status === 'live'
+                    ? t('Live screen', 'लाइव स्क्रीन')
+                    : t('Connecting to screen…', 'स्क्रीन से कनेक्ट हो रहा है…')}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => stopScreenShare()}
+              className="ml-3 shrink-0 rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-500"
+            >
+              {t('Stop viewing', 'देखना बंद करें')}
+            </button>
+          </div>
+          <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black">
+            <video
+              ref={screenShareVideoRef}
+              autoPlay
+              playsInline
+              muted
+              controls
+              aria-label={t('Operator shared screen', 'ऑपरेटर द्वारा साझा की गई स्क्रीन')}
+              className="h-full w-full object-contain"
+            />
+            {screenShare.status !== 'live' && (
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950/70">
+                <Loader2 className="h-8 w-8 animate-spin text-cyan-300" />
+                <p className="text-sm font-bold text-slate-200">
+                  {t('Connecting to the shared screen…', 'साझा की गई स्क्रीन से कनेक्ट हो रहा है…')}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* JAN SEVA KENDRA & OPERATOR IDENTITY MODAL (SERVICES PAR DIKHNE WALA NAAM)  */}
       {/* ========================================================================= */}

@@ -420,7 +420,7 @@ export function setRealtimeServer(server: Server): void {
       }
       const result = markOrderMessagesSeen(orderId, participantRole, upToMessageId, mode);
       acknowledge?.(result);
-      if (result.success && result.updated > 0) {
+      if (result.success && typeof result.updated === 'number' && result.updated > 0) {
         const found = findAnyOrder(orderId);
         if (found) {
           void persistOrder(found.order).catch(error => {
