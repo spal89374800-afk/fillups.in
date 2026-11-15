@@ -15261,8 +15261,11 @@ export default function App() {
                     maxLength={25}
                     value={kendraEditVleId}
                     onChange={e => setKendraEditVleId(e.target.value.slice(0, 25))}
+                    readOnly
+                    aria-readonly="true"
+                    title="CSC ID locked hai — change ke liye admin/support se sampark karein"
                     placeholder="CSC ID"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-mono focus:border-sky-500 outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-400 text-sm font-mono outline-none cursor-not-allowed"
                   />
                 </div>
 
@@ -15277,8 +15280,11 @@ export default function App() {
                     maxLength={10}
                     value={kendraEditPhone}
                     onChange={e => setKendraEditPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    readOnly
+                    aria-readonly="true"
+                    title="Mobile number locked hai — change ke liye admin/support se sampark karein"
                     placeholder="9876543210"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-mono focus:border-sky-500 outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-400 text-sm font-mono outline-none cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -15293,10 +15299,18 @@ export default function App() {
                   maxLength={80}
                   value={kendraEditEmail}
                   onChange={e => setKendraEditEmail(e.target.value.slice(0, 80))}
+                  readOnly
+                  aria-readonly="true"
+                  title="Gmail locked hai — change ke liye admin/support se sampark karein"
                   placeholder="name@gmail.com"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-sky-500 outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-400 text-sm font-bold outline-none cursor-not-allowed"
                 />
               </div>
+
+              <p className="flex items-start gap-1.5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                <span>{t('Gmail, mobile number and CSC ID are locked for account security. For a genuine change, contact admin/support.', 'Gmail, मोबाइल नंबर और CSC ID सुरक्षा के लिए लॉक हैं। असली बदलाव के लिए एडमिन/सपोर्ट से संपर्क करें।')}</span>
+              </p>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
@@ -15524,8 +15538,11 @@ export default function App() {
                     maxLength={10}
                     value={fillerEditPhone}
                     onChange={e => setFillerEditPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    readOnly
+                    aria-readonly="true"
+                    title="Mobile number locked hai — change ke liye admin/support se sampark karein"
                     placeholder="9876543210"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-mono focus:border-emerald-500 outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-400 text-sm font-mono outline-none cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -15540,10 +15557,18 @@ export default function App() {
                   maxLength={80}
                   value={fillerEditEmail}
                   onChange={e => setFillerEditEmail(e.target.value.slice(0, 80))}
+                  readOnly
+                  aria-readonly="true"
+                  title="Gmail locked hai — change ke liye admin/support se sampark karein"
                   placeholder="name@gmail.com"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm font-bold focus:border-emerald-500 outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-400 text-sm font-bold outline-none cursor-not-allowed"
                 />
               </div>
+
+              <p className="flex items-start gap-1.5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                <span>{t('Gmail and mobile number are locked for account security. For a genuine change, contact admin/support.', 'Gmail और मोबाइल नंबर सुरक्षा के लिए लॉक हैं। असली बदलाव के लिए एडमिन/सपोर्ट से संपर्क करें।')}</span>
+              </p>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">

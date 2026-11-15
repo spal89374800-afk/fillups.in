@@ -111,8 +111,23 @@ fillerRouter.post('/filler/login', (req, res) => {
 fillerRouter.post('/filler/profile', requireAccount('filler'), async (req, res) => {
   const account = getRequestAccount(req)!;
   const name = String(req.body?.name || '').trim().slice(0, 60);
-  const phone = String(req.body?.phone || '').replace(/\D/g, '').slice(-10);
-  const email = String(req.body?.email || '').trim().toLowerCase().slice(0, 80);
+  // 🔒 Login identity lock: Gmail aur mobile number register hone ke baad
+  // profile se change nahi ho sakte. Warna session milne par koi apni Gmail
+  // laga kar account hijack kar sakta hai (aage ke OTP usi email par jaate
+  // hain). Change ka rasta sirf admin/support ke paas hai.
+  const currentPhone = String(account.phone || '').replace(/\D/g, '').slice(-10);
+  const currentEmail = String(account.email || '').trim().toLowerCase();
+  const requestedPhone = String(req.body?.phone || currentPhone).replace(/\D/g, '').slice(-10);
+  const requestedEmail = String(req.body?.email || currentEmail).trim().toLowerCase().slice(0, 80);
+  if ((!!currentPhone && requestedPhone !== currentPhone) || (!!currentEmail && requestedEmail !== currentEmail)) {
+    return res.status(403).json({
+      success: false,
+      identityLocked: true,
+      error: 'Gmail aur mobile number locked hain — inhe profile se change nahi kiya ja sakta. Genuine change ke liye admin/support se sampark karein.'
+    });
+  }
+  const phone = currentPhone || requestedPhone;
+  const email = currentEmail || requestedEmail;
   const state = String(req.body?.state || '').trim().slice(0, 60);
   const district = String(req.body?.district || '').trim().slice(0, 60);
   const city = String(req.body?.city || '').trim().slice(0, 60);

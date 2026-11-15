@@ -98,9 +98,31 @@ vleRouter.post('/vle/profile', requireAccount('vle'), async (req, res) => {
   const account = getRequestAccount(req)!;
   const name = String(req.body?.name || '').trim().slice(0, 50);
   const centerName = String(req.body?.centerName || '').trim().slice(0, 60);
-  const cscId = String(req.body?.cscId || account.cscId || '').trim().slice(0, 25);
-  const phone = String(req.body?.phone || '').replace(/\D/g, '').slice(-10);
-  const email = String(req.body?.email || '').trim().toLowerCase().slice(0, 80);
+  // 🔒 Login identity lock: Gmail, mobile number aur CSC ID ek baar register
+  // hone ke baad profile se change nahi ho sakte. Warna kisi ko session milne
+  // par wo apni Gmail laga kar account hijack kar sakta hai — aage ke saare
+  // OTP (login + UPI) usi nayi email par chale jaate hain. Inhe badalne ka
+  // sirf admin/support ke paas rasta hai.
+  const currentCscId = String(account.cscId || '').trim();
+  const currentPhone = String(account.phone || '').replace(/\D/g, '').slice(-10);
+  const currentEmail = String(account.email || '').trim().toLowerCase();
+  const requestedCscId = String(req.body?.cscId || currentCscId).trim().slice(0, 25);
+  const requestedPhone = String(req.body?.phone || currentPhone).replace(/\D/g, '').slice(-10);
+  const requestedEmail = String(req.body?.email || currentEmail).trim().toLowerCase().slice(0, 80);
+  const identityChangeRequested =
+    (!!currentCscId && requestedCscId.toLowerCase() !== currentCscId.toLowerCase()) ||
+    (!!currentPhone && requestedPhone !== currentPhone) ||
+    (!!currentEmail && requestedEmail !== currentEmail);
+  if (identityChangeRequested) {
+    return res.status(403).json({
+      success: false,
+      identityLocked: true,
+      error: 'Gmail, mobile number aur CSC ID locked hain — inhe profile se change nahi kiya ja sakta. Genuine change ke liye admin/support se sampark karein.'
+    });
+  }
+  const cscId = (currentCscId || requestedCscId).slice(0, 25);
+  const phone = currentPhone || requestedPhone;
+  const email = currentEmail || requestedEmail;
   const state = String(req.body?.state || '').trim().slice(0, 60);
   const district = String(req.body?.district || '').trim().slice(0, 60);
   const city = String(req.body?.city || '').trim().slice(0, 60);
@@ -242,6 +264,24 @@ vleRouter.post('/vle/register', async (req, res) => {
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
   ) {
     return res.status(400).json({ success: false, error: 'All details are required: operator name, CSC ID, state, district, city, valid 10-digit phone number, and valid Gmail address.' });
+  }
+
+  // 🔒 Identity reuse guard: koi mojooda operator ka mobile/email apne naye
+  // CSC ID ke saath register karke us account ko overwrite na kar sake.
+  // (Profile lock ke baad ye dobara darwaza khula nahi rehna chahiye.)
+  const identityOwner = userAccountsStore.find(account =>
+    account.role === 'vle' &&
+    (
+      account.phone.replace(/\D/g, '').slice(-10) === normalizedPhone ||
+      account.email.trim().toLowerCase() === normalizedEmail
+    ) &&
+    account.cscId?.trim().toLowerCase() !== normalizedCscId
+  );
+  if (identityOwner) {
+    return res.status(409).json({
+      success: false,
+      error: 'This mobile number or Gmail is already registered with another Jan Seva Kendra account. Please log in with your registered details.'
+    });
   }
 
   // Block same CSC ID from being used by a different person
