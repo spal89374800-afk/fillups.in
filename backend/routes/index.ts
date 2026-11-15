@@ -11,6 +11,7 @@ import { authRouter } from './authRoutes.ts';
 import { paymentRouter } from './paymentRoutes.ts';
 import { locationRouter } from './locationRoutes.ts';
 import { adminSecurityRouter } from './adminSecurityRoutes.ts';
+import { accountSecurityRouter } from './accountSecurityRoutes.ts';
 import { publicRouter } from './publicRoutes.ts';
 import { globalApiLimiter, sanitizeInputs, securityHeadersMiddleware, resolveAccount } from '../middleware/securityMiddleware.ts';
 
@@ -25,6 +26,7 @@ apiRouter.use(resolveAccount);
 apiRouter.use(publicRouter);
 apiRouter.use(authRouter);
 apiRouter.use(paymentRouter);
+apiRouter.use(accountSecurityRouter);
 apiRouter.use(statsRouter);
 apiRouter.use(aiRouter);
 apiRouter.use(vleRouter);

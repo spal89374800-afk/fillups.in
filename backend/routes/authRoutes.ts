@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
-import { saveOrUpdateUserAccount, userAccountsStore } from '../services/storeService.ts';
+import { saveOrUpdateUserAccount, sanitizeAccountForClient, userAccountsStore } from '../services/storeService.ts';
 import { readEnvValue } from '../env.ts';
 import { getRequestAccount } from '../middleware/securityMiddleware.ts';
 import { resolveClientIp } from '../middleware/botShieldMiddleware.ts';
@@ -84,7 +84,7 @@ authRouter.post('/auth/login', (req, res) => {
     message: '✅ Logged in successfully. Account retained permanently in backend store (Zero Data Retention is NOT applied to logins).',
     retention: 'PERMANENT_ACCOUNT_STORAGE',
     token: user.token,
-    user
+    user: sanitizeAccountForClient(user)
   });
 });
 
@@ -125,7 +125,7 @@ authRouter.post('/auth/register', (req, res) => {
     success: true,
     message: '✅ User registered and retained in backend database.',
     token: user.token,
-    user
+    user: sanitizeAccountForClient(user)
   });
 });
 
@@ -134,7 +134,7 @@ authRouter.get('/auth/users', (req, res) => {
   res.json({
     success: true,
     usersCount: userAccountsStore.length,
-    user: account || null
+    user: account ? sanitizeAccountForClient(account) : null
   });
 });
 

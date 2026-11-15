@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { AdminPaymentLedgerEntry, AdminPaymentLedgerStatus, VleOperator, VleOrder, FillerOrder, ServiceScope, OperatorSuspensionEntry } from '../types/index.ts';
 import {
   UserAccountModel,
@@ -97,6 +97,12 @@ export interface UserAccount {
   token?: string;
   createdAt: string;
   lastLoginAt: string;
+  // 🔐 Security PIN — sirf identity (Gmail/mobile) change par lagta hai.
+  // Plain PIN kabhi store nahi hota, sirf scrypt hash.
+  pinHash?: string;
+  pinUpdatedAt?: string;
+  pinFailedAttempts?: number;
+  pinLockedUntil?: string;
   // Bid distribution limits (per operator account)
   bidDayKey?: string;
   bidsAcceptedToday?: number;
@@ -176,6 +182,10 @@ export function saveOrUpdateUserAccount(account: Partial<UserAccount> & { role: 
       city: account.city || '',
       state: account.state || '',
       pricingList: Array.isArray(account.pricingList) ? account.pricingList : [],
+      pinHash: account.pinHash,
+      pinUpdatedAt: account.pinUpdatedAt,
+      pinFailedAttempts: account.pinFailedAttempts,
+      pinLockedUntil: account.pinLockedUntil,
       token: 'tok_' + randomUUID(),
       createdAt: now,
       lastLoginAt: now
@@ -184,6 +194,92 @@ export function saveOrUpdateUserAccount(account: Partial<UserAccount> & { role: 
     persistToMongo('userAccount', newAcc).catch(() => {});
     return newAcc;
   }
+}
+
+// ========================================================
+// 🔐 SECURITY PIN (identity change only)
+// ========================================================
+// PIN sirf Gmail/mobile badalne ke waqt maanga jaata hai — login, bid accept
+// aur payment par nahi. Storage: Node built-in scrypt hash + timingSafeEqual.
+// Plain PIN kabhi memory/DB/log me store nahi hota.
+export const PIN_LOCK_ATTEMPTS = 5;
+export const PIN_LOCK_MS = 24 * 60 * 60 * 1000;
+
+export function isWeakPin(pin: unknown): boolean {
+  const value = String(pin || '');
+  if (!/^\d{6}$/.test(value)) return true;
+  const digits = value.split('').map(Number);
+  // 000000, 111111, ...
+  if (digits.every(d => d === digits[0])) return true;
+  // 123456, 654321, 012345, ...
+  const ascending = digits.every((d, i) => i === 0 || d === digits[i - 1] + 1);
+  const descending = digits.every((d, i) => i === 0 || d === digits[i - 1] - 1);
+  if (ascending || descending) return true;
+  // 121212 (2-digit repeat), 123123 (3-digit repeat)
+  if (/^(\d{2})\1{2}$/.test(value)) return true;
+  if (/^(\d{3})\1$/.test(value)) return true;
+  // 112233, 998877 type simple pairs
+  if (/^(\d)\1(\d)\2(\d)\3$/.test(value)) return true;
+  return false;
+}
+
+export function hashPin(pin: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(pin, salt, 64).toString('hex');
+  return `scrypt:${salt}:${hash}`;
+}
+
+export function verifyPinHash(pin: unknown, storedHash?: string): boolean {
+  const value = String(pin || '');
+  if (!/^\d{6}$/.test(value) || !storedHash) return false;
+  const [scheme, salt, hash] = storedHash.split(':');
+  if (scheme !== 'scrypt' || !salt || !hash) return false;
+  try {
+    const expected = Buffer.from(hash, 'hex');
+    const actual = scryptSync(value, salt, expected.length);
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  } catch {
+    return false;
+  }
+}
+
+export function pinLockRemainingMs(account: UserAccount): number {
+  if (!account.pinLockedUntil) return 0;
+  const until = new Date(account.pinLockedUntil).getTime();
+  if (!Number.isFinite(until)) return 0;
+  return Math.max(0, until - Date.now());
+}
+
+/** Galat PIN par counter badhao; 5th failure par 24h lock. */
+export function registerPinFailure(account: UserAccount): { locked: boolean; attemptsRemaining: number } {
+  const now = Date.now();
+  if (pinLockRemainingMs(account) > 0) {
+    return { locked: true, attemptsRemaining: 0 };
+  }
+  const attempts = (account.pinFailedAttempts || 0) + 1;
+  if (attempts >= PIN_LOCK_ATTEMPTS) {
+    account.pinFailedAttempts = 0;
+    account.pinLockedUntil = new Date(now + PIN_LOCK_MS).toISOString();
+    void persistToMongo('userAccount', account).catch(() => {});
+    return { locked: true, attemptsRemaining: 0 };
+  }
+  account.pinFailedAttempts = attempts;
+  void persistToMongo('userAccount', account).catch(() => {});
+  return { locked: false, attemptsRemaining: PIN_LOCK_ATTEMPTS - attempts };
+}
+
+/** Sahi PIN par counter + lock clear. */
+export function clearPinFailures(account: UserAccount): void {
+  if (!account.pinFailedAttempts && !account.pinLockedUntil) return;
+  account.pinFailedAttempts = 0;
+  delete account.pinLockedUntil;
+  void persistToMongo('userAccount', account).catch(() => {});
+}
+
+/** Client ko bhejne se pehle PIN hash hamesha hata do. */
+export function sanitizeAccountForClient<T extends { pinHash?: string }>(account: T): Omit<T, 'pinHash'> {
+  const { pinHash: _pinHash, ...safe } = account;
+  return safe;
 }
 
 export function getAccountByToken(token: unknown): UserAccount | undefined {
@@ -1086,6 +1182,82 @@ export function findOperatorRecordForAccount(account?: UserAccount): VleOperator
     (account.phone && normalizePhone(operator.phone) === normalizePhone(account.phone)) ||
     (account.email && normalizeEmail(operator.email) === normalizeEmail(account.email))
   );
+}
+
+// ========================================================
+// 🔁 IDENTITY CHANGE (PIN verified) — account + operator + payout
+// ========================================================
+// Jab Gmail/mobile badalta hai to sirf userAccount nahi badalna hota:
+//  - public operator record (vleListStore) bhi same identity dikhaye
+//  - payout profile `role:phone` key par saved hoti hai, isliye usse migrate
+//    karna zaroori hai warna operator ki saved UPI "gayab" ho jaati hai.
+async function migratePayoutProfilePhone(role: 'vle' | 'filler', oldPhone: string, newPhone: string): Promise<void> {
+  const from = normalizePhone(oldPhone);
+  const to = normalizePhone(newPhone);
+  if (!from || !to || from === to) return;
+  const oldKey = `${role}:${from}`;
+  const newKey = `${role}:${to}`;
+  const existing = payoutProfilesStore.get(oldKey);
+  if (!existing) return;
+  const migrated: PayoutProfile = {
+    ...existing,
+    id: newKey,
+    key: newKey,
+    phone: to
+  };
+  payoutProfilesStore.delete(oldKey);
+  payoutProfilesStore.set(newKey, migrated);
+  try {
+    await persistToMongo('payoutProfile', migrated);
+    if (isMongoConnected()) {
+      await PayoutProfileModel.deleteOne({ id: oldKey });
+    }
+  } catch (error) {
+    console.error('[Identity] Payout profile migration failed:', error);
+  }
+}
+
+/**
+ * Gmail/mobile identity change apply karta hai.
+ * Caller ko PIN (aur nayi Gmail ke liye OTP) pehle verify karna chahiye.
+ */
+export async function applyAccountIdentityChange(
+  account: UserAccount,
+  change: { newEmail?: string; newPhone?: string }
+): Promise<{ emailChanged: boolean; phoneChanged: boolean; oldEmail: string; oldPhone: string; newEmail: string; newPhone: string }> {
+  const oldEmail = normalizeEmail(account.email);
+  const oldPhone = normalizePhone(account.phone);
+  const nextEmail = change.newEmail ? normalizeEmail(change.newEmail) : oldEmail;
+  const nextPhone = change.newPhone ? normalizePhone(change.newPhone) : oldPhone;
+  const emailChanged = !!nextEmail && nextEmail !== oldEmail;
+  const phoneChanged = !!nextPhone && nextPhone !== oldPhone;
+
+  if (!emailChanged && !phoneChanged) {
+    return { emailChanged, phoneChanged, oldEmail, oldPhone, newEmail: oldEmail, newPhone: oldPhone };
+  }
+
+  // Public operator record ko change se PEHLE dhoondo (phone badalne par
+  // matching fail ho jaati hai).
+  const operator = findOperatorRecordForAccount(account);
+
+  if (emailChanged) account.email = nextEmail;
+  if (phoneChanged) account.phone = nextPhone;
+
+  if (operator) {
+    if (emailChanged) operator.email = nextEmail;
+    if (phoneChanged) operator.phone = nextPhone;
+    try {
+      await persistToMongo('vleOperator', operator);
+    } catch {}
+  }
+
+  await persistToMongo('userAccount', account);
+
+  if (phoneChanged && (account.role === 'vle' || account.role === 'filler')) {
+    await migratePayoutProfilePhone(account.role, oldPhone, nextPhone);
+  }
+
+  return { emailChanged, phoneChanged, oldEmail, oldPhone, newEmail: nextEmail, newPhone: nextPhone };
 }
 
 // =========================================================================

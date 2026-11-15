@@ -15,7 +15,10 @@ import {
   persistOrder,
   persistToMongo,
   hasLocalVle,
-  findPayoutProfileForAccount
+  findPayoutProfileForAccount,
+  isWeakPin,
+  hashPin,
+  sanitizeAccountForClient
 } from '../services/storeService.ts';
 import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } from '../services/orderDispatchService.ts';
 import { emitOrderUpdate } from '../services/realtimeService.ts';
@@ -38,6 +41,7 @@ function dedupeFillerOrders() {
 
 fillerRouter.post('/filler/register', (req, res) => {
   const { name, phone, email, district, city, state, verificationToken } = req.body;
+  const pin = String(req.body?.pin || '').trim();
   const normalizedPhone = String(phone || '').replace(/\D/g, '').slice(-10);
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const normalizedName = String(name || '').trim();
@@ -53,6 +57,14 @@ fillerRouter.post('/filler/register', (req, res) => {
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
   ) {
     return res.status(400).json({ success: false, error: 'All details are required: name, state, district, city, valid 10-digit phone number, and valid Gmail address.' });
+  }
+  // 🔐 6-digit security PIN (identity change ke liye). Weak PIN reject.
+  if (isWeakPin(pin)) {
+    return res.status(400).json({
+      success: false,
+      weakPin: true,
+      error: '6 digit ka strong security PIN chunein — 123456, 111111 jaisa aasan PIN allowed nahi hai.'
+    });
   }
   const existingAccount = userAccountsStore.find(account =>
     account.role === 'filler' &&
@@ -72,9 +84,12 @@ fillerRouter.post('/filler/register', (req, res) => {
     district: district || '',
     city: city || '',
     state: normalizedState,
-    role: 'filler'
+    role: 'filler',
+    pinHash: hashPin(pin),
+    pinUpdatedAt: new Date().toISOString(),
+    pinFailedAttempts: 0
   });
-  res.status(201).json({ success: true, token: user.token, message: 'Form Filler account registered. You can now log in with these verified details.', user });
+  res.status(201).json({ success: true, token: user.token, message: 'Form Filler account registered. You can now log in with these verified details.', user: sanitizeAccountForClient(user) });
 });
 
 // Form Expert Login (Permanent Account Retention per user instruction)
@@ -98,7 +113,7 @@ fillerRouter.post('/filler/login', (req, res) => {
     success: true,
     message: '✅ Form Expert Operator Logged in successfully (Permanent Account Retention Active).',
     token: registeredAccount.token,
-    user: registeredAccount
+    user: sanitizeAccountForClient(registeredAccount)
   });
 });
 
@@ -178,7 +193,7 @@ fillerRouter.post('/filler/profile', requireAccount('filler'), async (req, res) 
   return res.json({
     success: true,
     message: '✅ Form Expert profile & location saved successfully.',
-    user: account
+    user: sanitizeAccountForClient(account)
   });
 });
 

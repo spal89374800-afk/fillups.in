@@ -29,7 +29,10 @@ import {
   isOperatorSuspended,
   isAccountSuspended,
   suspensionReasonFor,
-  findPayoutProfileForAccount
+  findPayoutProfileForAccount,
+  isWeakPin,
+  hashPin,
+  sanitizeAccountForClient
 } from '../services/storeService.ts';
 import { VleOperator, VleOrder, ServiceScope } from '../types/index.ts';
 import { consumeOtpVerification } from './authRoutes.ts';
@@ -81,7 +84,7 @@ vleRouter.post('/vle/login', (req, res) => {
     success: true,
     message: '✅ Jan Seva Kendra Operator Logged in successfully (Permanent Account Retention Active).',
     token: registeredAccount.token,
-    user: registeredAccount,
+    user: sanitizeAccountForClient(registeredAccount),
     // Saved Kendra profile (center name, photo, location) so a fresh device
     // shows the operator's real details instead of blank fields.
     operator: findVleOperatorForAccount(registeredAccount) || null
@@ -199,7 +202,7 @@ vleRouter.post('/vle/profile', requireAccount('vle'), async (req, res) => {
   return res.json({
     success: true,
     message: '✅ Operator profile & location saved successfully.',
-    user: account,
+    user: sanitizeAccountForClient(account),
     operator: existingOperator || updatedOperator
   });
 });
@@ -245,6 +248,7 @@ vleRouter.post('/vle/pricing', requireAccount('vle'), (req, res) => {
 
 vleRouter.post('/vle/register', async (req, res) => {
   const { name, cscId, district, city, state, phone, email, pricingList, formFillingList } = req.body;
+  const pin = String(req.body?.pin || '').trim();
   const centerName = String(req.body?.centerName || '').trim().slice(0, 60);
   const photoUrl = typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
   const normalizedCscId = String(cscId || '').trim().toLowerCase();
@@ -264,6 +268,14 @@ vleRouter.post('/vle/register', async (req, res) => {
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
   ) {
     return res.status(400).json({ success: false, error: 'All details are required: operator name, CSC ID, state, district, city, valid 10-digit phone number, and valid Gmail address.' });
+  }
+  // 🔐 6-digit security PIN (identity change ke liye). Weak PIN reject.
+  if (isWeakPin(pin)) {
+    return res.status(400).json({
+      success: false,
+      weakPin: true,
+      error: '6 digit ka strong security PIN chunein — 123456, 111111 jaisa aasan PIN allowed nahi hai.'
+    });
   }
 
   // 🔒 Identity reuse guard: koi mojooda operator ka mobile/email apne naye
@@ -326,7 +338,10 @@ vleRouter.post('/vle/register', async (req, res) => {
     city: city || '',
     state: normalizedState,
     role: 'vle',
-    pricingList: ownPricing
+    pricingList: ownPricing,
+    pinHash: hashPin(pin),
+    pinUpdatedAt: new Date().toISOString(),
+    pinFailedAttempts: 0
   });
 
   const existingIndex = vleListStore.findIndex(v => v.cscId === cscId || (v.name === name && v.district === district));
@@ -364,7 +379,7 @@ vleRouter.post('/vle/register', async (req, res) => {
   res.json({
     success: true,
     token: account.token,
-    user: account,
+    user: sanitizeAccountForClient(account),
     operator: updatedVle,
     vle: updatedVle,
     pricingList: ownPricing

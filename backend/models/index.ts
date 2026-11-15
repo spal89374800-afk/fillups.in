@@ -13,6 +13,11 @@ const UserAccountSchema = new Schema({
   cscId: String,
   pricingList: Array,
   token: { type: String, index: true },
+  // 🔐 Security PIN (identity change only). Hash kabhi client ko nahi jaata.
+  pinHash: String,
+  pinUpdatedAt: Date,
+  pinFailedAttempts: Number,
+  pinLockedUntil: Date,
   createdAt: { type: Date, default: Date.now },
   lastLoginAt: { type: Date, default: Date.now }
 }, { timestamps: true, strict: false });

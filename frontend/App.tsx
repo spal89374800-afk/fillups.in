@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
 import { OrderStatusFilter, OrderStatusFilterValue } from './components/OrderStatusFilter';
 import { PayoutSettingsPanel } from './components/PayoutSettingsPanel';
+import { AccountIdentityChangePanel } from './components/AccountIdentityChangePanel';
 import { LocationAutocomplete } from './components/LocationAutocomplete';
 import { StateSelect } from './components/StateSelect';
 import { AdminSecurityPanel, isAdminConsoleAvailableLocally } from './components/AdminSecurityPanel';
@@ -1456,6 +1457,8 @@ export default function App() {
   const [vleOtpSent, setVleOtpSent] = useState(false);
   const [vleMobileOtpCode, setVleMobileOtpCode] = useState('');
   const [vleRegistrationOtpCode, setVleRegistrationOtpCode] = useState('');
+  const [vlePin, setVlePin] = useState('');
+  const [vlePinConfirm, setVlePinConfirm] = useState('');
   const [vleOtpDeliveryMessage, setVleOtpDeliveryMessage] = useState('');
   const [vleAuthError, setVleAuthError] = useState('');
   const [isVleAuthBusy, setIsVleAuthBusy] = useState(false);
@@ -1502,6 +1505,8 @@ export default function App() {
       return '';
     }
   });
+  const [fillerPin, setFillerPin] = useState('');
+  const [fillerPinConfirm, setFillerPinConfirm] = useState('');
   const [fillerPhotoUrl, setFillerPhotoUrl] = useState(() => {
     try {
       return localStorage.getItem('filler_photo_url') || '';
@@ -6386,10 +6391,16 @@ export default function App() {
       { label: 'State / UT', ok: isNonEmpty(vleState) },
       { label: 'District', ok: isNonEmpty(vleDistrict) },
       { label: 'City / Tehsil', ok: isNonEmpty(vleCity) },
-      { label: '10-Digit Mobile Number', ok: isValidMobile(vlePhone) }
+      { label: '10-Digit Mobile Number', ok: isValidMobile(vlePhone) },
+      { label: '6-Digit Security PIN', ok: /^\d{6}$/.test(vlePin) },
+      { label: 'Confirm Security PIN', ok: vlePin !== '' && vlePin === vlePinConfirm }
     ]);
     if (missing.length > 0) {
       setVleAuthError(requiredFieldsMessage(missing));
+      return;
+    }
+    if (vlePin !== vlePinConfirm) {
+      setVleAuthError('Security PIN aur confirm PIN same hone chahiye.');
       return;
     }
     setVerifyingGovt(true);
@@ -6405,6 +6416,7 @@ export default function App() {
           cscId: vleId,
           phone: vlePhone,
           email,
+          pin: vlePin,
           state: vleState,
           district: vleDistrict,
           city: vleCity,
@@ -6416,6 +6428,8 @@ export default function App() {
         throw new Error(registerData.error || 'Could not register this operator with Google.');
       }
       applyVleLoginResult(registerData, true);
+      setVlePin('');
+      setVlePinConfirm('');
     } catch (error) {
       setVleAuthError(error instanceof Error ? error.message : 'Google registration failed. Please try again.');
     } finally {
@@ -6433,11 +6447,17 @@ export default function App() {
       ...(isFillerRegistering ? [
         { label: 'State / UT', ok: isNonEmpty(fillerState) },
         { label: 'District', ok: isNonEmpty(fillerDistrict) },
-        { label: 'City / Tehsil', ok: isNonEmpty(fillerCity) }
+        { label: 'City / Tehsil', ok: isNonEmpty(fillerCity) },
+        { label: '6-Digit Security PIN', ok: /^\d{6}$/.test(fillerPin) },
+        { label: 'Confirm Security PIN', ok: fillerPin !== '' && fillerPin === fillerPinConfirm }
       ] : [])
     ]);
     if (missing.length > 0) {
       setFillerAuthError(requiredFieldsMessage(missing));
+      return;
+    }
+    if (isFillerRegistering && fillerPin !== fillerPinConfirm) {
+      setFillerAuthError('Security PIN aur confirm PIN same hone chahiye.');
       return;
     }
     setIsFillerAuthBusy(true);
@@ -6455,6 +6475,7 @@ export default function App() {
           state: fillerState,
           district: fillerDistrict,
           city: fillerCity,
+          ...(isFillerRegistering ? { pin: fillerPin } : {}),
           verificationToken
         })
       });
@@ -6464,6 +6485,10 @@ export default function App() {
       }
       if (isFillerRegistering) setFillerAuthNotice('');
       applyFillerLoginResult(loginData);
+      if (isFillerRegistering) {
+        setFillerPin('');
+        setFillerPinConfirm('');
+      }
     } catch (error) {
       setFillerAuthError(error instanceof Error ? error.message : 'Google login failed. Please try again.');
     } finally {
@@ -11193,9 +11218,15 @@ export default function App() {
                   { label: 'City / Tehsil', ok: isNonEmpty(vleCity) },
                   { label: '10-Digit Mobile Number', ok: isValidMobile(vlePhone) },
                   { label: 'Gmail ID', ok: isValidEmail(vleEmail) },
+                  { label: '6-Digit Security PIN', ok: /^\d{6}$/.test(vlePin) },
+                  { label: 'Confirm Security PIN', ok: vlePin !== '' && vlePin === vlePinConfirm },
                 ]);
                 if (missingVleRegisterFields.length > 0) {
                   setVleAuthError(requiredFieldsMessage(missingVleRegisterFields));
+                  return;
+                }
+                if (/^(\d)\1{5}$/.test(vlePin) || /^(\d{2})\1{2}$/.test(vlePin) || /^012345$|^123456$|^234567$|^345678$|^456789$|^987654$|^876543$|^765432$|^654321$|^543210$/.test(vlePin)) {
+                  setVleAuthError('Ye security PIN bahut aasan hai — 123456 ya 111111 jaisa PIN na chunein.');
                   return;
                 }
                 setVerifyingGovt(true);
@@ -11331,6 +11362,42 @@ export default function App() {
                   </div>
                 </div>
 
+                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-3 space-y-3">
+                  <p className="flex items-center gap-1.5 text-xs font-bold text-amber-200">
+                    <Lock className="w-3.5 h-3.5" />
+                    Security PIN (Gmail / mobile change ke liye)
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1">6-Digit PIN</label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        required
+                        maxLength={6}
+                        value={vlePin}
+                        onChange={(e) => setVlePin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="••••••"
+                        className="w-full px-3 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm text-center tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1">Confirm PIN</label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        required
+                        maxLength={6}
+                        value={vlePinConfirm}
+                        onChange={(e) => setVlePinConfirm(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="••••••"
+                        className="w-full px-3 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm text-center tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-slate-400">123456, 111111 jaisa aasan PIN allowed nahi. 5 galat attempt par 24 ghante lock.</p>
+                </div>
+
                 {vleAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{vleAuthError}</p>}
                 <button
                   type="submit"
@@ -11368,6 +11435,10 @@ export default function App() {
                   setVleAuthError(requiredFieldsMessage(missingVleRegisterVerifyFields));
                   return;
                 }
+                if (!/^\d{6}$/.test(vlePin) || vlePin !== vlePinConfirm) {
+                  setVleAuthError('6-digit security PIN aur confirm PIN dobara check karein (dono same hone chahiye).');
+                  return;
+                }
                 if (vleRegisterVerifyLockRef.current) return;
                 vleRegisterVerifyLockRef.current = true;
                 setVerifyingGovt(true);
@@ -11394,6 +11465,7 @@ export default function App() {
                       city: vleCity,
                       phone: vlePhone,
                       email: vleEmail,
+                      pin: vlePin,
                       pricingList: customPricingList,
                       verificationToken: verifyData.verificationToken
                     })
@@ -11452,6 +11524,8 @@ export default function App() {
                   setLegalAccepted(false);
                   try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
                   setShowLegalModal(true);
+                  setVlePin('');
+                  setVlePinConfirm('');
                 } catch (error) {
                   setVleAuthError(error instanceof Error ? error.message : 'Registration verification failed.');
                 } finally {
@@ -12378,6 +12452,16 @@ export default function App() {
                     setFillerAuthError(requiredFieldsMessage(missingFillerFields));
                     return;
                   }
+                  if (isFillerRegistering) {
+                    if (!/^\d{6}$/.test(fillerPin) || fillerPin !== fillerPinConfirm) {
+                      setFillerAuthError('6-digit security PIN aur confirm PIN same hone chahiye.');
+                      return;
+                    }
+                    if (/^(\d)\1{5}$/.test(fillerPin) || /^(\d{2})\1{2}$/.test(fillerPin) || /^012345$|^123456$|^234567$|^345678$|^456789$|^987654$|^876543$|^765432$|^654321$|^543210$/.test(fillerPin)) {
+                      setFillerAuthError('Ye security PIN bahut aasan hai — 123456 ya 111111 jaisa PIN na chunein.');
+                      return;
+                    }
+                  }
                   setIsFillerAuthBusy(true);
                   try {
                     const captchaToken = await getCaptchaToken();
@@ -12522,6 +12606,48 @@ export default function App() {
                     </div>
                   )}
 
+                  {isFillerRegistering && (
+                    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-3 space-y-3">
+                      <p className="flex items-center gap-1.5 text-xs font-bold text-amber-200">
+                        <Lock className="w-3.5 h-3.5" />
+                        Security PIN (Gmail / mobile change ke liye)
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-slate-300">6-Digit PIN</label>
+                          <div className="h-12 relative rounded-xl bg-slate-950 border border-slate-800 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 flex items-center transition-all">
+                            <input
+                              type="password"
+                              inputMode="numeric"
+                              required
+                              maxLength={6}
+                              value={fillerPin}
+                              onChange={(e) => setFillerPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                              placeholder="••••••"
+                              className="w-full h-full px-3.5 sm:px-4 bg-transparent text-white text-sm text-center tracking-[0.4em] focus:outline-none placeholder:text-zinc-500 font-mono min-w-0"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-slate-300">Confirm PIN</label>
+                          <div className="h-12 relative rounded-xl bg-slate-950 border border-slate-800 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 flex items-center transition-all">
+                            <input
+                              type="password"
+                              inputMode="numeric"
+                              required
+                              maxLength={6}
+                              value={fillerPinConfirm}
+                              onChange={(e) => setFillerPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                              placeholder="••••••"
+                              className="w-full h-full px-3.5 sm:px-4 bg-transparent text-white text-sm text-center tracking-[0.4em] focus:outline-none placeholder:text-zinc-500 font-mono min-w-0"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-slate-400">123456, 111111 jaisa aasan PIN allowed nahi. 5 galat attempt par 24 ghante lock.</p>
+                    </div>
+                  )}
+
                   <p className="text-[11px] text-slate-500">{fillerOtpDeliveryMessage || 'A verification code will be sent to your Gmail.'}</p>
                   {fillerAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{fillerAuthError}</p>}
                   <button
@@ -12561,6 +12687,10 @@ export default function App() {
                     setFillerAuthError(requiredFieldsMessage(missingFillerVerifyFields));
                     return;
                   }
+                  if (isFillerRegistering && (!/^\d{6}$/.test(fillerPin) || fillerPin !== fillerPinConfirm)) {
+                    setFillerAuthError('6-digit security PIN aur confirm PIN dobara check karein.');
+                    return;
+                  }
                   if (fillerVerifyLockRef.current) return;
                   fillerVerifyLockRef.current = true;
                   setIsFillerAuthBusy(true);
@@ -12587,6 +12717,7 @@ export default function App() {
                         state: fillerState,
                         district: fillerDistrict,
                         city: fillerCity,
+                        ...(isFillerRegistering ? { pin: fillerPin } : {}),
                         verificationToken: verifyData.verificationToken
                       })
                     });
@@ -12639,6 +12770,10 @@ export default function App() {
                     setShowLegalModal(true);
                     setFillerOtpSent(false);
                     setFillerMobileOtpCode('');
+                    if (isFillerRegistering) {
+                      setFillerPin('');
+                      setFillerPinConfirm('');
+                    }
                   } catch (error) {
                     setFillerAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
                   } finally {
@@ -15309,8 +15444,29 @@ export default function App() {
 
               <p className="flex items-start gap-1.5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
                 <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
-                <span>{t('Gmail, mobile number and CSC ID are locked for account security. For a genuine change, contact admin/support.', 'Gmail, मोबाइल नंबर और CSC ID सुरक्षा के लिए लॉक हैं। असली बदलाव के लिए एडमिन/सपोर्ट से संपर्क करें।')}</span>
+                <span>{t('Gmail, mobile number and CSC ID are locked. Gmail/mobile can be changed below with your security PIN (new Gmail OTP required). CSC ID is admin-only.', 'Gmail, मोबाइल नंबर और CSC ID लॉक हैं। Gmail/मोबाइल नीचे सुरक्षा PIN से बदल सकते हैं (नए Gmail का OTP ज़रूरी)। CSC ID सिर्फ एडमिन बदल सकता है।')}</span>
               </p>
+
+              <AccountIdentityChangePanel
+                role="vle"
+                phone={vlePhone}
+                email={vleEmail}
+                language={lang}
+                onChanged={(nextPhone, nextEmail) => {
+                  setVlePhone(nextPhone);
+                  setVleEmail(nextEmail);
+                  setKendraEditPhone(nextPhone);
+                  setKendraEditEmail(nextEmail);
+                  try {
+                    localStorage.setItem('vle_phone', nextPhone);
+                    localStorage.setItem('vle_email', nextEmail);
+                    const session = readStoredSession();
+                    if (session && session.role === 'vle') {
+                      writeStoredSession({ ...session, phone: nextPhone, email: nextEmail });
+                    }
+                  } catch {}
+                }}
+              />
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
@@ -15567,8 +15723,29 @@ export default function App() {
 
               <p className="flex items-start gap-1.5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
                 <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
-                <span>{t('Gmail and mobile number are locked for account security. For a genuine change, contact admin/support.', 'Gmail और मोबाइल नंबर सुरक्षा के लिए लॉक हैं। असली बदलाव के लिए एडमिन/सपोर्ट से संपर्क करें।')}</span>
+                <span>{t('Gmail and mobile number are locked. You can change them below with your security PIN (new Gmail OTP required).', 'Gmail और मोबाइल नंबर लॉक हैं। नीचे सुरक्षा PIN से बदल सकते हैं (नए Gmail का OTP ज़रूरी)।')}</span>
               </p>
+
+              <AccountIdentityChangePanel
+                role="filler"
+                phone={fillerPhone}
+                email={fillerEmail}
+                language={lang}
+                onChanged={(nextPhone, nextEmail) => {
+                  setFillerPhone(nextPhone);
+                  setFillerEmail(nextEmail);
+                  setFillerEditPhone(nextPhone);
+                  setFillerEditEmail(nextEmail);
+                  try {
+                    localStorage.setItem('filler_phone', nextPhone);
+                    localStorage.setItem('filler_email', nextEmail);
+                    const session = readStoredSession();
+                    if (session && session.role === 'form_filler') {
+                      writeStoredSession({ ...session, phone: nextPhone, email: nextEmail });
+                    }
+                  } catch {}
+                }}
+              />
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
