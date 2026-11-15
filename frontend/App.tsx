@@ -14600,15 +14600,17 @@ export default function App() {
                           <CheckCircle className="h-3.5 w-3.5" />
                           <span>{activeWorkspaceOrder.completedFormPdfName || 'Completed_Form.pdf'} uploaded</span>
                         </p>
-                        <a
-                          href={`/api/orders/${activeWorkspaceOrder.id}/completed-form?authToken=${encodeURIComponent(readStoredSession()?.token || '')}`}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadAttachment({
+                            name: activeWorkspaceOrder.completedFormPdfName || 'Completed_Form.pdf',
+                            url: `/api/orders/${activeWorkspaceOrder.id}/completed-form`
+                          })}
                           className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-2 text-[11px] font-bold text-white hover:bg-emerald-500"
                         >
                           <Download className="h-3.5 w-3.5" />
                           <span>Download Final PDF</span>
-                        </a>
+                        </button>
                       </div>
                       {activeRole !== 'client' && (
                         <label className={`flex w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed px-3 py-3 text-[12px] font-black transition-colors ${
