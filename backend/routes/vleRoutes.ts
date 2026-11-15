@@ -26,6 +26,7 @@ import {
   orderBelongsToClient,
   getDocumentScope,
   serviceVisibleForAccount,
+  BID_LIMITS,
   getBidLimitStatus,
   recordBidAccepted,
   persistOrder,
@@ -694,18 +695,20 @@ vleRouter.post('/vle/orders/:id/accept', requireAccount('vle'), async (req, res)
       error: `🚫 BIDS SUSPENDED: ${suspensionReasonFor(operator.bidsSuspended ? operator : account)}`
     });
   }
-  if (!isOrderVisibleToAccount(order, account)) {
-    return res.status(403).json({ success: false, error: 'This request is not available in your district, city, or scope.' });
-  }
   const limit = getBidLimitStatus(account);
   if (!limit.allowed) {
     return res.status(403).json({
       success: false,
       limitReached: true,
-      error: limit.reason,
+      error: limit.activeCount >= BID_LIMITS.maxActive
+        ? 'You already have an active order. Complete it before accepting a new one.'
+        : limit.reason,
       activeCount: limit.activeCount,
       dailyCount: limit.dailyCount
     });
+  }
+  if (!isOrderVisibleToAccount(order, account)) {
+    return res.status(403).json({ success: false, error: 'This request is not available in your district, city, or scope.' });
   }
 
   // 🔒 Payout UPI ke bina bid accept nahi ho sakti — warna client ko payment
