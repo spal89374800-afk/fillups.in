@@ -10,8 +10,8 @@ import { LocationAutocomplete } from './components/LocationAutocomplete';
 import { StateSelect } from './components/StateSelect';
 import { AdminSecurityPanel, isAdminConsoleAvailableLocally } from './components/AdminSecurityPanel';
 import { GoogleSignInButton } from './components/GoogleSignInButton';
-import { GovtFeeCategoryFields, CategoryConfirmModal, GOVT_FEE_CATEGORIES, resolveCategoryGovtFee, normalizeGovtFeeByCategory, categoryLabel } from './components/GovtFeeCategory';
-import type { GovtFeeByCategory, GovtFeeCategoryKey, CategoryConfirmConfig } from './components/GovtFeeCategory';
+import { GovtFeeCategoryFields, GOVT_FEE_CATEGORIES, normalizeGovtFeeByCategory, categoryLabel } from './components/GovtFeeCategory';
+import type { GovtFeeByCategory, GovtFeeCategoryKey } from './components/GovtFeeCategory';
 import TermsCitizen from './components/legal/TermsCitizen';
 import TermsJanSeva from './components/legal/TermsJanSeva';
 import TermsFormFiller from './components/legal/TermsFormFiller';
@@ -1393,8 +1393,7 @@ export default function App() {
   const [examApplicantName, setExamApplicantName] = useState('');
   const [examApplicantPhone, setExamApplicantPhone] = useState('');
   const [examApplicantEmail, setExamApplicantEmail] = useState('');
-  // Reservation category (Gen/OBC/SC/ST/EWS/Female/PwD) — decides the govt fee
-  // and is shared with the operator so they know which category to file.
+  // Reservation category entered on the citizen form and shared with the operator.
   const [examApplicantCategory, setExamApplicantCategory] = useState<GovtFeeCategoryKey>(() => {
     try {
       const saved = String(localStorage.getItem('client_category') || '').trim().toLowerCase();
@@ -1403,11 +1402,6 @@ export default function App() {
       return 'general';
     }
   });
-  // Shared confirm popup used before any citizen request is dispatched.
-  const [categoryConfirm, setCategoryConfirm] = useState<CategoryConfirmConfig | null>(null);
-  const [categoryConfirmValue, setCategoryConfirmValue] = useState<GovtFeeCategoryKey>('general');
-  const [isCategoryConfirmBusy, setIsCategoryConfirmBusy] = useState(false);
-  const categoryConfirmHandlerRef = useRef<((category: GovtFeeCategoryKey, govtFee: number) => Promise<void> | void) | null>(null);
 
   // Option 4: Jan Seva Kendra Documents (PAN Card, Certificates, CSC Govt Docs)
   const [selectedJanSevaDoc, setSelectedJanSevaDoc] = useState('');
@@ -5593,18 +5587,6 @@ export default function App() {
     setTimeout(() => window.location.reload(), 900);
   };
 
-  // Document pricing items ka `price` total hota hai (govt + service), jabki
-  // order ke payment split me sirf service fee alag jaani chahiye.
-  const resolveCatalogFees = (service?: { price?: string | number; govtFee?: string | number; cscFee?: string | number; govtFeeByCategory?: GovtFeeByCategory } | null) => {
-    const govtFee = resolveCategoryGovtFee(service?.govtFeeByCategory, service?.govtFee, 'general');
-    const totalPrice = Math.max(0, Number(service?.price) || 0);
-    const explicitServiceFee = Number(service?.cscFee);
-    const serviceFee = Number.isFinite(explicitServiceFee) && explicitServiceFee > 0
-      ? explicitServiceFee
-      : Math.max(0, totalPrice - govtFee);
-    return { govtFee, serviceFee };
-  };
-
   const [isSubmittingExamForm, setIsSubmittingExamForm] = useState(false);
 
   // Live backend restarts (Render free tier sleeps/restarts) can invalidate an
@@ -5618,42 +5600,6 @@ export default function App() {
     setClientAuthError('⚠️ Aapka session expire ho gaya hai (server restart ke baad). Dobara Gmail OTP se login karein — login ke baad form request turant chali jayegi.');
     setClientOrderSuccessMsg('⚠️ Session expire ho gaya. Dobara login karke request bhejein — aapki details safe hain aur form bhara hua milega.');
     setStep('client_login');
-  };
-
-  // Persist the chosen reservation category so the next request pre-selects it.
-  const rememberClientCategory = (category: GovtFeeCategoryKey) => {
-    setExamApplicantCategory(category);
-    try { localStorage.setItem('client_category', category); } catch {}
-  };
-
-  // Every citizen request passes through this confirm popup so the operator
-  // always receives the applicant category, and the govt fee is calculated
-  // from the selected category (Gen/OBC/SC/ST/EWS/Female/PwD).
-  const openCategoryConfirm = (
-    config: CategoryConfirmConfig,
-    handler: (category: GovtFeeCategoryKey, govtFee: number) => Promise<void> | void
-  ) => {
-    categoryConfirmHandlerRef.current = handler;
-    setCategoryConfirmValue(examApplicantCategory || 'general');
-    setCategoryConfirm(config);
-  };
-
-  const handleCategoryConfirm = async () => {
-    if (!categoryConfirm || isCategoryConfirmBusy) return;
-    const handler = categoryConfirmHandlerRef.current;
-    if (!handler) return;
-    const category = categoryConfirmValue;
-    const govtFee = resolveCategoryGovtFee(categoryConfirm.govtFeeByCategory, categoryConfirm.fallbackGovtFee, category);
-    rememberClientCategory(category);
-    setIsCategoryConfirmBusy(true);
-    try {
-      await handler(category, govtFee);
-    } catch (error) {
-      console.warn('Category confirm dispatch error:', error);
-    } finally {
-      setCategoryConfirm(null);
-      setIsCategoryConfirmBusy(false);
-    }
   };
 
   // Submit Online Exam & Admission Form Filling (Option 3: NEET, JEE, Sarkari Exams)
@@ -5684,77 +5630,58 @@ export default function App() {
       return;
     }
 
-    const matchedService = allPublishedForms.find(s => s.docName === examFormTitle);
-    const feeAmount = Number(matchedService?.price) || 150;
-    const fallbackGovtFee = Number(matchedService?.govtFee) || 0;
+    setIsSubmittingExamForm(true);
+    try {
+      const fullDetails = [
+        `Applicant Name: ${applicantName}`,
+        `Mobile: ${applicantPhone}`,
+        `Email: ${applicantEmail}`,
+        `Reservation Category: ${categoryLabel(examApplicantCategory)}`,
+        `Exam/Form: ${examFormTitle}`,
+        `Category/Stream: ${examFormCategory}`,
+        examFormRoll ? `Roll/Registration: ${examFormRoll}` : '',
+        examFormDesc ? `Details/Description: ${examFormDesc}` : `Online application form request for ${examFormTitle}.`
+      ].filter(Boolean).join('\n');
 
-    openCategoryConfirm(
-      {
-        title: 'Confirm Your Request',
-        serviceName: examFormTitle,
-        operatorName: matchedService?.expertName,
-        govtFeeByCategory: matchedService?.govtFeeByCategory,
-        fallbackGovtFee,
-        serviceFee: feeAmount,
-        submitLabel: 'Confirm & Send'
-      },
-      async (category, govtFee) => {
-        setIsSubmittingExamForm(true);
-        try {
-          const fullDetails = [
-            `Applicant Name: ${applicantName}`,
-            `Mobile: ${applicantPhone}`,
-            `Email: ${applicantEmail}`,
-            `Reservation Category: ${categoryLabel(category)}`,
-            `Exam/Form: ${examFormTitle}`,
-            `Category/Stream: ${examFormCategory}`,
-            examFormRoll ? `Roll/Registration: ${examFormRoll}` : '',
-            examFormDesc ? `Details/Description: ${examFormDesc}` : `Online application form request for ${examFormTitle}.`
-          ].filter(Boolean).join('\n');
-
-          const res = await fetchWithRetry('/api/bids/form-filling', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              formTitle: examFormTitle,
-              formDetails: fullDetails,
-              formCategory: examFormCategory,
-              formRoll: examFormRoll,
-              clientName: applicantName,
-              clientPhone: applicantPhone,
-              clientEmail: applicantEmail,
-              district: clientDistrictFilter || '',
-              city: clientCityFilter || '',
-              amountPaid: feeAmount,
-              govtFee,
-              applicantCategory: category,
-              orderType: 'online_form_filling'
-            })
-          });
-          const data = await parseJsonResponse(res);
-          if (data.success) {
-            fetchAllData();
-            setExamFormDesc('');
-            setExamFormRoll('');
-            const successNotice = `✅ Successfully Submitted! "${examFormTitle}" request broadcasted to Jan Seva Kendras. Awaiting operator acceptance & live chat.`;
-            setClientOrderSuccessMsg(successNotice);
-            setWorkspaceStatusMsg({ text: '✅ Successfully Submitted! Awaiting Jan Seva Operator Acceptance.', type: 'success' });
-            showClientActiveOrders();
-            if (soundAlertEnabled) playChime();
-            refreshCitizenPageAfterSubmit(successNotice);
-          } else if (res.status === 401) {
-            recoverFromStaleSession();
-          } else {
-            setClientOrderSuccessMsg(`⚠️ ${data.error || 'Request could not be sent. Please try again.'}`);
-          }
-        } catch (err) {
-          console.warn('Exam form submit error:', err);
-          setClientOrderSuccessMsg('❌ Unable to submit the request right now. Please check your connection and try again.');
-        } finally {
-          setIsSubmittingExamForm(false);
-        }
+      const res = await fetchWithRetry('/api/bids/form-filling', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formTitle: examFormTitle,
+          formDetails: fullDetails,
+          formCategory: examFormCategory,
+          formRoll: examFormRoll,
+          clientName: applicantName,
+          clientPhone: applicantPhone,
+          clientEmail: applicantEmail,
+          district: clientDistrictFilter || '',
+          city: clientCityFilter || '',
+          applicantCategory: examApplicantCategory,
+          orderType: 'online_form_filling'
+        })
+      });
+      const data = await parseJsonResponse(res);
+      if (data.success) {
+        fetchAllData();
+        setExamFormDesc('');
+        setExamFormRoll('');
+        const successNotice = `✅ Successfully Submitted! "${examFormTitle}" request sent to Jan Seva Kendras and Form Filler experts. The operator will set the fees; chat opens after you approve them.`;
+        setClientOrderSuccessMsg(successNotice);
+        setWorkspaceStatusMsg({ text: '✅ Successfully Submitted! Awaiting Jan Seva Operator Acceptance.', type: 'success' });
+        showClientActiveOrders();
+        if (soundAlertEnabled) playChime();
+        refreshCitizenPageAfterSubmit(successNotice);
+      } else if (res.status === 401) {
+        recoverFromStaleSession();
+      } else {
+        setClientOrderSuccessMsg(`⚠️ ${data.error || 'Request could not be sent. Please try again.'}`);
       }
-    );
+    } catch (err) {
+      console.warn('Exam form submit error:', err);
+      setClientOrderSuccessMsg('❌ Unable to submit the request right now. Please check your connection and try again.');
+    } finally {
+      setIsSubmittingExamForm(false);
+    }
   };
 
   // Submit Jan Seva Kendra Document Making (Option 4: PAN Card, Domicile, Income, Caste)
@@ -5781,91 +5708,70 @@ export default function App() {
       return;
     }
 
-    const fallbackPrice = selectedJanSevaDoc.toLowerCase().includes('pan') ? 150 : (selectedJanSevaDoc.toLowerCase().includes('license') ? 250 : 100);
-    const matchedCatalogService = customPricingList.find(item => item.docName === selectedJanSevaDoc);
-    const { govtFee: fallbackGovtFee, serviceFee } = matchedCatalogService
-      ? resolveCatalogFees(matchedCatalogService)
-      : { govtFee: 0, serviceFee: fallbackPrice };
+    setIsSubmittingJanSevaDoc(true);
+    try {
+      const fullDetails = [
+        `Document: ${selectedJanSevaDoc}`,
+        `Applicant Name: ${applicantName}`,
+        `Reservation Category: ${categoryLabel(examApplicantCategory)}`,
+        referenceValue && referenceValue !== applicantPhone ? `Aadhaar / Reference: ${referenceValue}` : '',
+        `Mobile: ${applicantPhone}`,
+        `Email: ${applicantEmail}`,
+        janSevaDocUrgent ? 'Priority: Urgent Fast-Track Service' : 'Priority: Regular Service',
+        janSevaDocDetails ? `Special Notes: ${janSevaDocDetails}` : ''
+      ].filter(Boolean).join('\n');
 
-    openCategoryConfirm(
-      {
-        title: 'Confirm Document Request',
-        serviceName: selectedJanSevaDoc,
-        operatorName: matchedCatalogService?.operatorName,
-        govtFeeByCategory: matchedCatalogService?.govtFeeByCategory,
-        fallbackGovtFee,
-        serviceFee: serviceFee || fallbackPrice,
-        submitLabel: 'Confirm & Submit'
-      },
-      async (category, govtFee) => {
-        setIsSubmittingJanSevaDoc(true);
-        try {
-          const fullDetails = [
-            `Document: ${selectedJanSevaDoc}`,
-            `Applicant Name: ${applicantName}`,
-            `Reservation Category: ${categoryLabel(category)}`,
-            referenceValue && referenceValue !== applicantPhone ? `Aadhaar / Reference: ${referenceValue}` : '',
-            `Mobile: ${applicantPhone}`,
-            `Email: ${applicantEmail}`,
-            janSevaDocUrgent ? 'Priority: Urgent Fast-Track Service' : 'Priority: Regular Service',
-            janSevaDocDetails ? `Special Notes: ${janSevaDocDetails}` : ''
-          ].filter(Boolean).join('\n');
-
-          const res = await fetchWithRetry('/api/vle/orders', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              serviceName: selectedJanSevaDoc,
-              formDetails: fullDetails,
-              orderType: 'vle_service',
-              clientName: applicantName,
-              clientPhone: applicantPhone,
-              clientEmail: applicantEmail,
-              district: clientDistrictFilter || '',
-              city: clientCityFilter || '',
-              amountPaid: serviceFee || fallbackPrice,
-              govtFee,
-              applicantCategory: category
-            })
-          });
-          const data = await parseJsonResponse(res);
-          if (data.success) {
-            if (data.order) {
-              setVleExclusiveOrders((orders: any[]) => [
-                data.order,
-                ...orders.filter(order => order.id !== data.order.id)
-              ]);
-            }
-            fetchAllData();
-            setJanSevaDocDetails('');
-            const successNotice = `✅ Application Submitted Successfully! ${selectedJanSevaDoc} application received. Ye ab "All Orders / Active Ongoing Orders" page par dikh raha hai — Jan Seva operator accept karte hi chat khul jayegi.`;
-            setClientOrderSuccessMsg(successNotice);
-            setWorkspaceStatusMsg({ text: '✅ Application Submitted Successfully! Awaiting Jan Seva Operator Acceptance.', type: 'success' });
-            if (soundAlertEnabled) playChime();
-            setOrderStatusFilter('all');
-            setClientPortalTab('orders');
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                document.getElementById('client-portal-top')?.scrollIntoView({
-                  behavior: 'smooth',
-                  block: 'start'
-                });
-              });
-            });
-            refreshCitizenPageAfterSubmit(successNotice);
-          } else if (res.status === 401) {
-            recoverFromStaleSession();
-          } else {
-            setClientOrderSuccessMsg(`⚠️ ${data.error || 'Request could not be sent. Please check your district and try again.'}`);
-          }
-        } catch (err) {
-          console.warn('Jan Seva doc submit error:', err);
-          setClientOrderSuccessMsg('❌ Unable to submit the request right now. Please try again.');
-        } finally {
-          setIsSubmittingJanSevaDoc(false);
+      const res = await fetchWithRetry('/api/vle/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serviceName: selectedJanSevaDoc,
+          formDetails: fullDetails,
+          orderType: 'vle_service',
+          clientName: applicantName,
+          clientPhone: applicantPhone,
+          clientEmail: applicantEmail,
+          district: clientDistrictFilter || '',
+          city: clientCityFilter || '',
+          applicantCategory: examApplicantCategory
+        })
+      });
+      const data = await parseJsonResponse(res);
+      if (data.success) {
+        if (data.order) {
+          setVleExclusiveOrders((orders: any[]) => [
+            data.order,
+            ...orders.filter(order => order.id !== data.order.id)
+          ]);
         }
+        fetchAllData();
+        setJanSevaDocDetails('');
+        const successNotice = `✅ Application Submitted Successfully! ${selectedJanSevaDoc} request is in "All Orders / Active Ongoing Orders". Jan Seva operator fees bhejega; aapke approve karne ke baad chat khulegi.`;
+        setClientOrderSuccessMsg(successNotice);
+        setWorkspaceStatusMsg({ text: '✅ Application Submitted Successfully! Awaiting Jan Seva Operator Acceptance.', type: 'success' });
+        if (soundAlertEnabled) playChime();
+        setOrderStatusFilter('all');
+        setClientPortalTab('orders');
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            document.getElementById('client-portal-top')?.scrollIntoView({
+              behavior: 'smooth',
+              block: 'start'
+            });
+          });
+        });
+        refreshCitizenPageAfterSubmit(successNotice);
+      } else if (res.status === 401) {
+        recoverFromStaleSession();
+      } else {
+        setClientOrderSuccessMsg(`⚠️ ${data.error || 'Request could not be sent. Please check your district and try again.'}`);
       }
-    );
+    } catch (err) {
+      console.warn('Jan Seva doc submit error:', err);
+      setClientOrderSuccessMsg('❌ Unable to submit the request right now. Please try again.');
+    } finally {
+      setIsSubmittingJanSevaDoc(false);
+    }
   };
 
   // Dispatch direct order to specific operator (Rajesh / Anil) and instantly open communication panel
@@ -5884,120 +5790,78 @@ export default function App() {
       setClientOrderSuccessMsg(requiredFieldsMessage(missingApplicantDetails));
       return;
     }
-    const matchingService = serviceOverride || targetVle.pricingList?.find((p: any) =>
-      targetService.toLowerCase().includes(p.docName.toLowerCase()) || p.docName.toLowerCase().includes(targetService.toLowerCase())
-    );
-    const { govtFee: fallbackGovtFee, serviceFee } = matchingService
-      ? resolveCatalogFees(matchingService)
-      : { govtFee: 0, serviceFee: 150 };
-    const finalAmount = serviceFee || 150;
-
-    openCategoryConfirm(
-      {
-        title: 'Confirm Request',
-        serviceName: targetService,
-        operatorName: targetVle.name,
-        govtFeeByCategory: matchingService?.govtFeeByCategory,
-        fallbackGovtFee,
-        serviceFee: finalAmount,
-        submitLabel: 'Confirm & Open Chat'
-      },
-      async (category, govtFee) => {
-        setDirectApplyVleId(targetVle.id);
-        try {
-          const res = await fetchWithRetry('/api/vle/orders', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              serviceName: `${targetService} (Assigned to ${targetVle.name})`,
-              formDetails: `Service: ${targetService}\nReservation Category: ${categoryLabel(category)}`,
-              clientName: applicantName,
-              clientPhone: applicantPhone,
-              clientEmail: applicantEmail,
-              district: clientDistrictFilter,
-              city: clientCityFilter,
-              amountPaid: finalAmount,
-              govtFee,
-              applicantCategory: category,
-              targetOperatorId: targetVle.id,
-              targetOperatorName: targetVle.name,
-              targetOperatorPhone: targetVle.phone,
-              targetOperatorEmail: targetVle.email
-            })
-          });
-          const data = await parseJsonResponse(res);
-          if (data.success) {
-            await fetchAllData();
-            const successNotice = `✅ Successfully Application Submitted! Direct request sent to ${targetVle.name}. Awaiting acceptance.`;
-            setClientOrderSuccessMsg(successNotice);
-            setWorkspaceStatusMsg({ text: '✅ Successfully Application Submitted! Awaiting acceptance.', type: 'success' });
-            showClientActiveOrders();
-            if (soundAlertEnabled) playChime();
-            refreshCitizenPageAfterSubmit(successNotice);
-          } else if (res.status === 401) {
-            recoverFromStaleSession();
-          } else {
-            setClientOrderSuccessMsg(data.error || 'This operator is not available in your district.');
-          }
-        } catch (err) {
-          console.warn('Direct order dispatch warning:', err);
-          setClientOrderSuccessMsg('Unable to submit the request right now. Please try again.');
-        } finally {
-          setDirectApplyVleId(null);
-        }
+    setDirectApplyVleId(targetVle.id);
+    try {
+      const res = await fetchWithRetry('/api/vle/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serviceName: `${targetService} (Assigned to ${targetVle.name})`,
+          formDetails: `Service: ${targetService}`,
+          clientName: applicantName,
+          clientPhone: applicantPhone,
+          clientEmail: applicantEmail,
+          district: clientDistrictFilter,
+          city: clientCityFilter,
+          targetOperatorId: targetVle.id,
+          targetOperatorName: targetVle.name,
+          targetOperatorPhone: targetVle.phone,
+          targetOperatorEmail: targetVle.email
+        })
+      });
+      const data = await parseJsonResponse(res);
+      if (data.success) {
+        await fetchAllData();
+        const successNotice = `✅ Successfully submitted! Request sent to ${targetVle.name}. The operator will set the fees; chat opens after you approve them.`;
+        setClientOrderSuccessMsg(successNotice);
+        setWorkspaceStatusMsg({ text: '✅ Successfully Application Submitted! Awaiting acceptance.', type: 'success' });
+        showClientActiveOrders();
+        if (soundAlertEnabled) playChime();
+        refreshCitizenPageAfterSubmit(successNotice);
+      } else if (res.status === 401) {
+        recoverFromStaleSession();
+      } else {
+        setClientOrderSuccessMsg(data.error || 'This operator is not available in your district.');
       }
-    );
+    } catch (err) {
+      console.warn('Direct order dispatch warning:', err);
+      setClientOrderSuccessMsg('Unable to submit the request right now. Please try again.');
+    } finally {
+      setDirectApplyVleId(null);
+    }
   };
 
   // Citizen taps "Apply with <operator>" on a Jan Seva service card.
-  // Category confirm popup opens first, then the order is dispatched.
-  const handleCatalogServiceApply = (item: any) => {
-    const { govtFee: fallbackGovtFee, serviceFee } = resolveCatalogFees(item);
-    openCategoryConfirm(
-      {
-        title: 'Confirm Service Request',
-        serviceName: item.docName,
-        operatorName: item.operatorName,
-        govtFeeByCategory: item.govtFeeByCategory,
-        fallbackGovtFee,
-        serviceFee: serviceFee || 100,
-        submitLabel: 'Confirm & Open Chat'
-      },
-      async (category, govtFee) => {
-        try {
-          const res = await fetchWithRetry('/api/vle/orders', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              serviceName: `${item.docName} - ${item.operatorName || 'Jan Seva Kendra'}`,
-              formDetails: `Service: ${item.docName}\nReservation Category: ${categoryLabel(category)}`,
-              serviceScope: item.scope || 'district',
-              targetOperatorId: item.operatorId,
-              targetOperatorName: item.operatorName,
-              targetOperatorPhone: item.operatorPhone,
-              targetOperatorEmail: item.operatorEmail,
-              amountPaid: serviceFee || 100,
-              govtFee,
-              applicantCategory: category
-            })
-          });
-          const data = await parseJsonResponse(res);
-          if (data.success) {
-            fetchAllData();
-            setActiveWorkspaceOrder(data.order);
-            const successNotice = `✅ Request for ${item.docName} dispatched to ${item.operatorName || 'Jan Seva Kendra'}! Workspace opened.`;
-            setClientOrderSuccessMsg(successNotice);
-            showClientActiveOrders();
-            refreshCitizenPageAfterSubmit(successNotice, data.order?.id);
-          } else {
-            setClientOrderSuccessMsg(data.error || 'No Jan Seva operator is available for this service.');
-          }
-        } catch (err) {
-          console.warn('Service dispatch error:', err);
-          setClientOrderSuccessMsg('Unable to submit this request right now. Please try again.');
-        }
+  const handleCatalogServiceApply = async (item: any) => {
+    try {
+      const res = await fetchWithRetry('/api/vle/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serviceName: `${item.docName} - ${item.operatorName || 'Jan Seva Kendra'}`,
+          formDetails: `Service: ${item.docName}`,
+          serviceScope: item.scope || 'district',
+          targetOperatorId: item.operatorId,
+          targetOperatorName: item.operatorName,
+          targetOperatorPhone: item.operatorPhone,
+          targetOperatorEmail: item.operatorEmail
+        })
+      });
+      const data = await parseJsonResponse(res);
+      if (data.success) {
+        fetchAllData();
+        setActiveWorkspaceOrder(data.order);
+        const successNotice = `✅ Request for ${item.docName} sent to ${item.operatorName || 'Jan Seva Kendra'}. The operator will set the fees; chat opens after you approve them.`;
+        setClientOrderSuccessMsg(successNotice);
+        showClientActiveOrders();
+        refreshCitizenPageAfterSubmit(successNotice, data.order?.id);
+      } else {
+        setClientOrderSuccessMsg(data.error || 'No Jan Seva operator is available for this service.');
       }
-    );
+    } catch (err) {
+      console.warn('Service dispatch error:', err);
+      setClientOrderSuccessMsg('Unable to submit this request right now. Please try again.');
+    }
   };
 
   // Save dynamic pricing configuration and navigate smoothly to Client Home Page Services
@@ -15910,20 +15774,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* 💰 CITIZEN CATEGORY CONFIRM POPUP — every request passes through this */}
-      <CategoryConfirmModal
-        config={categoryConfirm}
-        category={categoryConfirmValue}
-        onCategoryChange={setCategoryConfirmValue}
-        busy={isCategoryConfirmBusy}
-        onCancel={() => {
-          if (isCategoryConfirmBusy) return;
-          setCategoryConfirm(null);
-        }}
-        onConfirm={handleCategoryConfirm}
-        t={t}
-      />
 
       {/* ZOOM PHOTO PROOF MODAL */}
       {zoomProofPhoto && (

@@ -452,7 +452,7 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
       clientEmail,
       district: requestDistrict,
       city: requestCity,
-      amountPaid: amountPaid || 150,
+      amountPaid: amountPaid ?? 0,
       govtFee,
       applicantCategory,
       orderType: orderType || 'online_form_filling'
@@ -600,7 +600,7 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
     routingNote,
     localOperatorUnavailable,
     status: 'pending',
-    amountPaid: amountPaid || 150,
+    amountPaid: Math.max(0, Number(amountPaid) || 0),
     govtFee: Math.max(0, Number(govtFee) || 0),
     applicantCategory: String(applicantCategory || '').trim().toLowerCase() || undefined,
     createdAt: new Date().toISOString(),

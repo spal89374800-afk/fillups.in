@@ -302,7 +302,7 @@ async function createAndDispatchFormRequest(req: any, res: any, fallbackTitle: s
     clientEmail: String(clientEmail || '').trim() || account.email || '',
     district: requestDistrict,
     city: requestCity,
-    amountPaid: amountPaid || 150,
+    amountPaid: amountPaid ?? 0,
     govtFee: govtFee,
     applicantCategory: applicantCategory,
     orderType: orderType || 'online_form_filling'

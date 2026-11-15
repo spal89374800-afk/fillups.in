@@ -2148,7 +2148,7 @@ export function createBroadcastFormBid(data: {
     city: data.city || '',
     availableOperatorIds: allVleRecipients.flatMap(operator => [operator.id, operator.cscId]),
     status: 'pending',
-    amountPaid: data.amountPaid || 150,
+    amountPaid: Math.max(0, Number(data.amountPaid) || 0),
     govtFee: Math.max(0, Number(data.govtFee) || 0),
     applicantCategory: String(data.applicantCategory || '').trim().toLowerCase() || undefined,
     createdAt: now.toISOString(),
