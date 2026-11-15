@@ -28,7 +28,8 @@ import {
   locationMatches,
   isOperatorSuspended,
   isAccountSuspended,
-  suspensionReasonFor
+  suspensionReasonFor,
+  findPayoutProfileForAccount
 } from '../services/storeService.ts';
 import { VleOperator, VleOrder, ServiceScope } from '../types/index.ts';
 import { consumeOtpVerification } from './authRoutes.ts';
@@ -626,6 +627,18 @@ vleRouter.post('/vle/orders/:id/accept', requireAccount('vle'), async (req, res)
       error: limit.reason,
       activeCount: limit.activeCount,
       dailyCount: limit.dailyCount
+    });
+  }
+
+  // 🔒 Payout UPI ke bina bid accept nahi ho sakti — warna client ko payment
+  // QR hi nahi milega aur order beech me atak jayega. Frontend Accept par
+  // seedha Payments tab khol deta hai.
+  if (!findPayoutProfileForAccount(account)?.upiId) {
+    return res.status(409).json({
+      success: false,
+      upiRequired: true,
+      error: 'Bid accept karne se pehle apni payout UPI ID add karein. Payment isi UPI par aayega — Payments tab me UPI save karke wapas Accept karein.',
+      message: 'Payout UPI ID required before accepting a bid.'
     });
   }
 

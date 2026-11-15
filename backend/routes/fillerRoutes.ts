@@ -14,7 +14,8 @@ import {
   recordBidAccepted,
   persistOrder,
   persistToMongo,
-  hasLocalVle
+  hasLocalVle,
+  findPayoutProfileForAccount
 } from '../services/storeService.ts';
 import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } from '../services/orderDispatchService.ts';
 import { emitOrderUpdate } from '../services/realtimeService.ts';
@@ -363,6 +364,17 @@ fillerRouter.post('/filler/orders/:id/accept', requireAccount('filler'), async (
       error: limit.reason,
       activeCount: limit.activeCount,
       dailyCount: limit.dailyCount
+    });
+  }
+
+  // 🔒 Payout UPI ke bina bid accept nahi ho sakti — warna client ko payment
+  // QR hi nahi milega aur order beech me atak jayega.
+  if (!findPayoutProfileForAccount(account)?.upiId) {
+    return res.status(409).json({
+      success: false,
+      upiRequired: true,
+      error: 'Bid accept karne se pehle apni payout UPI ID add karein. Payment isi UPI par aayega — Payments tab me UPI save karke wapas Accept karein.',
+      message: 'Payout UPI ID required before accepting a bid.'
     });
   }
 

@@ -10,6 +10,8 @@ interface PayoutSettingsPanelProps {
   phone: string;
   email: string;
   language?: AppLanguage;
+  /** UPI save hone par parent ko batao (bid-accept guard/banner refresh ke liye). */
+  onSaved?: () => void;
 }
 
 interface PayoutProfileSummary {
@@ -20,7 +22,7 @@ interface PayoutProfileSummary {
   upiActive?: boolean;
 }
 
-export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: PayoutSettingsPanelProps) {
+export function PayoutSettingsPanel({ role, phone, email, language = 'EN', onSaved }: PayoutSettingsPanelProps) {
   const t = (en: string, hi: string) => (language === 'HI' ? hi : en);
   const [upiId, setUpiId] = useState('');
   const [profile, setProfile] = useState<PayoutProfileSummary | null>(null);
@@ -115,6 +117,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN' }: Pay
       setOtpSent(false);
       setUpiId('');
       setMessage(saveData.message || t('UPI ID saved.', 'UPI आईडी सेव हो गई।'));
+      onSaved?.();
     } catch (saveError) {
       setVerificationToken('');
       setError(saveError instanceof Error ? saveError.message : t('Could not save payout details.', 'भुगतान विवरण सहेजे नहीं जा सके।'));

@@ -399,6 +399,20 @@ export function hydratePayoutProfile(doc: any): PayoutProfile | null {
   };
 }
 
+// 🔒 Bid accept karne se pehle operator ka payout UPI hona zaroori hai —
+// warna client ko payment QR hi nahi milta aur order atak jaata hai.
+// Profile key format paymentRoutes ke `getProfileKey` jaisa hi hai: `role:phone`.
+export function findPayoutProfileForAccount(
+  account: { role?: string; phone?: unknown } | null | undefined
+): PayoutProfile | null {
+  if (!account) return null;
+  const role = account.role === 'filler' ? 'filler' : account.role === 'vle' ? 'vle' : null;
+  if (!role) return null;
+  const phone = normalizePhone(account.phone);
+  if (!phone) return null;
+  return payoutProfilesStore.get(`${role}:${phone}`) || null;
+}
+
 // ========================================================
 // 💬 CHAT MESSAGE PERSISTENCE (alag `chatmessages` collection)
 // ========================================================

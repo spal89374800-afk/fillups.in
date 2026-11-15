@@ -897,6 +897,10 @@ export default function App() {
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   // Action-level loading states (Priority 2 buttons).
   const [acceptingOrderId, setAcceptingOrderId] = useState<string | null>(null);
+  // 🔒 Payout UPI: bid accept karne se pehle zaroori hai. `null` = abhi check
+  // nahi hua, `false` = UPI saved nahi (banner + Accept guard), `true` = ready.
+  const [vlePayoutUpiReady, setVlePayoutUpiReady] = useState<boolean | null>(null);
+  const [fillerPayoutUpiReady, setFillerPayoutUpiReady] = useState<boolean | null>(null);
   const [isApprovingProof, setIsApprovingProof] = useState(false);
   const [isDispatchingCredentials, setIsDispatchingCredentials] = useState(false);
   const [deletingServiceId, setDeletingServiceId] = useState<string | null>(null);
@@ -1734,6 +1738,36 @@ export default function App() {
     }, 40);
     return () => clearTimeout(timer);
   }, [vleDashboardTab, fillerDashboardTab, step]);
+
+  // 🔒 Payout UPI status: bid accept karne ke liye UPI ID zaroori hai, isliye
+  // dashboard par pehle se pata kar lete hain — operator ko click se pehle hi
+  // banner dikh jaye aur Accept guard kaam kare. Tab ya role badalne par
+  // dobara check hota hai taaki UPI save karte hi banner hat jaye.
+  useEffect(() => {
+    if (!vlePhone) return;
+    let cancelled = false;
+    fetchWithRetry('/api/payments/profile')
+      .then(response => parseJsonResponse(response))
+      .then(data => {
+        if (cancelled) return;
+        if (data?.success) setVlePayoutUpiReady(Boolean(data.profile?.hasUpiId));
+      })
+      .catch(() => { /* silent — Accept par server bhi UPI check karta hai */ });
+    return () => { cancelled = true; };
+  }, [vlePhone, activeRole, vleDashboardTab]);
+
+  useEffect(() => {
+    if (!fillerPhone) return;
+    let cancelled = false;
+    fetchWithRetry('/api/payments/profile')
+      .then(response => parseJsonResponse(response))
+      .then(data => {
+        if (cancelled) return;
+        if (data?.success) setFillerPayoutUpiReady(Boolean(data.profile?.hasUpiId));
+      })
+      .catch(() => { /* silent — Accept par server bhi UPI check karta hai */ });
+    return () => { cancelled = true; };
+  }, [fillerPhone, activeRole, fillerDashboardTab]);
 
   // --- LIVE TRANSPARENCY & TRUST STATS DASHBOARD STATE ---
   const [platformStats, setPlatformStats] = useState({
@@ -11589,6 +11623,43 @@ export default function App() {
             ))}
           </div>
 
+          {/* 🔒 Bid accept karne ke liye payout UPI zaroori hai — pehle se alert. */}
+          {vlePayoutUpiReady === false && (
+            <div className="p-4 bg-amber-500/10 border border-amber-500/40 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3 text-amber-200 text-xs">
+              <ShieldAlert className="w-5 h-5 flex-shrink-0 text-amber-400" />
+              <div className="flex-1 min-w-0">
+                <b className="text-white block font-bold mb-0.5">🔒 {t('Payout UPI ID required', 'पेआउट UPI आईडी ज़रूरी है')}</b>
+                {t(
+                  'Bids accept karne se pehle UPI ID add karein — payment isi UPI par aayega.',
+                  'बिड स्वीकार करने से पहले UPI आईडी जोड़ें — भुगतान इसी UPI पर आएगा।'
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setVleDashboardTab('payments')}
+                className="shrink-0 px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black hover:bg-amber-400 transition cursor-pointer"
+              >
+                {t('Add UPI ID', 'UPI आईडी जोड़ें')}
+              </button>
+            </div>
+          )}
+          {vleDashboardTab === 'payments' && vlePayoutUpiReady === true && (
+            <div className="p-4 bg-emerald-500/10 border border-emerald-500/40 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3 text-emerald-200 text-xs">
+              <ShieldCheck className="w-5 h-5 flex-shrink-0 text-emerald-400" />
+              <div className="flex-1 min-w-0">
+                <b className="text-white block font-bold mb-0.5">✅ {t('Payout UPI saved', 'पेआउट UPI सेव है')}</b>
+                {t('Ab aap bids accept kar sakte hain.', 'अब आप बिड्स स्वीकार कर सकते हैं।')}
+              </div>
+              <button
+                type="button"
+                onClick={() => setVleDashboardTab('open_market')}
+                className="shrink-0 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-black hover:bg-emerald-400 transition cursor-pointer"
+              >
+                ← {t('Back to Bids', 'बिड्स पर वापस')}
+              </button>
+            </div>
+          )}
+
           {vleDashboardTab === 'payments' && (
             <>
               {/* Jan Seva Kendra Total Earnings */}
@@ -11625,7 +11696,7 @@ export default function App() {
                   </div>
                 );
               })()}
-              <PayoutSettingsPanel role="vle" phone={vlePhone} email={vleEmail} language={lang} />
+              <PayoutSettingsPanel role="vle" phone={vlePhone} email={vleEmail} language={lang} onSaved={() => setVlePayoutUpiReady(true)} />
             </>
           )}
 
@@ -12137,6 +12208,22 @@ export default function App() {
                               <button
                                 onClick={async () => {
                                    if (acceptingOrderId) return;
+                                   // 🔒 Payout UPI ke bina bid accept nahi hoti. UPI saved
+                                   // nahi hai to seedha Payments tab khol do (jahan UPI
+                                   // ID + OTP se save hoti hai) — bid pending hi rahegi.
+                                   try {
+                                     const profileRes = await fetchWithRetry('/api/payments/profile');
+                                     const profileData = await parseJsonResponse(profileRes);
+                                     if (profileRes.ok && profileData?.success && !profileData.profile?.hasUpiId) {
+                                       setVlePayoutUpiReady(false);
+                                       setVleBidStatusMsg({
+                                         text: '🔒 Bid accept karne se pehle payout UPI ID add karein. Payments tab khul gaya hai — UPI save karke wapas aakar Accept karein.',
+                                         type: 'error'
+                                       });
+                                       setVleDashboardTab('payments');
+                                       return;
+                                     }
+                                   } catch { /* profile check fail ho to server bhi rok dega */ }
                                    setAcceptingOrderId(ord.id);
                                    try {
                                      setVleBidStatusMsg(null);
@@ -12151,6 +12238,12 @@ export default function App() {
                                        setWorkspaceStatusMsg({ text: data.message || '✅ Bid accepted! Set the fees to unlock chat.', type: 'success' });
                                        await fetchAllData(); 
                                      } else {
+                                       // Server ne UPI missing bataya (stale cache / direct API)
+                                       // to Payments tab khol do.
+                                       if (data.upiRequired) {
+                                         setVlePayoutUpiReady(false);
+                                         setVleDashboardTab('payments');
+                                       }
                                        setVleBidStatusMsg({ 
                                          text: data.error || data.message || 'Unable to accept bid. Please try again.', 
                                          type: 'error' 
@@ -12692,8 +12785,45 @@ export default function App() {
             </button>
           </div>
 
+          {/* 🔒 Bid accept karne ke liye payout UPI zaroori hai — pehle se alert. */}
+          {fillerPayoutUpiReady === false && (
+            <div className="p-4 bg-amber-500/10 border border-amber-500/40 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3 text-amber-200 text-xs">
+              <ShieldAlert className="w-5 h-5 flex-shrink-0 text-amber-400" />
+              <div className="flex-1 min-w-0">
+                <b className="text-white block font-bold mb-0.5">🔒 {t('Payout UPI ID required', 'पेआउट UPI आईडी ज़रूरी है')}</b>
+                {t(
+                  'Bids accept karne se pehle UPI ID add karein — payment isi UPI par aayega.',
+                  'बिड स्वीकार करने से पहले UPI आईडी जोड़ें — भुगतान इसी UPI पर आएगा।'
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setFillerDashboardTab('payments')}
+                className="shrink-0 px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black hover:bg-amber-400 transition cursor-pointer"
+              >
+                {t('Add UPI ID', 'UPI आईडी जोड़ें')}
+              </button>
+            </div>
+          )}
+          {fillerDashboardTab === 'payments' && fillerPayoutUpiReady === true && (
+            <div className="p-4 bg-emerald-500/10 border border-emerald-500/40 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3 text-emerald-200 text-xs">
+              <ShieldCheck className="w-5 h-5 flex-shrink-0 text-emerald-400" />
+              <div className="flex-1 min-w-0">
+                <b className="text-white block font-bold mb-0.5">✅ {t('Payout UPI saved', 'पेआउट UPI सेव है')}</b>
+                {t('Ab aap bids accept kar sakte hain.', 'अब आप बिड्स स्वीकार कर सकते हैं।')}
+              </div>
+              <button
+                type="button"
+                onClick={() => setFillerDashboardTab('services')}
+                className="shrink-0 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-black hover:bg-emerald-400 transition cursor-pointer"
+              >
+                ← {t('Back to Bids', 'बिड्स पर वापस')}
+              </button>
+            </div>
+          )}
+
           {fillerDashboardTab === 'payments' ? (
-            <PayoutSettingsPanel role="filler" phone={fillerPhone} email={fillerEmail} language={lang} />
+            <PayoutSettingsPanel role="filler" phone={fillerPhone} email={fillerEmail} language={lang} onSaved={() => setFillerPayoutUpiReady(true)} />
           ) : fillerDashboardTab === 'all_saved' ? (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="bg-slate-900 rounded-3xl border border-violet-500/30 p-6 sm:p-8 shadow-xl space-y-6 max-w-5xl mx-auto">
@@ -13129,6 +13259,18 @@ export default function App() {
                             <button
                               onClick={async () => {
                                 if (acceptingOrderId) return;
+                                // 🔒 Payout UPI ke bina bid accept nahi hoti. UPI saved
+                                // nahi hai to Payments tab khol do — bid pending rahegi.
+                                try {
+                                  const profileRes = await fetchWithRetry('/api/payments/profile');
+                                  const profileData = await parseJsonResponse(profileRes);
+                                  if (profileRes.ok && profileData?.success && !profileData.profile?.hasUpiId) {
+                                    setFillerPayoutUpiReady(false);
+                                    setFillerNotificationMsg('🔒 Bid accept karne se pehle payout UPI ID add karein. Payments tab khul gaya hai — UPI save karke wapas aakar Accept Bid dabayein.');
+                                    setFillerDashboardTab('payments');
+                                    return;
+                                  }
+                                } catch { /* profile check fail ho to server bhi rok dega */ }
                                 setAcceptingOrderId(ord.id);
                                 try {
                                   const res = await fetch(`/api/filler/orders/${ord.id}/accept`, {
@@ -13148,6 +13290,11 @@ export default function App() {
                                     setWorkspaceStatusMsg({ text: data.message || '✅ Bid accepted! Set the fees to unlock chat.', type: 'success' });
                                     await fetchAllData();
                                   } else {
+                                    // Server ne UPI missing bataya to Payments tab khol do.
+                                    if (data.upiRequired) {
+                                      setFillerPayoutUpiReady(false);
+                                      setFillerDashboardTab('payments');
+                                    }
                                     setFillerNotificationMsg(data.error || data.message || '⚠️ Unable to accept bid. Please try again.');
                                     await fetchAllData();
                                   }
