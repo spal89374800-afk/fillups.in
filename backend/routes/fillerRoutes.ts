@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { isRasterImageDataUrl } from '../services/mediaService.ts';
+import { isValidPersonName, personNameValidationError } from '../services/identityValidation.ts';
 import {
   fillerOrdersStore,
   vleOrdersStore,
@@ -57,6 +58,9 @@ fillerRouter.post('/filler/register', (req, res) => {
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
   ) {
     return res.status(400).json({ success: false, error: 'All details are required: name, state, district, city, valid 10-digit phone number, and valid Gmail address.' });
+  }
+  if (!isValidPersonName(normalizedName)) {
+    return res.status(400).json({ success: false, invalidName: true, error: personNameValidationError() });
   }
   // 🔐 6-digit security PIN (identity change ke liye). Weak PIN reject.
   if (isWeakPin(pin)) {

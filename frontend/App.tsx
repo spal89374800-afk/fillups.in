@@ -36,6 +36,22 @@ export const getDocRequirements = (item: { id?: string; docName?: string; requir
 // and tell the user exactly which details are missing.
 // =========================================================================
 export const isNonEmpty = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
+// CSC / Digital Seva ID = exactly 12 digits. Spaces and hyphens are removed as
+// the user types, so "1234 5678 9012" is accepted but "123" or "abc" is not.
+export const sanitizeCscIdInput = (value: unknown) =>
+  String(value ?? '').replace(/[\s-]/g, '').replace(/\D/g, '').slice(0, 12);
+export const isValidCscId = (value: unknown) =>
+  /^\d{12}$/.test(String(value ?? '').replace(/[\s-]/g, ''));
+// Real names only: 3-50 chars, no digits, at least 3 letters, and at least two
+// different letters so values like "aaa" are rejected.
+export const isValidPersonName = (value: unknown) => {
+  const name = String(value ?? '').trim();
+  if (name.length < 3 || name.length > 50) return false;
+  if (/\d/.test(name)) return false;
+  const letters = name.match(/\p{L}/gu) || [];
+  if (letters.length < 3) return false;
+  return new Set(letters.map(letter => letter.toLowerCase())).size >= 2;
+};
 export const isValidEmail = (value: unknown) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 export const isValidMobile = (value: unknown) =>
@@ -3080,7 +3096,7 @@ export default function App() {
 
     const missing = collectMissingFields([
       { label: 'Jan Seva Kendra / Center Name', ok: isNonEmpty(cleanCenter) },
-      { label: 'Operator Name', ok: isNonEmpty(cleanOperator) },
+      { label: 'Operator Name', ok: isValidPersonName(cleanOperator) },
       { label: 'CSC ID / Kendra Registration No.', ok: isNonEmpty(cleanId) },
       { label: 'State / UT', ok: isNonEmpty(cleanState) },
       { label: 'District', ok: isNonEmpty(cleanDistrict) },
@@ -3221,7 +3237,7 @@ export default function App() {
     const cleanPhoto = fillerEditPhotoUrl.trim();
 
     const missing = collectMissingFields([
-      { label: 'Expert Name', ok: isNonEmpty(cleanName) },
+      { label: 'Expert Name', ok: isValidPersonName(cleanName) },
       { label: '10-Digit Mobile Number', ok: isValidMobile(cleanPhone) },
       { label: 'Gmail / Email', ok: isValidEmail(cleanEmail) },
       { label: 'State / UT', ok: isNonEmpty(cleanState) },
@@ -6385,9 +6401,9 @@ export default function App() {
     if (verifyingGovt) return;
     setVleAuthError('');
     const missing = collectMissingFields([
-      { label: 'Operator Name', ok: isNonEmpty(vleName) },
+      { label: 'Operator Name', ok: isValidPersonName(vleName) },
       { label: 'Jan Seva Kendra / Center Name', ok: isNonEmpty(vleCenterName) },
-      { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
+      { label: 'CSC / Operator ID', ok: isValidCscId(vleId) },
       { label: 'State / UT', ok: isNonEmpty(vleState) },
       { label: 'District', ok: isNonEmpty(vleDistrict) },
       { label: 'City / Tehsil', ok: isNonEmpty(vleCity) },
@@ -6442,7 +6458,7 @@ export default function App() {
     setFillerAuthError('');
     setFillerAuthNotice('');
     const missing = collectMissingFields([
-      { label: 'Expert Name', ok: isNonEmpty(fillerName) },
+      { label: 'Expert Name', ok: isValidPersonName(fillerName) },
       { label: '10-Digit Mobile Number', ok: isValidMobile(fillerPhone) },
       ...(isFillerRegistering ? [
         { label: 'State / UT', ok: isNonEmpty(fillerState) },
@@ -10907,7 +10923,7 @@ export default function App() {
                       maxLength={25}
                       value={vleId}
                       onChange={(e) => setVleId(e.target.value.slice(0, 25))}
-                      placeholder="e.g. CSC-UP-088192"
+                      placeholder="CSC ID"
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
@@ -11210,9 +11226,9 @@ export default function App() {
                 e.preventDefault();
                 setVleAuthError('');
                 const missingVleRegisterFields = collectMissingFields([
-                  { label: 'Operator Name', ok: isNonEmpty(vleName) },
+                  { label: 'Operator Name', ok: isValidPersonName(vleName) },
                   { label: 'Jan Seva Kendra / Center Name', ok: isNonEmpty(vleCenterName) },
-                  { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
+                  { label: 'CSC / Operator ID', ok: isValidCscId(vleId) },
                   { label: 'State / UT', ok: isNonEmpty(vleState) },
                   { label: 'District', ok: isNonEmpty(vleDistrict) },
                   { label: 'City / Tehsil', ok: isNonEmpty(vleCity) },
@@ -11289,12 +11305,15 @@ export default function App() {
                     <input
                       type="text"
                       required
-                      maxLength={25}
+                      inputMode="numeric"
+                      pattern="[0-9]{12}"
+                      maxLength={12}
                       value={vleId}
-                      onChange={(e) => setVleId(e.target.value.slice(0, 25))}
-                      placeholder=""
+                      onChange={(e) => setVleId(sanitizeCscIdInput(e.target.value))}
+                      placeholder="12-digit CSC ID"
                       className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+                    <p className="mt-1 text-[11px] text-slate-400">Digital Seva ID — sirf 12 digits</p>
                   </div>
 
                   <div>
@@ -11422,9 +11441,9 @@ export default function App() {
                   return;
                 }
                 const missingVleRegisterVerifyFields = collectMissingFields([
-                  { label: 'Operator Name', ok: isNonEmpty(vleName) },
+                  { label: 'Operator Name', ok: isValidPersonName(vleName) },
                   { label: 'Jan Seva Kendra / Center Name', ok: isNonEmpty(vleCenterName) },
-                  { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
+                  { label: 'CSC / Operator ID', ok: isValidCscId(vleId) },
                   { label: 'State / UT', ok: isNonEmpty(vleState) },
                   { label: 'District', ok: isNonEmpty(vleDistrict) },
                   { label: 'City / Tehsil', ok: isNonEmpty(vleCity) },
@@ -12439,7 +12458,7 @@ export default function App() {
                   setFillerAuthError('');
                   setFillerAuthNotice('');
                   const missingFillerFields = collectMissingFields([
-                    { label: 'Expert Name', ok: isNonEmpty(fillerName) },
+                    { label: 'Expert Name', ok: isValidPersonName(fillerName) },
                     { label: '10-Digit Mobile Number', ok: isValidMobile(fillerPhone) },
                     { label: 'Gmail ID', ok: isValidEmail(fillerEmail) },
                     ...(isFillerRegistering ? [
@@ -12674,7 +12693,7 @@ export default function App() {
                     return;
                   }
                   const missingFillerVerifyFields = collectMissingFields([
-                    { label: 'Expert Name', ok: isNonEmpty(fillerName) },
+                    { label: 'Expert Name', ok: isValidPersonName(fillerName) },
                     { label: '10-Digit Mobile Number', ok: isValidMobile(fillerPhone) },
                     { label: 'Gmail ID', ok: isValidEmail(fillerEmail) },
                     ...(isFillerRegistering ? [

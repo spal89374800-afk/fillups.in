@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import { isRasterImageDataUrl } from '../services/mediaService.ts';
 import {
+  cscIdValidationError,
+  isValidCscId,
+  isValidPersonName,
+  normalizeCscId,
+  personNameValidationError
+} from '../services/identityValidation.ts';
+import {
   vleListStore,
   vleOrdersStore,
   fillerOrdersStore,
@@ -109,7 +116,7 @@ vleRouter.post('/vle/profile', requireAccount('vle'), async (req, res) => {
   const currentCscId = String(account.cscId || '').trim();
   const currentPhone = String(account.phone || '').replace(/\D/g, '').slice(-10);
   const currentEmail = String(account.email || '').trim().toLowerCase();
-  const requestedCscId = String(req.body?.cscId || currentCscId).trim().slice(0, 25);
+  const requestedCscId = normalizeCscId(req.body?.cscId || currentCscId).slice(0, 25);
   const requestedPhone = String(req.body?.phone || currentPhone).replace(/\D/g, '').slice(-10);
   const requestedEmail = String(req.body?.email || currentEmail).trim().toLowerCase().slice(0, 80);
   const identityChangeRequested =
@@ -133,6 +140,14 @@ vleRouter.post('/vle/profile', requireAccount('vle'), async (req, res) => {
 
   if (!name || !cscId || !state || !district || !city) {
     return res.status(400).json({ success: false, error: 'Operator name, CSC ID, state, district and city are required.' });
+  }
+  // Existing accounts keep their saved CSC ID (login identity lock). Only a
+  // brand-new value has to pass the 12-digit check, so old records never break.
+  if (!currentCscId && !isValidCscId(cscId)) {
+    return res.status(400).json({ success: false, invalidCscId: true, error: cscIdValidationError() });
+  }
+  if (!isValidPersonName(name)) {
+    return res.status(400).json({ success: false, invalidName: true, error: personNameValidationError() });
   }
   if (!/^[6-9]\d{9}$/.test(phone)) {
     return res.status(400).json({ success: false, error: 'Enter a valid 10-digit Indian mobile number.' });
@@ -251,7 +266,7 @@ vleRouter.post('/vle/register', async (req, res) => {
   const pin = String(req.body?.pin || '').trim();
   const centerName = String(req.body?.centerName || '').trim().slice(0, 60);
   const photoUrl = typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : '';
-  const normalizedCscId = String(cscId || '').trim().toLowerCase();
+  const normalizedCscId = normalizeCscId(cscId);
   const normalizedPhone = String(phone || '').replace(/\D/g, '').slice(-10);
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const normalizedName = String(name || '').trim();
@@ -268,6 +283,14 @@ vleRouter.post('/vle/register', async (req, res) => {
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
   ) {
     return res.status(400).json({ success: false, error: 'All details are required: operator name, CSC ID, state, district, city, valid 10-digit phone number, and valid Gmail address.' });
+  }
+  // 🔎 Junk entry guard: CSC ID must be exactly 12 digits and the name must be
+  // a real name. No document upload, no extra step — just correct data.
+  if (!isValidCscId(normalizedCscId)) {
+    return res.status(400).json({ success: false, invalidCscId: true, error: cscIdValidationError() });
+  }
+  if (!isValidPersonName(normalizedName)) {
+    return res.status(400).json({ success: false, invalidName: true, error: personNameValidationError() });
   }
   // 🔐 6-digit security PIN (identity change ke liye). Weak PIN reject.
   if (isWeakPin(pin)) {
@@ -328,8 +351,8 @@ vleRouter.post('/vle/register', async (req, res) => {
 
   const ownPricing = Array.isArray(pricingList) ? pricingList : [];
   const account = saveOrUpdateUserAccount({
-    cscId: cscId || '',
-    name: name || '',
+    cscId: normalizedCscId,
+    name: normalizedName,
     centerName,
     photoUrl,
     phone: phone || '',
@@ -344,12 +367,12 @@ vleRouter.post('/vle/register', async (req, res) => {
     pinFailedAttempts: 0
   });
 
-  const existingIndex = vleListStore.findIndex(v => v.cscId === cscId || (v.name === name && v.district === district));
+  const existingIndex = vleListStore.findIndex(v => v.cscId === normalizedCscId || (v.name === normalizedName && v.district === district));
   const updatedVle: VleOperator = {
     id: existingIndex >= 0 ? vleListStore[existingIndex].id : 'VLE-' + Date.now(),
-    name: name || '',
+    name: normalizedName,
     centerName,
-    cscId: cscId || ('CSC-UP-' + Math.floor(10000 + Math.random() * 90000)),
+    cscId: normalizedCscId,
     district: district || '',
     city: city || '',
     state: normalizedState,
