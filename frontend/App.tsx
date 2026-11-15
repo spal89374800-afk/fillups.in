@@ -4550,7 +4550,9 @@ export default function App() {
   const resolveAttachmentBlobUrl = async (attachment: { name?: string; url?: string }) => {
     const url = attachment.url || '';
     if (!url) throw new Error('This attachment has no file data.');
-    if (!url.startsWith('/api/docs/')) return url;
+    const isProtectedDocument = url.startsWith('/api/docs/') ||
+      /^\/api\/orders\/[^/?]+\/completed-form(?:\?|$)/.test(url);
+    if (!isProtectedDocument) return url;
     const res = await fetch(url);
     if (!res.ok) {
       let message = 'This document is no longer available.';

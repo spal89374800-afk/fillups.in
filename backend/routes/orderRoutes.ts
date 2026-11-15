@@ -199,7 +199,7 @@ orderRouter.post('/orders/:id/upload-completed-form', async (req, res) => {
     attachment: {
       name: order.completedFormPdfName,
       type: 'pdf',
-      url: `/api/orders/${order.id}/completed-form?token=`
+      url: `/api/orders/${order.id}/completed-form`
     }
   });
 
