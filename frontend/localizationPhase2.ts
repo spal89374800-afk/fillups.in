@@ -221,7 +221,7 @@ export const phase2HindiTranslations: Record<string, string> = {
   [`🎓 Scholarship / Admissions`]: `🎓 छात्रवृत्ति / प्रवेश`,
   [`📄 Other Exam Form`]: `📄 अन्य परीक्षा फॉर्म`,
   [`Roll Number / Previous Registration No. (If applicable):`]: `रोल नंबर / पिछला पंजीकरण नंबर (यदि लागू हो):`,
-  [`Form Ki Description & Details (Discription) *`]: `फॉर्म का विवरण और जानकारी *`,
+  [`Form Ki Description & Details (Description) *`]: `फॉर्म का विवरण और जानकारी *`,
   [`Spelling, Category, Choice preference likhein`]: `वर्तनी, श्रेणी, पसंद के विकल्प लिखें`,
   [`Applicant:`]: `आवेदक:`,
   [`• Mobile:`]: `• मोबाइल:`,

@@ -5654,7 +5654,7 @@ export default function App() {
             `Exam/Form: ${examFormTitle}`,
             `Category/Stream: ${examFormCategory}`,
             examFormRoll ? `Roll/Registration: ${examFormRoll}` : '',
-            examFormDesc ? `Details/Discription: ${examFormDesc}` : `Online application form request for ${examFormTitle}.`
+            examFormDesc ? `Details/Description: ${examFormDesc}` : `Online application form request for ${examFormTitle}.`
           ].filter(Boolean).join('\n');
 
           const res = await fetchWithRetry('/api/bids/form-filling', {
@@ -9976,12 +9976,12 @@ export default function App() {
                   />
                 </div>
 
-                {/* Field 4: Description / Disction */}
+                {/* Field 4: Description / Details */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-white flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <span className="text-emerald-400 font-black">3.</span>
-                      <span>Form Ki Description &amp; Details (Discription) *</span>
+                      <span>Form Ki Description &amp; Details (Description) *</span>
                     </span>
                     <span className="text-[11px] text-emerald-400 font-medium">Spelling, Category, Choice preference likhein</span>
                   </label>
@@ -10629,7 +10629,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Details / Discription */}
+                {/* Details / Description */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-white flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
@@ -12782,7 +12782,7 @@ export default function App() {
 
                 <div className="p-6 bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 rounded-3xl border border-indigo-500/30 shadow-xl space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs uppercase font-extrabight text-indigo-300 tracking-wider">⚡ Active Requests &amp; Chats</span>
+                    <span className="text-xs uppercase font-extrabold text-indigo-300 tracking-wider">⚡ Active Requests &amp; Chats</span>
                   </div>
                   <div className="text-3xl font-black text-white font-mono">{activeBids} Requests</div>
                   <p className="text-xs text-slate-400">Open market customer inquiries &amp; active communications</p>
