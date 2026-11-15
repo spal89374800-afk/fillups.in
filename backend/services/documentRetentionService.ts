@@ -14,7 +14,8 @@ import {
   archiveOrderSummary,
   deleteOrderFromMongo,
   removeOrdersFromStores,
-  anonymizeAdminLedgerForOrder
+  anonymizeAdminLedgerForOrder,
+  deleteChatMessage
 } from './storeService.ts';
 import { isMongoConnected } from '../config/db.ts';
 import { emitOrderUpdate } from './realtimeService.ts';
@@ -252,16 +253,25 @@ export function purgeExpiredDocuments(): void {
     }
 
     if (Array.isArray(order.chatMessages)) {
+      const removedMessageIds: string[] = [];
       const keptMessages = order.chatMessages.filter((msg: any) => {
         const attachment = msg?.attachment;
         if (!attachment || !isExpired(attachment.expiresAt)) return true;
         const diskName = (attachment as any).fileId || (attachment as any).storageFile;
         if (diskName) safeUnlink(diskName);
         messagesChanged = true;
+        if (msg?.id) removedMessageIds.push(String(msg.id));
         // Document wale message poori tarah clean (kuch baki nahi dikhna chahiye).
         return false;
       });
-      if (messagesChanged) order.chatMessages = keptMessages;
+      if (messagesChanged) {
+        order.chatMessages = keptMessages;
+        // Chat ab alag collection me hai — wahan se bhi documents wale
+        // messages hatao, warna restart par wapas aa jayenge.
+        removedMessageIds.forEach(messageId => {
+          void deleteChatMessage(order.id, messageId);
+        });
+      }
     }
 
     if (docsChanged || messagesChanged) touchedOrders.push(order);
@@ -321,9 +331,15 @@ export async function purgeExpiredOrders(): Promise<void> {
         const proofUrl = order.previewPhotoProof;
         delete order.previewPhotoProof;
         if (Array.isArray(order.chatMessages)) {
+          const removedProofMessageIds: string[] = [];
           order.chatMessages = order.chatMessages.filter((msg: any) => {
             const url = msg?.attachment?.url;
-            return !url || url !== proofUrl;
+            const shouldRemove = Boolean(url && url === proofUrl);
+            if (shouldRemove && msg?.id) removedProofMessageIds.push(String(msg.id));
+            return !shouldRemove;
+          });
+          removedProofMessageIds.forEach(messageId => {
+            void deleteChatMessage(order.id, messageId);
           });
         }
         emitOrderUpdate(order);

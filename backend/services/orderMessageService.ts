@@ -1,6 +1,25 @@
-import { findAnyOrder, normalizeLocation, vleOrdersStore } from './storeService.ts';
+import {
+  findAnyOrder,
+  normalizeLocation,
+  vleOrdersStore,
+  persistChatMessage,
+  persistChatMessageStatus,
+  persistChatMessageDelete,
+  persistOrder,
+  isTerminalOrderStatus,
+  touchOrderActivity
+} from './storeService.ts';
 import { emitDispatchEvent, emitOrderEvent } from './realtimeService.ts';
 import type { ChatMessage } from '../types/index.ts';
+
+// Chat-only actions order document ko save nahi karte, par 7-din inactivity
+// auto-cancel ke liye chat bhi activity hai — sirf timestamp touch karo.
+function touchChatActivity(order: any): void {
+  if (!order?.id || isTerminalOrderStatus(order.status)) return;
+  const at = new Date().toISOString();
+  order.lastActivityAt = at;
+  touchOrderActivity(order.id, at);
+}
 
 export function sendOrderMessage(
   orderId: string,
@@ -17,6 +36,7 @@ export function sendOrderMessage(
   }
 ) {
   let found = findAnyOrder(orderId);
+  let createdOrder = false;
   if (!found) {
     const newOrder: any = {
       id: orderId || `JSK-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -36,6 +56,7 @@ export function sendOrderMessage(
     };
     vleOrdersStore.unshift(newOrder);
     found = { type: 'vle', order: newOrder };
+    createdOrder = true;
   }
 
   const sender: 'client' | 'operator' = payload.sender === 'operator' ? 'operator' : 'client';
@@ -100,7 +121,7 @@ export function sendOrderMessage(
   const extraNewMessages: ChatMessage[] = [];
   if (sender === 'client' && !isAccepted) {
     const waitMessage: ChatMessage = {
-      id: `m-wait-${Date.now()}`,
+      id: `m-wait-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       sender: 'operator',
       senderName: 'Jan Seva Dispatch Center',
       text: '⏳ Please wait: Your message has been received. Certified Jan Seva Kendra operators and Form Filler experts in your area are reviewing your request. Live interaction will proceed as soon as an expert accepts your request.',
@@ -109,6 +130,20 @@ export function sendOrderMessage(
     };
     found.order.chatMessages.push(waitMessage);
     extraNewMessages.push(waitMessage);
+  }
+
+  // 💬 Sirf naye message(s) save karo — poora order nahi. Isse har message par
+  // documents/form data/saari purani chat dobara DB me nahi jaati.
+  const resolvedOrderId = String(found.order.id || orderId);
+  persistChatMessage(resolvedOrderId, newMessage);
+  extraNewMessages.forEach(message => persistChatMessage(resolvedOrderId, message));
+  touchChatActivity(found.order);
+  // Naya order sirf tab bachta hai jab yahan create hua ho (normal flow me
+  // order pehle se hota hai, isliye order document ko chhua bhi nahi jaata).
+  if (createdOrder) {
+    void persistOrder(found.order).catch(error => {
+      console.error('[Chat] New order persist failed:', error);
+    });
   }
 
   const result = {
@@ -120,7 +155,6 @@ export function sendOrderMessage(
   // ⚡ Sirf naya message bhejo (halka payload). Pehle yahan poora order bhi
   // emit hota tha — PDF/voice note/photo ke saath, isliye har chhote message
   // par bhi bhaari data travel karta tha aur delivery late hoti thi.
-  const resolvedOrderId = String(found.order.id || orderId);
   emitOrderEvent(resolvedOrderId, 'order:message-new', {
     orderId: resolvedOrderId,
     chatMessage: newMessage
@@ -203,6 +237,9 @@ export function markOrderMessagesSeen(
   }
 
   if (updates.length > 0) {
+    // Sirf un messages ke tick fields DB me likho — poora order nahi.
+    persistChatMessageStatus(orderId, updates);
+    touchChatActivity(found.order);
     emitOrderEvent(orderId, 'chat:status', { orderId, updates });
   }
   return { success: true, updated: updates.length, orderId };
@@ -278,6 +315,7 @@ export function deleteOrderMessage(
   // English text rakha hai taaki frontend ka auto-translator ise Hindi
   // users ke liye "🚫 यह संदेश हटा दिया गया" me badal sake.
   const deletedPlaceholder = 'This message was deleted';
+  const touchedReplies: ChatMessage[] = [];
   messages.forEach(message => {
     if (message.replyTo && message.replyTo.id === target.id) {
       message.replyTo = {
@@ -285,8 +323,15 @@ export function deleteOrderMessage(
         text: deletedPlaceholder,
         isVoiceNote: false
       };
+      touchedReplies.push(message);
     }
   });
+
+  // DB me sirf delete hua message + jinke reply-quote badle wahi messages
+  // update karo. Poora order save nahi hota.
+  persistChatMessageDelete(orderId, target);
+  touchedReplies.forEach(message => persistChatMessage(orderId, message));
+  touchChatActivity(found.order);
 
   const result = { success: true, message: 'Message deleted.', order: found.order };
   // `order:updated` already frontend me suna jaata hai — poora order replace

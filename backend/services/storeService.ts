@@ -11,7 +11,8 @@ import {
   AdminPaymentLedgerModel,
   PayoutProfileModel,
   AdminUpiSettingModel,
-  OrderArchiveModel
+  OrderArchiveModel,
+  ChatMessageModel
 } from '../models/index.ts';
 import { isMongoConnected, onMongoReady } from '../config/db.ts';
 
@@ -129,7 +130,10 @@ let warnedAboutMongoQueue = false;
 
 function mongoWriteKey(collection: string, doc: any): string {
   const id = String(doc?.id ?? doc?.key ?? '').trim();
-  return id ? `${collection}:${id}` : `${collection}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+  // Chat messages ka id sirf order ke andar unique hai — key me orderId bhi
+  // rakho, warna do alag orders ka same id ek doosre ko queue se hata dega.
+  const scope = collection.startsWith('chatMessage') && doc?.orderId ? `${doc.orderId}:` : '';
+  return id ? `${collection}:${scope}${id}` : `${collection}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export function pendingMongoWriteCount(): number {
@@ -395,6 +399,300 @@ export function hydratePayoutProfile(doc: any): PayoutProfile | null {
   };
 }
 
+// ========================================================
+// 💬 CHAT MESSAGE PERSISTENCE (alag `chatmessages` collection)
+// ========================================================
+// Order document me ab chat embedded nahi rehti. Har message ek chhota
+// document hai, isliye naye message par poora order dobara save nahi hota.
+// In-memory `order.chatMessages` hi source of truth rahta hai (API shape same),
+// DB write sirf us ek message ka hota hai.
+const persistedChatMessageKeys = new Set<string>();
+
+function chatMessageKey(orderId: string, messageId: string): string {
+  return `${orderId}::${messageId}`;
+}
+
+function toChatMessageDate(value: unknown, fallback?: number): Date {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date(fallback ?? Date.now());
+}
+
+function buildChatMessageDoc(orderId: string, message: any, fallbackTime?: number): any | null {
+  const id = String(message?.id || message?.messageId || '').trim();
+  if (!orderId || !id) return null;
+  // Legacy system messages ke paas createdAt nahi hota — persist karte waqt
+  // bhar dete hain, warna TTL/ordering kaam nahi karegi.
+  const createdAt = toChatMessageDate(message?.createdAt, fallbackTime);
+  if (message && !message.createdAt) message.createdAt = createdAt.toISOString();
+  return {
+    orderId,
+    id,
+    messageId: id,
+    clientMessageId: message?.clientMessageId || id,
+    sender: message?.sender === 'operator' ? 'operator' : 'client',
+    senderName: message?.senderName || '',
+    text: message?.text || '',
+    time: message?.time || '',
+    createdAt,
+    attachment: message?.attachment || null,
+    isVoiceNote: Boolean(message?.isVoiceNote),
+    audioDataUrl: message?.audioDataUrl || null,
+    audioDuration: message?.audioDuration || null,
+    replyTo: message?.replyTo || null,
+    deliveredAt: message?.deliveredAt || null,
+    readAt: message?.readAt || null,
+    isDeleted: Boolean(message?.isDeleted),
+    deletedAt: message?.deletedAt || null,
+    deletedBy: message?.deletedBy || null
+  };
+}
+
+function normalizeStoredChatMessage(doc: any): any | null {
+  if (!doc || typeof doc !== 'object') return null;
+  const id = String(doc.id || doc.messageId || '').trim();
+  if (!id) return null;
+  // Ghost row guard: tick-status upsert kabhi send-write se pehle chala ho aur
+  // process restart ho jaye to content-less row bach sakti hai. Use skip karo.
+  const hasContent = Boolean(
+    String(doc.text || '').trim() ||
+    doc.attachment ||
+    doc.audioDataUrl ||
+    doc.isDeleted ||
+    doc.replyTo
+  );
+  if (!hasContent || !doc.sender) return null;
+  return {
+    id,
+    sender: doc.sender === 'operator' ? 'operator' : 'client',
+    senderName: String(doc.senderName || ''),
+    text: String(doc.text || ''),
+    time: String(doc.time || ''),
+    createdAt: toChatMessageDate(doc.createdAt).toISOString(),
+    ...(doc.attachment ? { attachment: doc.attachment } : {}),
+    ...(doc.isVoiceNote ? { isVoiceNote: true } : {}),
+    ...(doc.audioDataUrl ? { audioDataUrl: doc.audioDataUrl } : {}),
+    ...(doc.audioDuration ? { audioDuration: doc.audioDuration } : {}),
+    ...(doc.replyTo ? { replyTo: doc.replyTo } : {}),
+    ...(doc.deliveredAt ? { deliveredAt: doc.deliveredAt } : {}),
+    ...(doc.readAt ? { readAt: doc.readAt } : {}),
+    ...(doc.isDeleted ? { isDeleted: true } : {}),
+    ...(doc.deletedAt ? { deletedAt: doc.deletedAt } : {}),
+    ...(doc.deletedBy ? { deletedBy: doc.deletedBy } : {})
+  };
+}
+
+// Ek naya (ya badla hua) message save karo. Same orderId+id par upsert hota
+// hai, isliye retry/double-send se duplicate document nahi banta.
+export function persistChatMessage(orderId: string, message: any): void {
+  const doc = buildChatMessageDoc(orderId, message);
+  if (!doc) return;
+  persistedChatMessageKeys.add(chatMessageKey(doc.orderId, doc.id));
+  void persistToMongo('chatMessage', doc).catch(error => {
+    console.error('[Chat] Message persist failed:', error);
+  });
+}
+
+// ✅ Tick update — sirf usi message ke deliveredAt/readAt likhe jaate hain.
+export function persistChatMessageStatus(
+  orderId: string,
+  updates: Array<{ id: string; deliveredAt?: string; readAt?: string }>
+): void {
+  if (!orderId || !Array.isArray(updates) || updates.length === 0) return;
+  for (const update of updates) {
+    const id = String(update?.id || '').trim();
+    if (!id) continue;
+    const patch = {
+      orderId,
+      id,
+      ...(update.deliveredAt ? { deliveredAt: update.deliveredAt } : {}),
+      ...(update.readAt ? { readAt: update.readAt } : {})
+    };
+    void persistToMongo('chatMessageStatus', patch).catch(error => {
+      console.error('[Chat] Message status persist failed:', error);
+    });
+  }
+}
+
+// 🗑️ Delete par content scrub — attachment/audio fields DB se bhi hat jaate hain.
+export function persistChatMessageDelete(orderId: string, message: any): void {
+  const id = String(message?.id || '').trim();
+  if (!orderId || !id) return;
+  // Pehle poori (scrubbed) row ensure karo — agar send-write abhi complete
+  // nahi hua to upsert se row ban jaati hai, phir fields unset hote hain.
+  persistChatMessage(orderId, message);
+  const doc = {
+    orderId,
+    id,
+    deletedAt: message?.deletedAt || new Date().toISOString(),
+    deletedBy: message?.deletedBy || null
+  };
+  void persistToMongo('chatMessageDelete', doc).catch(error => {
+    console.error('[Chat] Message delete persist failed:', error);
+  });
+}
+
+// Chat-only actions order document ko save nahi karte, par 7-din inactivity
+// auto-cancel ke liye chat bhi "activity" hai. Isliye sirf `lastActivityAt`
+// ka chhota update alag se bhejte hain.
+export function touchOrderActivity(orderId: string, at?: string): void {
+  if (!orderId) return;
+  const lastActivityAt = at || new Date().toISOString();
+  void persistToMongo('orderActivity', { id: orderId, lastActivityAt }).catch(error => {
+    console.error('[Chat] Activity touch failed:', error);
+  });
+}
+
+// Order ke saare chat messages delete (order 7 din baad delete hone par).
+export async function deleteChatMessagesForOrder(orderId: string): Promise<void> {
+  if (!orderId) return;
+  if (!isMongoConnected()) return;
+  try {
+    await (ChatMessageModel as any).deleteMany({ orderId });
+  } catch (error) {
+    console.error('[Chat] Chat cleanup failed:', error);
+  }
+}
+
+// Ek message permanently delete (attachment/photo retention ke liye).
+export async function deleteChatMessage(orderId: string, messageId: string): Promise<void> {
+  if (!orderId || !messageId) return;
+  persistedChatMessageKeys.delete(chatMessageKey(orderId, messageId));
+  // persistToMongo queue use karta hai, isliye Mongo down ho to bhi deletion
+  // reconnect ke baad apply hoti hai (message wapas nahi aata).
+  await persistToMongo('chatMessageRemove', { orderId, id: messageId });
+}
+
+function chatCreatedAtMs(message: any, fallback: number): number {
+  const date = toChatMessageDate(message?.createdAt, fallback);
+  return date.getTime();
+}
+
+// Persist woh messages jo abhi DB me nahi gaye. Isse system-generated messages
+// (payment, accept, proof, complete waghera) bhi apne aap chat collection me
+// chale jaate hain — un routes ko alag se kuch badalna nahi padta.
+async function persistUnpersistedChatMessages(order: any): Promise<void> {
+  const messages = Array.isArray(order?.chatMessages) ? order.chatMessages : [];
+  if (messages.length === 0) return;
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    const id = String(message?.id || '').trim();
+    if (!id) continue;
+    const key = chatMessageKey(order.id, id);
+    if (persistedChatMessageKeys.has(key)) continue;
+    const doc = buildChatMessageDoc(order.id, message, Date.now() + index);
+    if (!doc) continue;
+    persistedChatMessageKeys.add(key);
+    await persistToMongo('chatMessage', doc);
+  }
+}
+
+// Purani embedded chat ko ek baar nayi collection me copy karo, phir order
+// document se `chatMessages` field hata do. `$setOnInsert` use hota hai taaki
+// nayi collection ka newer tick/delete data overwrite na ho.
+async function migrateEmbeddedChatMessages(): Promise<boolean> {
+  if (!isMongoConnected()) return false;
+  const orders = [...vleOrdersStore, ...fillerOrdersStore];
+  const operations: any[] = [];
+  const seen = new Set<string>();
+
+  for (const order of orders) {
+    const messages = Array.isArray(order?.chatMessages) ? order.chatMessages : [];
+    if (messages.length === 0) continue;
+    const orderCreatedMs = toChatMessageDate(order.createdAt).getTime();
+    messages.forEach((message: any, index: number) => {
+      const id = String(message?.id || '').trim();
+      if (!id) return;
+      const dedupeKey = chatMessageKey(order.id, id);
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      const doc = buildChatMessageDoc(order.id, message, orderCreatedMs + index);
+      if (!doc) return;
+      operations.push({
+        updateOne: {
+          filter: { orderId: doc.orderId, id: doc.id },
+          update: { $setOnInsert: doc },
+          upsert: true
+        }
+      });
+    });
+  }
+
+  if (operations.length > 0) {
+    // Voice notes bade hote hain — chhote batches me likho, warna ek command
+    // ki size limit (48MB) cross ho sakti hai.
+    const BATCH_SIZE = 200;
+    for (let start = 0; start < operations.length; start += BATCH_SIZE) {
+      await (ChatMessageModel as any).bulkWrite(operations.slice(start, start + BATCH_SIZE), { ordered: false });
+    }
+  }
+
+  // Copy successful — ab embedded field hatao (dono collections se, kyunki
+  // broadcast order dono me ho sakta hai).
+  await Promise.all([
+    (VleOrderModel as any).updateMany(
+      { chatMessages: { $exists: true } },
+      { $unset: { chatMessages: '' } }
+    ),
+    (FillerOrderModel as any).updateMany(
+      { chatMessages: { $exists: true } },
+      { $unset: { chatMessages: '' } }
+    )
+  ]);
+
+  if (operations.length > 0) {
+    console.log(`[Chat] Migrated ${operations.length} embedded message(s) to the chatmessages collection`);
+  }
+  return true;
+}
+
+// Startup/reconnect par chat collection se messages padho aur in-memory orders
+// se attach kar do — API/frontend ka shape bilkul same rehta hai.
+async function hydrateChatMessagesFromCollection(): Promise<void> {
+  if (!isMongoConnected()) return;
+  const docs = await (ChatMessageModel as any).find({}).sort({ createdAt: 1 }).lean().exec();
+  // Set ko freshly load hui rows se rebuild karo — TTL-deleted messages ke
+  // purane keys memory me nahi bachenge.
+  persistedChatMessageKeys.clear();
+  const byOrder = new Map<string, any[]>();
+  for (const raw of docs) {
+    const message = normalizeStoredChatMessage(raw);
+    if (!message) continue;
+    const orderId = String(raw.orderId || '');
+    if (!orderId) continue;
+    const list = byOrder.get(orderId) || [];
+    list.push(message);
+    byOrder.set(orderId, list);
+    persistedChatMessageKeys.add(chatMessageKey(orderId, message.id));
+  }
+
+  for (const order of [...vleOrdersStore, ...fillerOrdersStore]) {
+    const stored = byOrder.get(order.id) || [];
+    const embedded = Array.isArray(order.chatMessages) ? order.chatMessages : [];
+    if (stored.length === 0 && embedded.length === 0) {
+      order.chatMessages = [];
+      continue;
+    }
+    // Merge: collection wins (usme naye tick/delete status hote hain), phir jo
+    // embedded messages reh gaye (migration fail case) unhe jod do.
+    const merged = new Map<string, any>();
+    const orderCreatedMs = toChatMessageDate(order.createdAt).getTime();
+    stored.forEach(message => merged.set(message.id, message));
+    embedded.forEach((message: any, index: number) => {
+      const id = String(message?.id || '').trim();
+      if (!id || merged.has(id)) return;
+      merged.set(id, { ...message, createdAt: message.createdAt || new Date(orderCreatedMs + index).toISOString() });
+      persistedChatMessageKeys.add(chatMessageKey(order.id, id));
+    });
+    order.chatMessages = [...merged.values()].sort(
+      (a, b) => chatCreatedAtMs(a, orderCreatedMs) - chatCreatedAtMs(b, orderCreatedMs)
+    );
+  }
+}
+
 export async function hydrateFromMongo() {
   if (!isMongoConnected()) return;
   try {
@@ -432,6 +730,24 @@ export async function hydrateFromMongo() {
         payeeName: String(setting.payeeName || ''),
         updatedAt: normalizeProfileIso(setting.updatedAt)
       };
+    }
+
+    // 💬 Chat ab alag collection me hai. Pehle indexes (unique message id +
+    // 7-din TTL) ensure karo, phir purani embedded chat ko ek baar migrate karo.
+    try {
+      await (ChatMessageModel as any).init();
+    } catch (error) {
+      console.error('[Chat] Chat indexes could not be created:', error);
+    }
+    try {
+      await migrateEmbeddedChatMessages();
+    } catch (error) {
+      console.error('[Chat] Embedded chat migration failed (embedded data kept):', error);
+    }
+    try {
+      await hydrateChatMessagesFromCollection();
+    } catch (error) {
+      console.error('[Chat] Chat hydration failed:', error);
     }
 
     console.log('[MongoDB] Data hydrated into in-memory stores');
@@ -474,11 +790,80 @@ export async function persistToMongo(collection: string, doc: any) {
       case 'fillerExpert':
         await FillerExpertModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
         break;
-      case 'vleOrder':
-        await VleOrderModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
+      case 'vleOrder': {
+        // Chat ab alag collection me hai — order document me field kabhi na jaye.
+        const { chatMessages: _ignoredChat, ...orderDoc } = safeDoc;
+        await VleOrderModel.updateOne(
+          { id: orderDoc.id },
+          { $set: orderDoc, $unset: { chatMessages: '' } },
+          { upsert: true }
+        );
         break;
-      case 'fillerOrder':
-        await FillerOrderModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
+      }
+      case 'fillerOrder': {
+        const { chatMessages: _ignoredChat, ...orderDoc } = safeDoc;
+        await FillerOrderModel.updateOne(
+          { id: orderDoc.id },
+          { $set: orderDoc, $unset: { chatMessages: '' } },
+          { upsert: true }
+        );
+        break;
+      }
+      case 'chatMessage': {
+        const chatDoc: any = {
+          ...safeDoc,
+          messageId: safeDoc.messageId || safeDoc.id,
+          clientMessageId: safeDoc.clientMessageId || safeDoc.id
+        };
+        // Null tick/delete fields ko `$set` mat karo — warna send-write jo
+        // status-write ke baad DB tak pahuncha, pehle se laga ✓/✓✓ mita dega.
+        ['deliveredAt', 'readAt', 'deletedAt', 'deletedBy'].forEach(field => {
+          if (!chatDoc[field]) delete chatDoc[field];
+        });
+        if (!chatDoc.isDeleted) delete chatDoc.isDeleted;
+        await ChatMessageModel.updateOne(
+          { orderId: chatDoc.orderId, id: chatDoc.id },
+          { $set: chatDoc },
+          { upsert: true }
+        );
+        break;
+      }
+      case 'chatMessageStatus':
+        await ChatMessageModel.updateOne(
+          { orderId: safeDoc.orderId, id: safeDoc.id },
+          {
+            $set: {
+              ...(safeDoc.deliveredAt ? { deliveredAt: safeDoc.deliveredAt } : {}),
+              ...(safeDoc.readAt ? { readAt: safeDoc.readAt } : {})
+            }
+          },
+          { upsert: true }
+        );
+        break;
+      case 'chatMessageDelete':
+        await ChatMessageModel.updateOne(
+          { orderId: safeDoc.orderId, id: safeDoc.id },
+          {
+            $set: {
+              isDeleted: true,
+              deletedAt: safeDoc.deletedAt || new Date().toISOString(),
+              deletedBy: safeDoc.deletedBy || null,
+              text: '',
+              isVoiceNote: false
+            },
+            $unset: { attachment: '', audioDataUrl: '', audioDuration: '' }
+          }
+        );
+        break;
+      case 'chatMessageRemove':
+        await ChatMessageModel.deleteOne({ orderId: safeDoc.orderId, id: safeDoc.id });
+        break;
+      case 'orderActivity':
+        // Sirf activity timestamp — poora order nahi.
+        await Promise.all([
+          VleOrderModel.updateOne({ id: safeDoc.id }, { $set: { lastActivityAt: safeDoc.lastActivityAt } }),
+          FillerOrderModel.updateOne({ id: safeDoc.id }, { $set: { lastActivityAt: safeDoc.lastActivityAt } })
+        ]);
         break;
       case 'fillerService':
         await FillerServiceModel.updateOne({ id: safeDoc.id }, { $set: safeDoc }, { upsert: true });
@@ -1301,15 +1686,22 @@ export async function persistOrder(order: any, options: { touchActivity?: boolea
   if (touchActivity && !isTerminalOrderStatus(order.status)) {
     order.lastActivityAt = new Date().toISOString();
   }
+  // 💬 Chat alag collection me hai. Jo messages abhi DB me nahi gaye (system
+  // messages jaise accept/proof/payment/complete) unhe per-message save karo.
+  // Iske baad order document se chat strip ho jaati hai — poora order har
+  // message par save nahi hota.
+  await persistUnpersistedChatMessages(order);
   const inVle = vleOrdersStore.some(item => item.id === order.id);
   const inFiller = fillerOrdersStore.some(item => item.id === order.id);
-  if (inVle) await persistToMongo('vleOrder', order);
-  if (inFiller) await persistToMongo('fillerOrder', order);
+  // Chat ab alag collection me hai — order document/queue me chat copy mat bhejo.
+  const { chatMessages: _ignoredChatMessages, ...orderDoc } = order;
+  if (inVle) await persistToMongo('vleOrder', orderDoc);
+  if (inFiller) await persistToMongo('fillerOrder', orderDoc);
   if (!inVle && !inFiller) {
     if (order.orderType === 'online_form_filling' || order.orderType === 'custom_form') {
-      await persistToMongo('fillerOrder', order);
+      await persistToMongo('fillerOrder', orderDoc);
     } else {
-      await persistToMongo('vleOrder', order);
+      await persistToMongo('vleOrder', orderDoc);
     }
   }
 }
@@ -1347,6 +1739,13 @@ export function dropPendingMongoWritesForOrder(orderId: string): void {
   if (!orderId) return;
   pendingMongoWrites.delete(`vleOrder:${orderId}`);
   pendingMongoWrites.delete(`fillerOrder:${orderId}`);
+  // Chat queue keys: chatMessage:<orderId>:<messageId>
+  const prefixes = ['chatMessage:', 'chatMessageStatus:', 'chatMessageDelete:', 'chatMessageRemove:'].map(name => `${name}${orderId}:`);
+  for (const key of [...pendingMongoWrites.keys()]) {
+    if (prefixes.some(prefix => key.startsWith(prefix))) {
+      pendingMongoWrites.delete(key);
+    }
+  }
 }
 
 export async function deleteOrderFromMongo(orderId: string): Promise<boolean> {
@@ -1354,7 +1753,9 @@ export async function deleteOrderFromMongo(orderId: string): Promise<boolean> {
   try {
     await Promise.all([
       (VleOrderModel as any).deleteOne({ id: orderId }),
-      (FillerOrderModel as any).deleteOne({ id: orderId })
+      (FillerOrderModel as any).deleteOne({ id: orderId }),
+      // Order ke saath uski chat bhi hatao (TTL ka intezaar na karo).
+      deleteChatMessagesForOrder(orderId)
     ]);
     // Reconnect par purani queued write order ko wapas na le aaye.
     dropPendingMongoWritesForOrder(orderId);
@@ -1369,6 +1770,12 @@ export function removeOrdersFromStores(orderIds: Set<string>): void {
   if (!orderIds.size) return;
   vleOrdersStore = vleOrdersStore.filter(order => !orderIds.has(order.id));
   fillerOrdersStore = fillerOrdersStore.filter(order => !orderIds.has(order.id));
+  for (const orderId of orderIds) {
+    const prefix = `${orderId}::`;
+    for (const key of [...persistedChatMessageKeys]) {
+      if (key.startsWith(prefix)) persistedChatMessageKeys.delete(key);
+    }
+  }
   for (let index = liveCameraSessionsStore.length - 1; index >= 0; index -= 1) {
     if (orderIds.has(liveCameraSessionsStore[index].orderId)) {
       liveCameraSessionsStore.splice(index, 1);

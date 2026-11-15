@@ -8,7 +8,6 @@ import {
   findAccountForOperator,
   markAccountOnline,
   markAccountOffline,
-  persistOrder,
   type UserAccount
 } from './storeService.ts';
 import { markOrderMessagesSeen, sendOrderMessage } from './orderMessageService.ts';
@@ -373,14 +372,8 @@ export function setRealtimeServer(server: Server): void {
       }
       const result = sendOrderMessage(orderId, payload);
       acknowledge?.(result);
-      // Socket se bheja gaya message bhi DB me save karo — pehle yahan save hi
-      // nahi hota tha, isliye server restart par message gayab ho jaata tha.
-      const found = findAnyOrder(orderId);
-      if (found) {
-        void persistOrder(found.order).catch(error => {
-          console.error('[Chat] Socket message persist failed:', error);
-        });
-      }
+      // Message ab `sendOrderMessage` ke andar per-message persist hota hai —
+      // yahan poora order save nahi karna (wahi write amplification thi).
     });
 
     // ✅ Ticks: recipient ka device bata deta hai ki message pahunch gaya
@@ -420,14 +413,8 @@ export function setRealtimeServer(server: Server): void {
       }
       const result = markOrderMessagesSeen(orderId, participantRole, upToMessageId, mode);
       acknowledge?.(result);
-      if (result.success && typeof result.updated === 'number' && result.updated > 0) {
-        const found = findAnyOrder(orderId);
-        if (found) {
-          void persistOrder(found.order).catch(error => {
-            console.error('[Chat] Seen status persist failed:', error);
-          });
-        }
-      }
+      // Tick timestamps bhi per-message persist hote hain (markOrderMessagesSeen
+      // ke andar) — poora order save nahi karna.
     };
 
     socket.on('chat:delivered', handleSeenStatus('delivered'));

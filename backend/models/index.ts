@@ -174,6 +174,50 @@ const OrderArchiveSchema = new Schema({
   deletedAt: String
 }, { strict: false });
 
+// ======================================================
+// 💬 CHAT MESSAGES (alag collection)
+// ======================================================
+// Har chat message ek chhota document hai. Pehle chat order document ke andar
+// embedded thi, isliye har naye message par poora order dobara save hota tha
+// (documents + form data + saari purani chat). Ab order halka rehta hai aur
+// chat apni collection me per-message save hoti hai.
+//
+// Retention: order ki tarah chat bhi 7 din baad auto-delete (TTL index).
+const ChatMessageSchema = new Schema({
+  // Kis order ki chat hai — isi par saari queries chalti hain.
+  orderId: { type: String, required: true, index: true },
+  // Message id (clientMessageId). Frontend/API shape same rakhne ke liye `id`
+  // hi primary id hai; `messageId` sirf padhne me clarity ke liye rakha hai.
+  id: { type: String, required: true },
+  messageId: { type: String },
+  clientMessageId: String,
+  sender: { type: String, enum: ['client', 'operator'] },
+  senderName: String,
+  text: { type: String, default: '' },
+  time: String,
+  // TTL index isi field par lagega, isliye ye Date hai (string nahi).
+  createdAt: { type: Date, default: Date.now },
+  attachment: { type: Schema.Types.Mixed },
+  isVoiceNote: Boolean,
+  audioDataUrl: String,
+  audioDuration: String,
+  replyTo: { type: Schema.Types.Mixed },
+  // ✅ Ticks
+  deliveredAt: String,
+  readAt: String,
+  // Soft delete (content scrub, record rehta hai)
+  isDeleted: Boolean,
+  deletedAt: String,
+  deletedBy: { type: String, enum: ['client', 'operator'] }
+}, { timestamps: false, strict: false });
+
+// Ek order ke andar message id unique — do baar save (retry) par duplicate nahi.
+ChatMessageSchema.index({ orderId: 1, id: 1 }, { unique: true });
+// Chat kholne / paginate karne ke liye.
+ChatMessageSchema.index({ orderId: 1, createdAt: 1 });
+// 7 din baad purane messages auto-delete.
+ChatMessageSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7 * 24 * 60 * 60 });
+
 export const UserAccountModel = mongoose.models.UserAccount || model('UserAccount', UserAccountSchema);
 export const VleOperatorModel = mongoose.models.VleOperator || model('VleOperator', VleOperatorSchema);
 export const FillerExpertModel = mongoose.models.FillerExpert || model('FillerExpert', FillerExpertSchema);
@@ -185,3 +229,4 @@ export const AdminPaymentLedgerModel = mongoose.models.AdminPaymentLedger || mod
 export const PayoutProfileModel = mongoose.models.PayoutProfile || model('PayoutProfile', PayoutProfileSchema);
 export const AdminUpiSettingModel = mongoose.models.AdminUpiSetting || model('AdminUpiSetting', AdminUpiSettingSchema);
 export const OrderArchiveModel = mongoose.models.OrderArchive || model('OrderArchive', OrderArchiveSchema);
+export const ChatMessageModel = mongoose.models.ChatMessage || model('ChatMessage', ChatMessageSchema);
