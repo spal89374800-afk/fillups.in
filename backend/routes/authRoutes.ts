@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
-import { saveOrUpdateUserAccount, sanitizeAccountForClient, userAccountsStore } from '../services/storeService.ts';
+import { normalizeEmail, saveOrUpdateUserAccount, sanitizeAccountForClient, userAccountsStore } from '../services/storeService.ts';
 import { readEnvValue } from '../env.ts';
 import { getRequestAccount } from '../middleware/securityMiddleware.ts';
 import { resolveClientIp } from '../middleware/botShieldMiddleware.ts';
@@ -11,6 +11,13 @@ import { sendTransactionalEmail } from '../services/emailService.ts';
 import { clearAuthSessionCookie, setAuthSessionCookie } from '../services/authCookieService.ts';
 
 export const authRouter = Router();
+
+function findClientAccountByEmail(email: string) {
+  const normalizedEmail = normalizeEmail(email);
+  return userAccountsStore.find(account =>
+    account.role === 'client' && normalizeEmail(account.email) === normalizedEmail
+  );
+}
 
 // ========================================================
 // 🛡️ PUBLIC SECURITY CONFIG (frontend ke liye)
@@ -106,6 +113,13 @@ authRouter.post('/auth/register', (req, res) => {
   ) {
     return res.status(400).json({ success: false, error: 'All details are required: full name, valid mobile number, valid email address, state, district, and city.' });
   }
+  if (findClientAccountByEmail(email)) {
+    return res.status(409).json({
+      success: false,
+      code: 'ACCOUNT_EXISTS',
+      error: 'This Gmail already has a Citizen account. Sign in with Gmail OTP instead.'
+    });
+  }
   if (!consumeOtpVerification(phone, req.body.verificationToken, userRole, email)) {
     return res.status(401).json({ success: false, error: 'Verify the OTP sent to this phone and email before registering.' });
   }
@@ -162,6 +176,141 @@ export function consumeOtpVerification(target: unknown, token: unknown, role: 'c
   delete verifiedOtpGrants[token];
   return true;
 }
+
+authRouter.post('/auth/client-login/send-otp', async (req, res) => {
+  try {
+  const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ success: false, error: 'Enter the Gmail used for your Citizen account.' });
+  }
+
+  const account = findClientAccountByEmail(email);
+  if (!account) {
+    return res.status(404).json({
+      success: false,
+      code: 'ACCOUNT_NOT_FOUND',
+      error: 'No Citizen account was found for this Gmail. Create an account first.'
+    });
+  }
+
+  const clientIp = resolveClientIp(req);
+  const captcha = await verifyTurnstileToken(req.body?.captchaToken, clientIp);
+  if (!captcha.success) {
+    return res.status(403).json({
+      success: false,
+      error: 'Verification failed. Please refresh the page and try again.'
+    });
+  }
+
+  const phone = String(account.phone || '').replace(/\D/g, '').slice(-10);
+  const otpGuard = checkOtpSendLimits({ phone, ip: clientIp });
+  if (!otpGuard.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: otpGuard.message,
+      reason: otpGuard.reason,
+      retryAfterMinutes: otpGuard.retryAfterMinutes
+    });
+  }
+  registerOtpSend({ phone, ip: clientIp });
+
+  const code = randomInt(1000, 10000).toString();
+  const delivery = await sendTransactionalEmail({
+    to: account.email,
+    subject: 'Your DigiSeva Pro login OTP',
+    text: `Your DigiSeva Pro login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`,
+    senderName: 'DigiSeva Pro'
+  });
+  if (!delivery.ok) {
+    console.error('[client-login] OTP email delivery failed:', delivery.error);
+    return res.status(502).json({
+      success: false,
+      code: 'OTP_DELIVERY_FAILED',
+      error: 'Could not send the OTP email. Please try again later.'
+    });
+  }
+
+  activeOtpStore[email] = {
+    code,
+    email: normalizeEmail(account.email),
+    role: 'client',
+    expiresAt: Date.now() + 10 * 60 * 1000,
+    attempts: 0
+  };
+  return res.json({
+    success: true,
+    channel: delivery.via || 'Email',
+    message: `A verification code was sent to ${account.email}.`
+  });
+  } catch (error) {
+    console.error('[client-login] OTP send failed:', error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        error: 'Could not send the verification code. Please try again later.'
+      });
+    }
+  }
+});
+
+authRouter.post('/auth/client-login/verify-otp', (req, res) => {
+  const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
+  const submittedCode = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+  if (!email || !submittedCode) {
+    return res.status(400).json({ success: false, error: 'Gmail and OTP code are required.' });
+  }
+
+  const account = findClientAccountByEmail(email);
+  if (!account) {
+    delete activeOtpStore[email];
+    return res.status(401).json({ success: false, error: 'The Gmail or OTP is invalid. Request a new code.' });
+  }
+
+  const clientIp = resolveClientIp(req);
+  const phone = String(account.phone || '').replace(/\D/g, '').slice(-10);
+  const verifyGuard = checkOtpVerifyLimits({ phone, ip: clientIp });
+  if (!verifyGuard.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: verifyGuard.message,
+      reason: verifyGuard.reason,
+      retryAfterMinutes: verifyGuard.retryAfterMinutes
+    });
+  }
+  registerOtpVerify({ phone, ip: clientIp });
+
+  const cached = activeOtpStore[email];
+  if (!cached || cached.expiresAt <= Date.now() || cached.role !== 'client' || cached.email !== email) {
+    delete activeOtpStore[email];
+    return res.status(400).json({ success: false, error: 'OTP expired or not found. Request a new code.' });
+  }
+  if (!/^\d{4}$/.test(submittedCode)) {
+    return res.status(400).json({ success: false, error: 'Invalid OTP. Enter the 4-digit code.' });
+  }
+
+  cached.attempts += 1;
+  const submittedBuffer = Buffer.from(submittedCode);
+  const expectedBuffer = Buffer.from(cached.code);
+  if (submittedBuffer.length === expectedBuffer.length && timingSafeEqual(submittedBuffer, expectedBuffer)) {
+    delete activeOtpStore[email];
+    setAuthSessionCookie(res, account.token);
+    return res.json({
+      success: true,
+      verified: true,
+      message: 'Logged in successfully.',
+      user: sanitizeAccountForClient(account)
+    });
+  }
+
+  if (cached.attempts >= 5) {
+    delete activeOtpStore[email];
+    return res.status(429).json({
+      success: false,
+      error: 'Too many incorrect attempts. Request a new OTP.'
+    });
+  }
+  return res.status(400).json({ success: false, error: 'Invalid OTP. Please check the code and try again.' });
+});
 
 // ========================================================
 // 🔐 GOOGLE SIGN-IN (additional verification option)
@@ -288,6 +437,13 @@ authRouter.post('/auth/send-otp', async (req, res) => {
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
     return res.status(400).json({ success: false, error: 'Enter a valid Gmail/email address.' });
+  }
+  if (userRole === 'client' && findClientAccountByEmail(normalizedEmail)) {
+    return res.status(409).json({
+      success: false,
+      code: 'ACCOUNT_EXISTS',
+      error: 'This Gmail already has a Citizen account. Sign in with Gmail OTP instead.'
+    });
   }
 
   const code = randomInt(1000, 10000).toString();

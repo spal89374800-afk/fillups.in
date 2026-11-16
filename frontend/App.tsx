@@ -801,6 +801,7 @@ export default function App() {
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [clientEmail, setClientEmail] = useState('');
+  const [clientAuthMode, setClientAuthMode] = useState<'login' | 'register'>('login');
   const [clientOtpSent, setClientOtpSent] = useState(false);
   const [clientMobileOtpCode, setClientMobileOtpCode] = useState('');
   const [clientOtpDeliveryMessage, setClientOtpDeliveryMessage] = useState('');
@@ -4390,6 +4391,7 @@ export default function App() {
     setJanSevaDocAadhaar('');
     setJanSevaDocEmail('');
     setClientOtpSent(false);
+    setClientAuthMode('login');
     setClientMobileOtpCode('');
     setClientAccountId('');
     setVleName('');
@@ -5898,14 +5900,7 @@ export default function App() {
     setIsWorkspaceHeaderHidden(true);
   };
 
-  // =====================================================================
-  // 🔐 GOOGLE SIGN-IN (additional option — OTP flow is untouched)
-  // =====================================================================
-  // Google sirf Gmail verify karta hai. Login ke baaki saare compulsory
-  // fields (name, mobile, state, district, city, CSC ID) waise hi required
-  // hain. Backend Google token verify karke ek short-lived verification
-  // grant deta hai, jise purane login/register endpoints consume karte hain.
-
+  // Restore the server-saved Citizen account after registration or email OTP login.
   const applyClientLoginResult = (loginData: any) => {
     const savedUser = loginData.user || {};
     const resolvedName = String(savedUser.name || clientName || '').trim();
@@ -6030,50 +6025,6 @@ export default function App() {
       throw new Error('Google account did not return a verified email address.');
     }
     return { email, verificationToken: String(googleData.verificationToken) };
-  };
-
-  const handleClientGoogleCredential = async (credential: string) => {
-    if (isClientAuthBusy) return;
-    setClientAuthError('');
-    const missing = collectMissingFields([
-      { label: 'Full Name', ok: isNonEmpty(clientName) },
-      { label: '10-Digit Mobile Number', ok: isValidMobile(clientPhone) },
-      { label: 'State / UT', ok: isNonEmpty(clientState) },
-      { label: 'District', ok: isNonEmpty(clientDistrictFilter) },
-      { label: 'City / Tehsil', ok: isNonEmpty(clientCityFilter) }
-    ]);
-    if (missing.length > 0) {
-      setClientAuthError(requiredFieldsMessage(missing));
-      return;
-    }
-    setIsClientAuthBusy(true);
-    try {
-      const { email, verificationToken } = await requestGoogleGrant(credential, clientPhone, 'client');
-      setClientEmail(email);
-      const loginResponse = await fetchWithRetry('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: clientName,
-          phone: clientPhone,
-          email,
-          state: clientState,
-          district: clientDistrictFilter,
-          city: clientCityFilter,
-          role: 'client',
-          verificationToken
-        })
-      });
-      const loginData = await parseJsonResponse(loginResponse);
-      if (!loginResponse.ok || !loginData.success) {
-        throw new Error(loginData.error || 'Login failed after Google verification. Please try again.');
-      }
-      applyClientLoginResult(loginData);
-    } catch (error) {
-      setClientAuthError(error instanceof Error ? error.message : 'Google login failed. Please try again.');
-    } finally {
-      setIsClientAuthBusy(false);
-    }
   };
 
   const handleVleGoogleCredential = async (credential: string) => {
@@ -7891,6 +7842,7 @@ export default function App() {
                     setClientOtpSent(false);
                     setClientMobileOtpCode('');
                     setClientAuthError('');
+                    clientAutoSubmittedCodeRef.current = '';
                   } else {
                     setStep('landing');
                   }
@@ -7915,7 +7867,87 @@ export default function App() {
                 </div>
               </div>
 
-              {!clientOtpSent ? (
+              {clientAuthMode === 'login' && !clientOtpSent ? (
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  setClientAuthError('');
+                  const email = clientEmail.trim().toLowerCase();
+                  if (!isValidEmail(email)) {
+                    setClientAuthError(t('Enter the Gmail used for your Citizen account.', 'अपने Citizen account वाला Gmail दर्ज करें।'));
+                    return;
+                  }
+                  setClientEmail(email);
+                  setIsClientAuthBusy(true);
+                  try {
+                    const captchaToken = await getCaptchaToken();
+                    const response = await fetchWithRetry('/api/auth/client-login/send-otp', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ email, captchaToken })
+                    });
+                    const data = await parseJsonResponse(response);
+                    if (!response.ok || !data.success) {
+                      throw new Error(data.error || 'Could not send the verification code. Please try again.');
+                    }
+                    setClientOtpDeliveryMessage(data.message || '');
+                    setClientMobileOtpCode('');
+                    clientAutoSubmittedCodeRef.current = '';
+                    setClientOtpSent(true);
+                  } catch (error) {
+                    setClientAuthError(error instanceof Error ? error.message : 'Could not start verification. Please try again.');
+                  } finally {
+                    setIsClientAuthBusy(false);
+                  }
+                }} className="space-y-4 relative z-10">
+                  <p className="text-center text-sm text-slate-300">
+                    {t('Sign in with the Gmail registered to your Citizen account. We will email you a one-time code.', 'अपने Citizen account में registered Gmail से login करें। हम उस पर OTP भेजेंगे।')}
+                  </p>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold text-zinc-300">{t('Registered Gmail', 'Registered Gmail')}</span>
+                    <input
+                      type="email"
+                      name="email"
+                      autoComplete="email"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      required
+                      maxLength={60}
+                      value={clientEmail}
+                      onChange={event => setClientEmail(event.target.value.slice(0, 60))}
+                      placeholder="name@example.com"
+                      className="h-12 w-full rounded-2xl border border-white/[0.08] bg-[#090F1D]/90 px-4 text-sm font-medium text-white outline-none transition-all placeholder:text-zinc-500 focus:border-cyan-400/70 focus:ring-2 focus:ring-cyan-500/20"
+                    />
+                  </label>
+                  {clientAuthError && (
+                    <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">
+                      {clientAuthError}
+                    </p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isClientAuthBusy}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 px-6 py-4 text-sm font-bold tracking-wide text-white shadow-lg shadow-emerald-950/40 transition-all hover:-translate-y-0.5 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-500 disabled:opacity-50"
+                  >
+                    <span>{isClientAuthBusy ? t('Sending code…', 'कोड भेज रहे हैं…') : t('Send Gmail OTP', 'Gmail OTP भेजें')}</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isClientAuthBusy) return;
+                      setClientAuthMode('register');
+                      setClientOtpSent(false);
+                      setClientMobileOtpCode('');
+                      setClientAuthError('');
+                      setClientOtpDeliveryMessage('');
+                      clientAutoSubmittedCodeRef.current = '';
+                    }}
+                    className="w-full text-center text-xs font-semibold text-cyan-300 transition-colors hover:text-white"
+                  >
+                    {t('First time here? Create a Citizen account', 'पहली बार आए हैं? Citizen account बनाएँ')}
+                  </button>
+                </form>
+              ) : !clientOtpSent ? (
                 <form onSubmit={async (e) => {
                   e.preventDefault();
                   setClientAuthError('');
@@ -7945,6 +7977,7 @@ export default function App() {
                     }
                     setClientOtpDeliveryMessage(data.message || '');
                     setClientMobileOtpCode('');
+                    clientAutoSubmittedCodeRef.current = '';
                     setClientOtpSent(true);
                   } catch (error) {
                     setClientAuthError(error instanceof Error ? error.message : 'Could not start verification. Please try again.');
@@ -8103,10 +8136,21 @@ export default function App() {
                     </button>
                   </div>
 
-                  <GoogleSignInButton
-                    onCredential={handleClientGoogleCredential}
-                    disabled={isClientAuthBusy}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isClientAuthBusy) return;
+                      setClientAuthMode('login');
+                      setClientOtpSent(false);
+                      setClientMobileOtpCode('');
+                      setClientAuthError('');
+                      clientAutoSubmittedCodeRef.current = '';
+                      setClientOtpDeliveryMessage('');
+                    }}
+                    className="w-full text-center text-xs font-semibold text-cyan-300 transition-colors hover:text-white"
+                  >
+                    {t('Already registered? Sign in with Gmail OTP', 'पहले से account है? Gmail OTP से login करें')}
+                  </button>
                 </form>
               ) : (
                 <form id="client-otp-verify-form" onSubmit={async (e) => {
@@ -8117,85 +8161,76 @@ export default function App() {
                     setClientAuthError('');
                     return;
                   }
-                  const missingClientVerifyFields = collectMissingFields([
-                    { label: 'Full Name', ok: isNonEmpty(clientName) },
-                    { label: '10-Digit Mobile Number', ok: isValidMobile(clientPhone) },
-                    { label: 'Gmail ID / Email', ok: isValidEmail(clientEmail) },
-                    { label: 'State / UT', ok: isNonEmpty(clientState) },
-                    { label: 'District', ok: isNonEmpty(clientDistrictFilter) },
-                    { label: 'City / Tehsil', ok: isNonEmpty(clientCityFilter) },
-                  ]);
-                  if (missingClientVerifyFields.length > 0) {
-                    setClientAuthError(requiredFieldsMessage(missingClientVerifyFields));
+                  if (clientAuthMode === 'login' && !isValidEmail(clientEmail)) {
+                    setClientAuthError(t('Enter the Gmail used for your Citizen account.', 'अपने Citizen account वाला Gmail दर्ज करें।'));
                     return;
+                  }
+                  if (clientAuthMode === 'register') {
+                    const missingClientVerifyFields = collectMissingFields([
+                      { label: 'Full Name', ok: isNonEmpty(clientName) },
+                      { label: '10-Digit Mobile Number', ok: isValidMobile(clientPhone) },
+                      { label: 'Gmail ID / Email', ok: isValidEmail(clientEmail) },
+                      { label: 'State / UT', ok: isNonEmpty(clientState) },
+                      { label: 'District', ok: isNonEmpty(clientDistrictFilter) },
+                      { label: 'City / Tehsil', ok: isNonEmpty(clientCityFilter) },
+                    ]);
+                    if (missingClientVerifyFields.length > 0) {
+                      setClientAuthError(requiredFieldsMessage(missingClientVerifyFields));
+                      return;
+                    }
                   }
                   clientVerifyLockRef.current = true;
                   setIsClientAuthBusy(true);
                   try {
-                    const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ target: clientPhone, code: clientMobileOtpCode })
-                    });
-                    const verifyData = await parseJsonResponse(verifyResponse);
-                    if (!verifyResponse.ok || !verifyData.verified) {
-                      throw new Error(verifyData.error || 'Invalid OTP. Check the code and try again.');
-                    }
-                    if (!verifyData.verificationToken) {
-                      throw new Error('OTP verification expired. Request a new code.');
+                    let loginData: any;
+                    if (clientAuthMode === 'login') {
+                      const response = await fetchWithRetry('/api/auth/client-login/verify-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: clientEmail.trim().toLowerCase(), code: clientMobileOtpCode })
+                      });
+                      loginData = await parseJsonResponse(response);
+                      if (!response.ok || !loginData.success) {
+                        throw new Error(loginData.error || 'Login failed after OTP verification. Please try again.');
+                      }
+                    } else {
+                      const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ target: clientPhone, code: clientMobileOtpCode })
+                      });
+                      const verifyData = await parseJsonResponse(verifyResponse);
+                      if (!verifyResponse.ok || !verifyData.verified) {
+                        throw new Error(verifyData.error || 'Invalid OTP. Check the code and try again.');
+                      }
+                      if (!verifyData.verificationToken) {
+                        throw new Error('OTP verification expired. Request a new code.');
+                      }
+
+                      const response = await fetchWithRetry('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          name: clientName,
+                          phone: clientPhone,
+                          email: clientEmail,
+                          state: clientState,
+                          district: clientDistrictFilter,
+                          city: clientCityFilter,
+                          role: 'client',
+                          verificationToken: verifyData.verificationToken
+                        })
+                      });
+                      loginData = await parseJsonResponse(response);
+                      if (!response.ok || !loginData.success) {
+                        throw new Error(loginData.error || 'Registration failed after OTP verification. Please try again.');
+                      }
                     }
 
-                    const loginResponse = await fetchWithRetry('/api/auth/login', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        name: clientName,
-                        phone: clientPhone,
-                        email: clientEmail,
-                        state: clientState,
-                        district: clientDistrictFilter,
-                        city: clientCityFilter,
-                        role: 'client',
-                        verificationToken: verifyData.verificationToken
-                      })
-                    });
-                    const loginData = await parseJsonResponse(loginResponse);
-                    if (!loginResponse.ok || !loginData.success) {
-                      throw new Error(loginData.error || 'Login failed after verification. Please try again.');
-                    }
-                    // Use the saved server account, so the user's real stored
-                    // details always appear on the dashboard after login.
-                    const savedUser = loginData.user || {};
-                    const resolvedName = String(savedUser.name || clientName || '').trim();
-                    const resolvedPhone = String(savedUser.phone || clientPhone || '').replace(/\D/g, '').slice(-10);
-                    const resolvedEmail = String(savedUser.email || clientEmail || '').trim().toLowerCase();
-                    const resolvedState = String(savedUser.state || clientState || '').trim();
-                    const rawDistrict = String(savedUser.district || clientDistrictFilter || '').trim();
-                    const resolvedDistrict = sameAsStateValue(rawDistrict, resolvedState) ? '' : rawDistrict;
-                    const rawCity = String(savedUser.city || clientCityFilter || '').trim();
-                    const resolvedCity = sameAsStateValue(rawCity, resolvedState) ? '' : rawCity;
-
-                    resetClientOrderState();
-                    if (resolvedName) setClientName(resolvedName);
-                    if (resolvedPhone) setClientPhone(resolvedPhone);
-                    if (resolvedEmail) setClientEmail(resolvedEmail);
-                    if (resolvedState) setClientState(resolvedState);
-                    if (resolvedDistrict) setClientDistrictFilter(resolvedDistrict);
-                    if (resolvedCity) setClientCityFilter(resolvedCity);
-
-                    writeStoredSession({
-                      role: 'client',
-                      accountId: String(savedUser.id || ''),
-                      loggedInAt: Date.now()
-                    });
-                    setClientAccountId(String(savedUser.id || ''));
-                    setIsClientLoggedIn(true);
-                    setActiveRole('client');
-                    setPendingRole('client');
-                    setLegalAccepted(false);
-                    try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
-                    setShowLegalModal(true);
-                    void fetchAllData();
+                    applyClientLoginResult(loginData);
+                    setClientAuthMode('login');
+                    setClientOtpSent(false);
+                    setClientMobileOtpCode('');
                   } catch (error) {
                     setClientAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
                   } finally {
@@ -8267,7 +8302,9 @@ export default function App() {
                     }}
                     className="w-full text-center text-xs text-zinc-400 hover:text-emerald-300 transition-colors pt-1"
                   >
-                    ← Edit Details / Resend Verification Code
+                    {clientAuthMode === 'login'
+                      ? t('← Edit Gmail / Send a new code', '← Gmail बदलें / नया कोड भेजें')
+                      : t('← Edit Details / Resend Verification Code', '← विवरण बदलें / नया कोड भेजें')}
                   </button>
                 </form>
               )}
