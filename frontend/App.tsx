@@ -1,21 +1,15 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import type { MouseEvent, TouchEvent } from 'react';
 import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Reply, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX, MonitorUp } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
+import { BrandEmblem3D } from './components/BrandEmblem3D';
+export { BrandEmblem3D } from './components/BrandEmblem3D';
 import { OrderStatusFilter, OrderStatusFilterValue } from './components/OrderStatusFilter';
-import { PayoutSettingsPanel } from './components/PayoutSettingsPanel';
-import { AccountIdentityChangePanel } from './components/AccountIdentityChangePanel';
 import { LocationAutocomplete } from './components/LocationAutocomplete';
 import { StateSelect } from './components/StateSelect';
-import { AdminSecurityPanel, isAdminConsoleAvailableLocally } from './components/AdminSecurityPanel';
 import { GoogleSignInButton } from './components/GoogleSignInButton';
 import { GovtFeeCategoryFields, GOVT_FEE_CATEGORIES, normalizeGovtFeeByCategory, categoryLabel } from './components/GovtFeeCategory';
 import type { GovtFeeByCategory, GovtFeeCategoryKey } from './components/GovtFeeCategory';
-import TermsCitizen from './components/legal/TermsCitizen';
-import TermsJanSeva from './components/legal/TermsJanSeva';
-import TermsFormFiller from './components/legal/TermsFormFiller';
-import PrivacyPolicy from './components/legal/PrivacyPolicy';
 import { LocalizedTree } from './localization';
 import { applyDocumentLanguage, readStoredLanguage, storeLanguage } from './language';
 import { realtimeSocket } from './realtime';
@@ -23,6 +17,33 @@ import { createBlinkLivenessEngine } from './services/blinkLiveness';
 import { getCaptchaToken } from './services/turnstile';
 import { API_FALLBACK_ORIGIN, fetchWithRetry, isApiRequestUrl, parseJsonResponse, shouldFallbackToApiOrigin } from './services/apiClient';
 import type { BlinkEngine } from './services/blinkLiveness';
+
+const AdminSecurityPanel = lazy(() =>
+  import('./components/AdminSecurityPanel').then(module => ({ default: module.AdminSecurityPanel }))
+);
+const PayoutSettingsPanel = lazy(() =>
+  import('./components/PayoutSettingsPanel').then(module => ({ default: module.PayoutSettingsPanel }))
+);
+const AccountIdentityChangePanel = lazy(() =>
+  import('./components/AccountIdentityChangePanel').then(module => ({ default: module.AccountIdentityChangePanel }))
+);
+const TermsCitizen = lazy(() => import('./components/legal/TermsCitizen'));
+const TermsJanSeva = lazy(() => import('./components/legal/TermsJanSeva'));
+const TermsFormFiller = lazy(() => import('./components/legal/TermsFormFiller'));
+const PrivacyPolicy = lazy(() => import('./components/legal/PrivacyPolicy'));
+const QRCodeSVG = lazy(() =>
+  import('qrcode.react').then(module => ({ default: module.QRCodeSVG }))
+);
+
+const isAdminConsoleAvailableLocally = () =>
+  typeof window !== 'undefined' && ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+
+const LazyFeatureFallback = () => (
+  <div role="status" className="flex min-h-24 items-center justify-center gap-2 text-sm text-slate-400">
+    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+    <span>Loading…</span>
+  </div>
+);
 
 export const getDocRequirements = (item: { id?: string; docName?: string; requirements?: string; title?: string }) => {
   if (item.requirements && item.requirements.trim()) return item.requirements;
@@ -66,139 +87,6 @@ const takeServerSnapshot = (ref: { current: string | null }, payload: unknown): 
   const previous = ref.current;
   ref.current = json;
   return previous === json ? null : json;
-};
-
-// =========================================================================
-// REUSABLE 3D BRAND EMBLEM: 3D COMPUTER + F + ILLUP + 3D FIRM EMBLEM
-// =========================================================================
-export const BrandEmblem3D = ({
-  size = 'md',
-  layout = 'row',
-  subtitle = 'JAN SEVA & CYBER CAFE FIRM',
-  onClick,
-}: {
-  size?: 'sm' | 'md' | 'lg';
-  layout?: 'row' | 'col';
-  subtitle?: string;
-  onClick?: () => void;
-}) => {
-  const isCol = layout === 'col';
-  const logoBoxClass = size === 'sm' ? 'w-8 h-8 sm:w-10 sm:h-10' : size === 'md' ? 'w-10 h-10 sm:w-12 sm:h-12' : 'w-16 h-16 sm:w-20 sm:h-20';
-  const fTextClass = size === 'sm' ? 'text-xl sm:text-2xl' : size === 'md' ? 'text-2xl sm:text-3xl' : 'text-4xl sm:text-5xl';
-  const illupTextClass = size === 'sm' ? 'text-xs sm:text-sm' : size === 'md' ? 'text-sm sm:text-lg' : 'text-xl sm:text-2xl';
-  const subtitleClass = size === 'sm' ? 'text-[9px]' : size === 'lg' ? 'text-xs' : 'text-[10px]';
-
-  return (
-    <div
-      onClick={onClick}
-      className={`flex ${isCol ? 'flex-col items-center text-center gap-3' : 'items-center gap-3'} ${onClick ? 'cursor-pointer' : ''} group select-none`}
-    >
-      {/* 3D Computer / Laptop Workstation Emblem */}
-      <div className={`relative ${logoBoxClass} flex items-center justify-center group-hover:scale-105 transition-all duration-300 shrink-0`}>
-        {/* Ambient 3D Brand Glow Aura */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/35 via-blue-500/25 to-indigo-600/35 rounded-2xl blur-md group-hover:blur-lg transition-all pointer-events-none" />
-
-        {/* Multi-layered Glass Bevel Frame */}
-        <div className="relative w-full h-full rounded-2xl p-[1px] bg-gradient-to-b from-cyan-400/80 via-blue-500/50 to-indigo-600/70 shadow-xl shadow-cyan-500/15 group-hover:shadow-cyan-500/35 transition-all flex items-center justify-center overflow-hidden">
-          <div className="w-full h-full bg-[#080D18]/95 backdrop-blur-md rounded-[15px] flex items-center justify-center p-1.5 relative overflow-hidden shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]">
-            <svg viewBox="0 0 64 64" className="w-full h-full drop-shadow-[0_2px_10px_rgba(6,182,212,0.7)]">
-              <defs>
-                <linearGradient id="brand3dCompScreenLid" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#38bdf8" />
-                  <stop offset="50%" stopColor="#1e40af" />
-                  <stop offset="100%" stopColor="#0f172a" />
-                </linearGradient>
-                <linearGradient id="brand3dCompScreenDisplay" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#22d3ee" />
-                  <stop offset="50%" stopColor="#0284c7" />
-                  <stop offset="100%" stopColor="#051024" />
-                </linearGradient>
-                <linearGradient id="brand3dCompBaseDeck" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#334155" />
-                  <stop offset="50%" stopColor="#1e293b" />
-                  <stop offset="100%" stopColor="#0f172a" />
-                </linearGradient>
-                <linearGradient id="brand3dCompBaseFront" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#1e293b" />
-                  <stop offset="100%" stopColor="#020617" />
-                </linearGradient>
-                <linearGradient id="brand3dCompOrbit" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#38bdf8" />
-                  <stop offset="50%" stopColor="#818cf8" />
-                  <stop offset="100%" stopColor="#06b6d4" />
-                </linearGradient>
-              </defs>
-
-              {/* Ambient Base Shadow */}
-              <ellipse cx="32" cy="55" rx="24" ry="3.5" fill="#000000" opacity="0.6" />
-
-              {/* 3D Orbital Cyberspace Ring */}
-              <ellipse cx="32" cy="33" rx="28" ry="12" fill="none" stroke="url(#brand3dCompOrbit)" strokeWidth="1.4" strokeDasharray="3 2" transform="rotate(-18 32 33)" />
-
-              {/* 3D Laptop Base (Keyboard Deck) */}
-              <polygon points="16,34 48,34 56,48 8,48" fill="url(#brand3dCompBaseDeck)" />
-              {/* Aluminum Chamfer Highlight Edge */}
-              <line x1="8" y1="48" x2="56" y2="48" stroke="#38bdf8" strokeWidth="0.8" opacity="0.8" />
-              {/* Front Lip Thickness */}
-              <polygon points="8,48 56,48 56,52 8,52" fill="url(#brand3dCompBaseFront)" />
-              {/* Front Glowing LED Power Bar */}
-              <line x1="26" y1="50" x2="38" y2="50" stroke="#22d3ee" strokeWidth="1.2" strokeLinecap="round" filter="drop-shadow(0 0 3px #06b6d4)" />
-
-              {/* Backlit Keyboard Area */}
-              <polygon points="18,36 46,36 50,44 14,44" fill="#061224" stroke="#0284c7" strokeWidth="0.6" />
-              <line x1="17" y1="38.5" x2="47" y2="38.5" stroke="#38bdf8" strokeWidth="0.75" strokeDasharray="2 1" opacity="0.8" />
-              <line x1="16" y1="41" x2="48" y2="41" stroke="#38bdf8" strokeWidth="0.75" strokeDasharray="2 1" opacity="0.8" />
-              <line x1="15" y1="43" x2="49" y2="43" stroke="#67e8f9" strokeWidth="0.75" strokeDasharray="2.5 1" opacity="0.85" />
-              {/* Glowing Trackpad */}
-              <polygon points="27,45 37,45 38,47.5 26,47.5" fill="#0b172a" stroke="#38bdf8" strokeWidth="0.6" opacity="0.9" />
-
-              {/* 3D Laptop Screen */}
-              <polygon points="17,9 47,9 48,34 16,34" fill="url(#brand3dCompScreenLid)" />
-              <polygon points="16,9 17,9 16,34 15,34" fill="#0284c7" opacity="0.7" />
-              <polygon points="18,11 46,11 47,33 17,33" fill="#020617" />
-              <polygon points="20,13 44,13 45,31 19,31" fill="url(#brand3dCompScreenDisplay)" />
-              <polygon points="20,13 32,13 22,31 19,31" fill="#ffffff" opacity="0.35" />
-
-              {/* Screen Holographic UI: Biometric Shield */}
-              <circle cx="32" cy="20" r="4.5" fill="none" stroke="#a5f3fc" strokeWidth="1" filter="drop-shadow(0 0 3px #38bdf8)" />
-              <path d="M30 20 L31.5 21.5 L34 19" fill="none" stroke="#ffffff" strokeWidth="1.2" strokeLinecap="round" />
-              <line x1="23" y1="27" x2="33" y2="27" stroke="#67e8f9" strokeWidth="1" opacity="0.8" />
-              <line x1="23" y1="29.5" x2="29" y2="29.5" stroke="#38bdf8" strokeWidth="0.8" opacity="0.8" />
-              <circle cx="41" cy="27" r="1.5" fill="#34d399" filter="drop-shadow(0 0 3px #10b981)" />
-
-              {/* Floating 3D Spark Vertices */}
-              <circle cx="9" cy="24" r="1.4" fill="#a5f3fc" filter="drop-shadow(0 0 3px #06b6d4)" />
-              <circle cx="55" cy="42" r="1.4" fill="#38bdf8" filter="drop-shadow(0 0 3px #3b82f6)" />
-              <circle cx="32" cy="7" r="1.4" fill="#c084fc" filter="drop-shadow(0 0 3px #a855f7)" />
-            </svg>
-          </div>
-        </div>
-      </div>
-
-      {/* Brand Text: Large F + ILLUP with 3D FIRM Emblem Underline */}
-      <div className={`flex flex-col ${isCol ? 'items-center' : 'justify-center'}`}>
-        <div className="font-black tracking-normal text-white font-['Poppins'] flex items-baseline group-hover:brightness-110 transition-all leading-none">
-          <span className={`${fTextClass} font-serif italic font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-400 drop-shadow-[0_0_12px_rgba(6,182,212,0.55)] pr-0.5 leading-none select-none`}>
-            F
-          </span>
-          <span className={`${illupTextClass} font-black tracking-[0.22em] text-white self-center pb-0.5 font-['Poppins',sans-serif] brand-illup-text`}>
-            ILLUP
-          </span>
-        </div>
-
-        {/* Signature Line: Heartbeat pulse directly forming the Application Form document */}
-        <div className="flex w-full items-center justify-center my-0.5 pointer-events-none">
-          <HeartbeatToFormLine size={size === 'lg' ? 'md' : size === 'sm' ? 'sm' : 'sm'} />
-        </div>
-
-        {subtitle && (
-          <p className={`${subtitleClass} hidden sm:block text-cyan-400/90 font-mono tracking-widest uppercase font-bold`}>
-            {subtitle}
-          </p>
-        )}
-      </div>
-    </div>
-  );
 };
 
 // 3D Isometric Form Item Icon Badge
@@ -7805,7 +7693,9 @@ export default function App() {
       {/* 🛡️ ADMIN SECURITY CONSOLE (bot attack log + IP blocklist)                    */}
       {/* ========================================================================= */}
       {step === 'admin_security' && isAdminConsoleAvailableLocally() && (
-        <AdminSecurityPanel onBack={() => setStep('landing')} language={lang} />
+        <Suspense fallback={<LazyFeatureFallback />}>
+          <AdminSecurityPanel onBack={() => setStep('landing')} language={lang} />
+        </Suspense>
       )}
 
       {/* ========================================================================= */}
@@ -11488,7 +11378,9 @@ export default function App() {
                   </div>
                 );
               })()}
-              <PayoutSettingsPanel role="vle" phone={vlePhone} email={vleEmail} language={lang} onSaved={() => setVlePayoutUpiReady(true)} />
+              <Suspense fallback={<LazyFeatureFallback />}>
+                <PayoutSettingsPanel role="vle" phone={vlePhone} email={vleEmail} language={lang} onSaved={() => setVlePayoutUpiReady(true)} />
+              </Suspense>
             </>
           )}
 
@@ -12662,7 +12554,9 @@ export default function App() {
           )}
 
           {fillerDashboardTab === 'payments' ? (
-            <PayoutSettingsPanel role="filler" phone={fillerPhone} email={fillerEmail} language={lang} onSaved={() => setFillerPayoutUpiReady(true)} />
+            <Suspense fallback={<LazyFeatureFallback />}>
+              <PayoutSettingsPanel role="filler" phone={fillerPhone} email={fillerEmail} language={lang} onSaved={() => setFillerPayoutUpiReady(true)} />
+            </Suspense>
           ) : fillerDashboardTab === 'all_saved' ? (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="bg-slate-900 rounded-3xl border border-violet-500/30 p-6 sm:p-8 shadow-xl space-y-6 max-w-5xl mx-auto">
@@ -14242,7 +14136,9 @@ export default function App() {
                                       {qr.qrImage ? (
                                         <img src={qr.qrImage} alt={`${qr.label} QR`} className="h-[120px] w-[120px] object-contain" />
                                       ) : (
-                                        <QRCodeSVG value={uri} size={120} level="M" marginSize={2} className="h-auto w-[120px]" />
+                                        <Suspense fallback={<div className="h-[120px] w-[120px] rounded-lg bg-white/10" aria-hidden="true" />}>
+                                          <QRCodeSVG value={uri} size={120} level="M" marginSize={2} className="h-auto w-[120px]" />
+                                        </Suspense>
                                       )}
                                     </a>
                                   ) : (
@@ -15177,18 +15073,20 @@ export default function App() {
                 <span>{t('Gmail, mobile number and CSC ID are locked. Gmail/mobile can be changed below with your security PIN (new Gmail OTP required). CSC ID is admin-only.', 'Gmail, मोबाइल नंबर और CSC ID लॉक हैं। Gmail/मोबाइल नीचे सुरक्षा PIN से बदल सकते हैं (नए Gmail का OTP ज़रूरी)। CSC ID सिर्फ एडमिन बदल सकता है।')}</span>
               </p>
 
-              <AccountIdentityChangePanel
-                role="vle"
-                phone={vlePhone}
-                email={vleEmail}
-                language={lang}
-                onChanged={(nextPhone, nextEmail) => {
-                  setVlePhone(nextPhone);
-                  setVleEmail(nextEmail);
-                  setKendraEditPhone(nextPhone);
-                  setKendraEditEmail(nextEmail);
-                }}
-              />
+              <Suspense fallback={<LazyFeatureFallback />}>
+                <AccountIdentityChangePanel
+                  role="vle"
+                  phone={vlePhone}
+                  email={vleEmail}
+                  language={lang}
+                  onChanged={(nextPhone, nextEmail) => {
+                    setVlePhone(nextPhone);
+                    setVleEmail(nextEmail);
+                    setKendraEditPhone(nextPhone);
+                    setKendraEditEmail(nextEmail);
+                  }}
+                />
+              </Suspense>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
@@ -15448,18 +15346,20 @@ export default function App() {
                 <span>{t('Gmail and mobile number are locked. You can change them below with your security PIN (new Gmail OTP required).', 'Gmail और मोबाइल नंबर लॉक हैं। नीचे सुरक्षा PIN से बदल सकते हैं (नए Gmail का OTP ज़रूरी)।')}</span>
               </p>
 
-              <AccountIdentityChangePanel
-                role="filler"
-                phone={fillerPhone}
-                email={fillerEmail}
-                language={lang}
-                onChanged={(nextPhone, nextEmail) => {
-                  setFillerPhone(nextPhone);
-                  setFillerEmail(nextEmail);
-                  setFillerEditPhone(nextPhone);
-                  setFillerEditEmail(nextEmail);
-                }}
-              />
+              <Suspense fallback={<LazyFeatureFallback />}>
+                <AccountIdentityChangePanel
+                  role="filler"
+                  phone={fillerPhone}
+                  email={fillerEmail}
+                  language={lang}
+                  onChanged={(nextPhone, nextEmail) => {
+                    setFillerPhone(nextPhone);
+                    setFillerEmail(nextEmail);
+                    setFillerEditPhone(nextPhone);
+                    setFillerEditEmail(nextEmail);
+                  }}
+                />
+              </Suspense>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
@@ -15839,64 +15739,72 @@ export default function App() {
       </footer>
 
       {step === 'terms_citizen' && (
-        <TermsCitizen onBack={() => {
-          if (showLegalModal || pendingRole) {
-            setShowLegalModal(true);
-            setStep('landing');
-            return;
-          } else {
-            const session = readStoredSession();
-            if (session?.role === 'client') setStep('client_portal');
-            else if (session?.role === 'vle') setStep('vle_home');
-            else if (session?.role === 'form_filler') setStep('form_filler_app');
-            else setStep('landing');
-          }
-        }} language={lang} />
+        <Suspense fallback={<LazyFeatureFallback />}>
+          <TermsCitizen onBack={() => {
+            if (showLegalModal || pendingRole) {
+              setShowLegalModal(true);
+              setStep('landing');
+              return;
+            } else {
+              const session = readStoredSession();
+              if (session?.role === 'client') setStep('client_portal');
+              else if (session?.role === 'vle') setStep('vle_home');
+              else if (session?.role === 'form_filler') setStep('form_filler_app');
+              else setStep('landing');
+            }
+          }} language={lang} />
+        </Suspense>
       )}
       {step === 'terms_janseva' && (
-        <TermsJanSeva onBack={() => {
-          if (showLegalModal || pendingRole) {
-            setShowLegalModal(true);
-            setStep('landing');
-            return;
-          } else {
-            const session = readStoredSession();
-            if (session?.role === 'client') setStep('client_portal');
-            else if (session?.role === 'vle') setStep('vle_home');
-            else if (session?.role === 'form_filler') setStep('form_filler_app');
-            else setStep('landing');
-          }
-        }} language={lang} />
+        <Suspense fallback={<LazyFeatureFallback />}>
+          <TermsJanSeva onBack={() => {
+            if (showLegalModal || pendingRole) {
+              setShowLegalModal(true);
+              setStep('landing');
+              return;
+            } else {
+              const session = readStoredSession();
+              if (session?.role === 'client') setStep('client_portal');
+              else if (session?.role === 'vle') setStep('vle_home');
+              else if (session?.role === 'form_filler') setStep('form_filler_app');
+              else setStep('landing');
+            }
+          }} language={lang} />
+        </Suspense>
       )}
       {step === 'terms_formfiller' && (
-        <TermsFormFiller onBack={() => {
-          if (showLegalModal || pendingRole) {
-            setShowLegalModal(true);
-            setStep('landing');
-            return;
-          } else {
-            const session = readStoredSession();
-            if (session?.role === 'client') setStep('client_portal');
-            else if (session?.role === 'vle') setStep('vle_home');
-            else if (session?.role === 'form_filler') setStep('form_filler_app');
-            else setStep('landing');
-          }
-        }} language={lang} />
+        <Suspense fallback={<LazyFeatureFallback />}>
+          <TermsFormFiller onBack={() => {
+            if (showLegalModal || pendingRole) {
+              setShowLegalModal(true);
+              setStep('landing');
+              return;
+            } else {
+              const session = readStoredSession();
+              if (session?.role === 'client') setStep('client_portal');
+              else if (session?.role === 'vle') setStep('vle_home');
+              else if (session?.role === 'form_filler') setStep('form_filler_app');
+              else setStep('landing');
+            }
+          }} language={lang} />
+        </Suspense>
       )}
       {step === 'privacy_policy' && (
-        <PrivacyPolicy onBack={() => {
-          if (showLegalModal || pendingRole) {
-            setShowLegalModal(true);
-            setStep('landing');
-            return;
-          } else {
-            const session = readStoredSession();
-            if (session?.role === 'client') setStep('client_portal');
-            else if (session?.role === 'vle') setStep('vle_home');
-            else if (session?.role === 'form_filler') setStep('form_filler_app');
-            else setStep('landing');
-          }
-        }} language={lang} />
+        <Suspense fallback={<LazyFeatureFallback />}>
+          <PrivacyPolicy onBack={() => {
+            if (showLegalModal || pendingRole) {
+              setShowLegalModal(true);
+              setStep('landing');
+              return;
+            } else {
+              const session = readStoredSession();
+              if (session?.role === 'client') setStep('client_portal');
+              else if (session?.role === 'vle') setStep('vle_home');
+              else if (session?.role === 'form_filler') setStep('form_filler_app');
+              else setStep('landing');
+            }
+          }} language={lang} />
+        </Suspense>
       )}
 
       {showLegalModal && pendingRole && (

@@ -1,5 +1,5 @@
 import { ArrowLeft, FileText, Shield, AlertCircle, CreditCard, Lock, Users } from 'lucide-react';
-import { BrandEmblem3D } from '../../App';
+import { BrandEmblem3D } from '../BrandEmblem3D';
 import { LocalizedTree, type AppLanguage } from '../../localization';
 
 interface TermsCitizenProps {
