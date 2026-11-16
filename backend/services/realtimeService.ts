@@ -742,6 +742,10 @@ export function emitCameraRequest(orderId: string, payload: unknown): void {
   }
 }
 
+export function emitServiceCatalogUpdated(): void {
+  realtimeServer?.emit('service-catalog:updated');
+}
+
 export function hasConnectedClient(orderId: string): boolean {
   const roomSockets = realtimeServer?.sockets.adapter.rooms.get(orderRoom(orderId));
   if (!roomSockets) return false;

@@ -3454,14 +3454,14 @@ export default function App() {
         }
       }
 
-      if (Array.isArray(dashboardData.fillerServices) && dashboardData.fillerServices.length > 0) {
+      if (Array.isArray(dashboardData.fillerServices)) {
         const json = takeServerSnapshot(fillerServicesSnapRef, dashboardData.fillerServices);
         if (json !== null) {
           setFillerServices(prev => (JSON.stringify(prev) === json ? prev : dashboardData.fillerServices));
         }
       }
 
-      if (Array.isArray(dashboardData.pricingList) && dashboardData.pricingList.length > 0) {
+      if (Array.isArray(dashboardData.pricingList)) {
         const json = takeServerSnapshot(pricingListSnapRef, dashboardData.pricingList);
         if (json !== null) {
           setCustomPricingList(prev => (JSON.stringify(prev) === json ? prev : dashboardData.pricingList));
@@ -3471,7 +3471,7 @@ export default function App() {
         }
       }
 
-      if (Array.isArray(dashboardData.formFillingList) && dashboardData.formFillingList.length > 0) {
+      if (Array.isArray(dashboardData.formFillingList)) {
         const json = takeServerSnapshot(formFillingListSnapRef, dashboardData.formFillingList);
         if (json !== null) {
           setVleFormFillingList(prev => (JSON.stringify(prev) === json ? prev : dashboardData.formFillingList));
@@ -4106,6 +4106,9 @@ export default function App() {
     }) => {
       void handleCallSignal(signal);
     };
+    const onServiceCatalogUpdated = () => {
+      void fetchAllData();
+    };
 
     const joinRooms = () => {
       if (!realtimeSocket.connected) return;
@@ -4192,6 +4195,7 @@ export default function App() {
     realtimeSocket.on('call:busy', onCallBusy);
     realtimeSocket.on('call:ended', onCallEnded);
     realtimeSocket.on('call:signal', onCallSignal);
+    realtimeSocket.on('service-catalog:updated', onServiceCatalogUpdated);
     realtimeSocket.on('connect', joinRooms);
     realtimeSocket.connect();
     joinRooms();
@@ -4223,6 +4227,7 @@ export default function App() {
       realtimeSocket.off('call:busy', onCallBusy);
       realtimeSocket.off('call:ended', onCallEnded);
       realtimeSocket.off('call:signal', onCallSignal);
+      realtimeSocket.off('service-catalog:updated', onServiceCatalogUpdated);
       realtimeSocket.off('connect', joinRooms);
     };
   }, [realtimeOrderIdsKey, activeRole, clientPhone, clientAccountId, clientSessionToken, activeWorkspaceOrder?.id, vleDistrict, vleId, fillerDistrict]);

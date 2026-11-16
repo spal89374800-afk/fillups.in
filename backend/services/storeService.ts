@@ -382,6 +382,19 @@ export function addOrUpdateFillerService(item: Partial<FillerServiceItem> & { do
   return newItem;
 }
 
+export async function removeFillerService(id: string): Promise<FillerServiceItem | undefined> {
+  if (!fillerServicesStore.some(service => service.id === id)) return undefined;
+  if (!isMongoConnected()) {
+    throw new Error('Database is unavailable. The service was not deleted; please try again.');
+  }
+
+  await FillerServiceModel.deleteOne({ id });
+  pendingMongoWrites.delete(mongoWriteKey('fillerService', { id }));
+  const index = fillerServicesStore.findIndex(service => service.id === id);
+  if (index < 0) return undefined;
+  return fillerServicesStore.splice(index, 1)[0];
+}
+
 export let globalPricingStore: { id: string; docName: string; price: string; icon?: string; dept?: string }[] = [];
 
 export function updateGlobalPricing(pricing: { id: string; docName: string; price: string; icon?: string; dept?: string }[]) {
@@ -1530,7 +1543,7 @@ export async function unsuspendOperatorByIdentifier(
 export function getOperatorPricing(account?: UserAccount): VleOperator['pricingList'] {
   if (!account) return [];
   const operator = findVleOperatorForAccount(account);
-  return operator?.pricingList?.length ? operator.pricingList : (Array.isArray(account.pricingList) ? account.pricingList as VleOperator['pricingList'] : []);
+  return Array.isArray(operator?.pricingList) ? operator.pricingList : (Array.isArray(account.pricingList) ? account.pricingList as VleOperator['pricingList'] : []);
 }
 
 export function saveOperatorPricing(account: UserAccount, pricing: VleOperator['pricingList']): VleOperator['pricingList'] {
@@ -1560,7 +1573,7 @@ export function saveOperatorPricing(account: UserAccount, pricing: VleOperator['
 export function getOperatorFormFilling(account?: UserAccount): any[] {
   if (!account) return [];
   const operator = findVleOperatorForAccount(account) as (VleOperator & { formFillingList?: any[] }) | undefined;
-  return operator?.formFillingList?.length ? operator.formFillingList : (Array.isArray(account.formFillingList) ? account.formFillingList : []);
+  return Array.isArray(operator?.formFillingList) ? operator.formFillingList : (Array.isArray(account.formFillingList) ? account.formFillingList : []);
 }
 
 export function saveOperatorFormFilling(account: UserAccount, formFillingList: any[]): any[] {

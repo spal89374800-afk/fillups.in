@@ -9,6 +9,7 @@ import {
   userAccountsStore,
   fillerServicesStore,
   addOrUpdateFillerService,
+  removeFillerService,
   isOrderVisibleToAccount,
   normalizeEmail,
   getBidLimitStatus,
@@ -22,7 +23,8 @@ import {
   sanitizeAccountForClient
 } from '../services/storeService.ts';
 import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } from '../services/orderDispatchService.ts';
-import { emitOrderUpdate } from '../services/realtimeService.ts';
+import { emitOrderUpdate, emitServiceCatalogUpdated } from '../services/realtimeService.ts';
+import { clearPublicCatalogCache } from '../services/publicCatalogService.ts';
 import { consumeOtpVerification } from './authRoutes.ts';
 import { getRequestAccount, requireAccount } from '../middleware/securityMiddleware.ts';
 import { vleListStore } from '../services/storeService.ts';
@@ -245,6 +247,8 @@ fillerRouter.post('/filler/services', requireAccount('filler'), (req, res) => {
     ownerState: account.state,
     state: state || ''
   });
+  clearPublicCatalogCache();
+  emitServiceCatalogUpdated();
 
   res.json({
     success: true,
@@ -256,18 +260,36 @@ fillerRouter.post('/filler/services', requireAccount('filler'), (req, res) => {
   });
 });
 
-fillerRouter.delete('/filler/services/:id', requireAccount('filler'), (req, res) => {
+fillerRouter.delete('/filler/services/:id', requireAccount('filler'), async (req, res) => {
   const account = getRequestAccount(req)!;
   const { id } = req.params;
   const idx = fillerServicesStore.findIndex(s => s.id === id);
-  if (idx >= 0) {
-    const owned = !fillerServicesStore[idx].ownerId || fillerServicesStore[idx].ownerId === account.id ||
-      (fillerServicesStore[idx].ownerEmail && normalizeEmail(fillerServicesStore[idx].ownerEmail) === normalizeEmail(account.email));
-    if (!owned) {
-      return res.status(403).json({ success: false, error: 'You can only remove forms published by your own account.' });
-    }
-    fillerServicesStore.splice(idx, 1);
+  if (idx < 0) {
+    return res.status(404).json({ success: false, error: 'This published form was not found.' });
   }
+
+  const service = fillerServicesStore[idx];
+  const owned = !service.ownerId || service.ownerId === account.id ||
+    (service.ownerEmail && normalizeEmail(service.ownerEmail) === normalizeEmail(account.email));
+  if (!owned) {
+    return res.status(403).json({ success: false, error: 'You can only remove forms published by your own account.' });
+  }
+
+  try {
+    const removed = await removeFillerService(id);
+    if (!removed) {
+      return res.status(404).json({ success: false, error: 'This published form was not found.' });
+    }
+  } catch (error) {
+    console.error(`[Form service deletion] Could not delete ${id}:`, error);
+    return res.status(503).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Could not permanently delete this service. Please try again.'
+    });
+  }
+
+  clearPublicCatalogCache();
+  emitServiceCatalogUpdated();
   res.json({ success: true, message: 'Service removed.', services: fillerServicesStore });
 });
 

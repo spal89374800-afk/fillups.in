@@ -46,7 +46,8 @@ import { VleOperator, VleOrder, ServiceScope } from '../types/index.ts';
 import { consumeOtpVerification } from './authRoutes.ts';
 import { getRequestAccount, requireAccount } from '../middleware/securityMiddleware.ts';
 import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } from '../services/orderDispatchService.ts';
-import { emitOrderUpdate, isOperatorOnline } from '../services/realtimeService.ts';
+import { emitOrderUpdate, emitServiceCatalogUpdated, isOperatorOnline } from '../services/realtimeService.ts';
+import { clearPublicCatalogCache } from '../services/publicCatalogService.ts';
 
 const noLocalJanSevaMessage = 'Jan Seva isn’t available in your area yet. We’re working on it—please check back in 24 hours for an update. Thank you 😊✨';
 
@@ -250,10 +251,15 @@ vleRouter.get('/vle/pricing', requireAccount('vle'), (req, res) => {
   });
 });
 
-vleRouter.post('/vle/pricing', requireAccount('vle'), (req, res) => {
+vleRouter.post('/vle/pricing', requireAccount('vle'), async (req, res) => {
   const account = getRequestAccount(req)!;
   const savedPricing = saveOperatorPricing(account, req.body.pricingList);
   const savedFormFilling = saveOperatorFormFilling(account, req.body.formFillingList);
+  const operator = findVleOperatorForAccount(account);
+  await persistToMongo('userAccount', account);
+  if (operator) await persistToMongo('vleOperator', operator);
+  clearPublicCatalogCache();
+  emitServiceCatalogUpdated();
   res.json({
     success: true,
     message: '✅ Pricing saved for your Jan Seva Kendra only.',
@@ -399,6 +405,8 @@ vleRouter.post('/vle/register', async (req, res) => {
   } catch {}
   saveOperatorPricing(account, ownPricing);
   saveOperatorFormFilling(account, formFillingList || []);
+  clearPublicCatalogCache();
+  emitServiceCatalogUpdated();
 
   res.json({
     success: true,
