@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { renderGoogleButton } from '../services/googleAuth';
+import { clearGoogleCredentialHandler, renderGoogleButton } from '../services/googleAuth';
 
 // ========================================================
 // 🔐 "CONTINUE WITH GOOGLE" BUTTON (additional login option)
@@ -8,10 +8,12 @@ import { renderGoogleButton } from '../services/googleAuth';
 // Google configured na ho to kuch bhi render nahi hota (OTP flow untouched).
 export function GoogleSignInButton({
   onCredential,
-  disabled = false
+  disabled = false,
+  helperText = 'Google verifies your Gmail only. Mobile number and address details are still required.'
 }: {
   onCredential: (credential: string) => void;
   disabled?: boolean;
+  helperText?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const callbackRef = useRef(onCredential);
@@ -25,12 +27,14 @@ export function GoogleSignInButton({
     const element = containerRef.current;
     if (!element) return;
     let cancelled = false;
-    void renderGoogleButton(element, credential => callbackRef.current(credential)).then(result => {
+    const handleCredential = (credential: string) => callbackRef.current(credential);
+    void renderGoogleButton(element, handleCredential).then(result => {
       if (cancelled) return;
       setStatus(result);
     });
     return () => {
       cancelled = true;
+      clearGoogleCredentialHandler(handleCredential);
     };
   }, []);
 
@@ -58,9 +62,7 @@ export function GoogleSignInButton({
           />
         </div>
       )}
-      <p className="mt-1.5 text-center text-[10px] leading-snug text-slate-500">
-        Google verifies your Gmail only. Mobile number and address details are still required.
-      </p>
+      <p className="mt-1.5 text-center text-[10px] leading-snug text-slate-500">{helperText}</p>
     </div>
   );
 }

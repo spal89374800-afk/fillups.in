@@ -117,7 +117,7 @@ authRouter.post('/auth/register', (req, res) => {
     return res.status(409).json({
       success: false,
       code: 'ACCOUNT_EXISTS',
-      error: 'This Gmail already has a Citizen account. Sign in with Gmail OTP instead.'
+      error: 'This Gmail already has a Citizen account. Sign in with Google or Gmail OTP instead.'
     });
   }
   if (!consumeOtpVerification(phone, req.body.verificationToken, userRole, email)) {
@@ -325,6 +325,21 @@ authRouter.post('/auth/client-login/verify-otp', (req, res) => {
 // hai — Google sirf email verify karta hai, baaki fields compulsory rehti hain.
 let googleOAuthClient: OAuth2Client | null = null;
 
+async function verifyGoogleCredential(credential: string, clientId: string) {
+  if (!googleOAuthClient) googleOAuthClient = new OAuth2Client();
+  const ticket = await googleOAuthClient.verifyIdToken({ idToken: credential, audience: clientId });
+  const payload = ticket.getPayload();
+  const email = normalizeEmail(payload?.email);
+  if (!payload || !email || payload.email_verified !== true) {
+    throw new Error('Google account email could not be verified.');
+  }
+  return {
+    email,
+    name: payload.name || '',
+    picture: payload.picture || ''
+  };
+}
+
 authRouter.post('/auth/google', async (req, res) => {
   try {
     const clientId = readEnvValue('GOOGLE_CLIENT_ID');
@@ -373,16 +388,7 @@ authRouter.post('/auth/google', async (req, res) => {
     }
     registerOtpVerify({ phone, ip: clientIp });
 
-    if (!googleOAuthClient) googleOAuthClient = new OAuth2Client();
-    const ticket = await googleOAuthClient.verifyIdToken({ idToken: credential, audience: clientId });
-    const payload = ticket.getPayload();
-    const email = String(payload?.email || '').trim().toLowerCase();
-    if (!payload || !email || payload.email_verified !== true) {
-      return res.status(401).json({
-        success: false,
-        error: 'Google account email could not be verified. Please choose a verified Gmail account.'
-      });
-    }
+    const { email, name, picture } = await verifyGoogleCredential(credential, clientId);
 
     const verificationToken = randomBytes(32).toString('hex');
     verifiedOtpGrants[verificationToken] = {
@@ -398,11 +404,64 @@ authRouter.post('/auth/google', async (req, res) => {
       verified: true,
       verificationToken,
       email,
-      name: payload?.name || '',
-      picture: payload?.picture || ''
+      name,
+      picture
     });
   } catch (error) {
     console.error('[auth/google] verification failed:', error);
+    return res.status(401).json({
+      success: false,
+      error: 'Google sign-in could not be verified. Please try again or use the Gmail OTP option.'
+    });
+  }
+});
+
+authRouter.post('/auth/client-login/google', async (req, res) => {
+  const clientId = readEnvValue('GOOGLE_CLIENT_ID');
+  if (!clientId) {
+    return res.status(503).json({
+      success: false,
+      error: 'Google sign-in is not configured on this server. Please use the Gmail OTP option.'
+    });
+  }
+
+  const credential = typeof req.body?.credential === 'string' ? req.body.credential.trim() : '';
+  if (!credential) {
+    return res.status(400).json({ success: false, error: 'Google credential is required.' });
+  }
+
+  try {
+    const { email } = await verifyGoogleCredential(credential, clientId);
+    const account = findClientAccountByEmail(email);
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        code: 'ACCOUNT_NOT_FOUND',
+        error: 'No Citizen account was found for this Google account. Create an account first.'
+      });
+    }
+
+    const clientIp = resolveClientIp(req);
+    const phone = String(account.phone || '').replace(/\D/g, '').slice(-10);
+    const verifyGuard = checkOtpVerifyLimits({ phone, ip: clientIp });
+    if (!verifyGuard.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: verifyGuard.message,
+        reason: verifyGuard.reason,
+        retryAfterMinutes: verifyGuard.retryAfterMinutes
+      });
+    }
+    registerOtpVerify({ phone, ip: clientIp });
+
+    setAuthSessionCookie(res, account.token);
+    return res.json({
+      success: true,
+      message: 'Logged in successfully.',
+      user: sanitizeAccountForClient(account)
+    });
+  } catch (error) {
+    console.error('[client-login] Google sign-in failed:', error);
     return res.status(401).json({
       success: false,
       error: 'Google sign-in could not be verified. Please try again or use the Gmail OTP option.'
@@ -442,7 +501,7 @@ authRouter.post('/auth/send-otp', async (req, res) => {
     return res.status(409).json({
       success: false,
       code: 'ACCOUNT_EXISTS',
-      error: 'This Gmail already has a Citizen account. Sign in with Gmail OTP instead.'
+      error: 'This Gmail already has a Citizen account. Sign in with Google or Gmail OTP instead.'
     });
   }
 

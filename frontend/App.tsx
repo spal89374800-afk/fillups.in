@@ -5915,6 +5915,81 @@ export default function App() {
     return { email, verificationToken: String(googleData.verificationToken) };
   };
 
+  const handleClientGoogleLoginCredential = async (credential: string) => {
+    if (isClientAuthBusy) return;
+    setClientAuthError('');
+    setIsClientAuthBusy(true);
+    try {
+      const response = await fetchWithRetry('/api/auth/client-login/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential })
+      });
+      const loginData = await parseJsonResponse(response);
+      if (!response.ok || !loginData.success) {
+        throw new Error(loginData.error || 'Google login failed. Please try again.');
+      }
+      applyClientLoginResult(loginData);
+      setClientAuthMode('login');
+      setClientOtpSent(false);
+      setClientMobileOtpCode('');
+    } catch (error) {
+      setClientAuthError(error instanceof Error ? error.message : 'Google login failed. Please try again.');
+    } finally {
+      setIsClientAuthBusy(false);
+    }
+  };
+
+  const handleClientGoogleRegisterCredential = async (credential: string) => {
+    if (isClientAuthBusy) return;
+    setClientAuthError('');
+    const missingClientFields = collectMissingFields([
+      { label: 'Full Name', ok: isNonEmpty(clientName) },
+      { label: '10-Digit Mobile Number', ok: isValidMobile(clientPhone) },
+      { label: 'State / UT', ok: isNonEmpty(clientState) },
+      { label: 'District', ok: isNonEmpty(clientDistrictFilter) },
+      { label: 'City / Tehsil', ok: isNonEmpty(clientCityFilter) }
+    ]);
+    if (missingClientFields.length > 0) {
+      setClientAuthError(requiredFieldsMessage(missingClientFields));
+      return;
+    }
+
+    setIsClientAuthBusy(true);
+    try {
+      const { email, verificationToken } = await requestGoogleGrant(credential, clientPhone, 'client');
+      setClientEmail(email);
+      const response = await fetchWithRetry('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: clientName,
+          phone: clientPhone,
+          email,
+          state: clientState,
+          district: clientDistrictFilter,
+          city: clientCityFilter,
+          role: 'client',
+          verificationToken
+        })
+      });
+      const loginData = await parseJsonResponse(response);
+      if (!response.ok || !loginData.success) {
+        throw new Error(loginData.error || 'Registration failed after Google verification. Please try again.');
+      }
+
+      applyClientLoginResult(loginData);
+      setClientAuthMode('login');
+      setClientOtpSent(false);
+      setClientMobileOtpCode('');
+      clientAutoSubmittedCodeRef.current = '';
+    } catch (error) {
+      setClientAuthError(error instanceof Error ? error.message : 'Google registration failed. Please try again.');
+    } finally {
+      setIsClientAuthBusy(false);
+    }
+  };
+
   const handleVleGoogleCredential = async (credential: string) => {
     if (isVleAuthBusy) return;
     setVleAuthError('');
@@ -7821,6 +7896,14 @@ export default function App() {
                     <span>{isClientAuthBusy ? t('Sending code…', 'कोड भेज रहे हैं…') : t('Send Gmail OTP', 'Gmail OTP भेजें')}</span>
                     <ArrowRight className="h-4 w-4" />
                   </button>
+                  <GoogleSignInButton
+                    onCredential={handleClientGoogleLoginCredential}
+                    disabled={isClientAuthBusy}
+                    helperText={t(
+                      'Sign in with the Google account registered to your Citizen account.',
+                      'अपने Citizen account में registered Google account से login करें।'
+                    )}
+                  />
                   <button
                     type="button"
                     onClick={() => {
@@ -8026,6 +8109,11 @@ export default function App() {
                     </button>
                   </div>
 
+                  <GoogleSignInButton
+                    onCredential={handleClientGoogleRegisterCredential}
+                    disabled={isClientAuthBusy}
+                  />
+
                   <button
                     type="button"
                     onClick={() => {
@@ -8039,7 +8127,7 @@ export default function App() {
                     }}
                     className="w-full text-center text-xs font-semibold text-cyan-300 transition-colors hover:text-white"
                   >
-                    {t('Already registered? Sign in with Gmail OTP', 'पहले से account है? Gmail OTP से login करें')}
+                    {t('Already registered? Sign in', 'पहले से account है? Login करें')}
                   </button>
                 </form>
               ) : (

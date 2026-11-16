@@ -35,6 +35,8 @@ declare global {
 
 let clientIdPromise: Promise<string | null> | null = null;
 let scriptPromise: Promise<void> | null = null;
+let initializedClientId: string | null = null;
+let activeCredentialHandler: ((credential: string) => void) | null = null;
 
 export async function getGoogleClientId(): Promise<string | null> {
   if (!clientIdPromise) {
@@ -90,6 +92,10 @@ function loadGoogleScript(): Promise<void> {
 
 export type GoogleButtonResult = 'ready' | 'not-configured' | 'failed';
 
+export function clearGoogleCredentialHandler(handler: (credential: string) => void): void {
+  if (activeCredentialHandler === handler) activeCredentialHandler = null;
+}
+
 /**
  * Google ka official button render karta hai.
  * - 'not-configured' → server par GOOGLE_CLIENT_ID nahi hai (button hide karo)
@@ -100,6 +106,7 @@ export async function renderGoogleButton(
   onCredential: (credential: string) => void
 ): Promise<GoogleButtonResult> {
   try {
+    activeCredentialHandler = onCredential;
     const clientId = await getGoogleClientId();
     if (!clientId) return 'not-configured';
 
@@ -107,14 +114,17 @@ export async function renderGoogleButton(
     const accountsId = window.google?.accounts?.id;
     if (!accountsId) return 'failed';
 
-    accountsId.initialize({
-      client_id: clientId,
-      callback: (response: GoogleCredentialResponse) => {
-        if (response?.credential) onCredential(response.credential);
-      },
-      auto_select: false,
-      cancel_on_tap_outside: true
-    });
+    if (initializedClientId !== clientId) {
+      accountsId.initialize({
+        client_id: clientId,
+        callback: (response: GoogleCredentialResponse) => {
+          if (response?.credential) activeCredentialHandler?.(response.credential);
+        },
+        auto_select: false,
+        cancel_on_tap_outside: true
+      });
+      initializedClientId = clientId;
+    }
 
     // GSI button width 200-400px ke beech honi chahiye.
     const width = Math.max(200, Math.min(400, Math.floor(container.clientWidth || 320)));
