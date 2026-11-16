@@ -326,6 +326,7 @@ export const FormCard3DIcon = ({
 // on their dashboard without re-entering the OTP every time.
 type StoredSession = {
   role: 'client' | 'vle' | 'form_filler';
+  accountId?: string;
   name?: string;
   phone?: string;
   email?: string;
@@ -496,6 +497,10 @@ export default function App() {
 
   // Navigation & Active Role State: 'none' | 'client' | 'vle' | 'form_filler'
   const [activeRole, setActiveRole] = useState<'none' | 'client' | 'vle' | 'form_filler'>(() => readStoredSession()?.role ?? 'none');
+  const [clientSessionToken, setClientSessionToken] = useState(() => {
+    const session = readStoredSession();
+    return session?.role === 'client' ? session.token || '' : '';
+  });
   const [lang, setLang] = useState<'EN' | 'HI'>(() => readStoredLanguage());
 
   const toggleLang = () => {
@@ -630,16 +635,11 @@ export default function App() {
         .then(data => {
           if (data.success) {
             setLiveCameraSessionInfo(data.session);
-            realtimeSocket.emit('order:join', {
-              orderId: data.session.orderId,
-              role: 'client',
-              phone: data.session.clientPhone
-            }, (result: { success: boolean; error?: string }) => {
+            realtimeSocket.emit('live-camera:join', { token: liveCameraToken }, (result: { success: boolean; error?: string }) => {
               if (!result.success) {
-                setClientCameraError(result.error || 'This camera request is not linked to your mobile number.');
+                setClientCameraError(result.error || 'This live camera request is unavailable.');
                 return;
               }
-              realtimeSocket.emit('live-camera:join', { token: liveCameraToken });
             });
           }
         })
@@ -722,28 +722,17 @@ export default function App() {
       clientBlinkEngineRef.current = blinkEngine;
       if (clientCameraVideoRef.current) void blinkEngine.start(clientCameraVideoRef.current);
 
-      realtimeSocket.emit('order:join', {
-        orderId: liveCameraSessionInfo.orderId,
-        role: 'client',
-        phone: liveCameraSessionInfo.clientPhone
-      }, (joinResult: { success: boolean; error?: string }) => {
-        if (!joinResult.success) {
-          setClientCameraError(joinResult.error || 'Could not connect to this order.');
+      realtimeSocket.emit('live-camera:join', { token: liveCameraToken }, (cameraResult: { success: boolean; error?: string }) => {
+        if (!cameraResult.success) {
+          setClientCameraError(cameraResult.error || 'This live photo request has expired.');
           stopLiveCamera(false);
           return;
         }
-        realtimeSocket.emit('live-camera:join', { token: liveCameraToken }, (cameraResult: { success: boolean; error?: string }) => {
-          if (!cameraResult.success) {
-            setClientCameraError(cameraResult.error || 'This live photo request has expired.');
-            stopLiveCamera(false);
-            return;
+        realtimeSocket.emit('live-camera:ready', { token: liveCameraToken }, (readyResult: { success: boolean; error?: string }) => {
+          if (!readyResult.success) {
+            setClientCameraError(readyResult.error || 'Could not start the secure camera connection.');
+            stopLiveCamera();
           }
-          realtimeSocket.emit('live-camera:ready', { token: liveCameraToken }, (readyResult: { success: boolean; error?: string }) => {
-            if (!readyResult.success) {
-              setClientCameraError(readyResult.error || 'Could not start the secure camera connection.');
-              stopLiveCamera();
-            }
-          });
         });
       });
     } catch (error) {
@@ -820,6 +809,10 @@ export default function App() {
 
   // --- CLIENT AUTH STATE ---
   const [, setIsClientLoggedIn] = useState(() => readStoredSession()?.role === 'client');
+  const [clientAccountId, setClientAccountId] = useState(() => {
+    const session = readStoredSession();
+    return session?.role === 'client' ? session.accountId || '' : '';
+  });
   const [clientName, setClientName] = useState(() => {
     try {
       return localStorage.getItem('client_name') || '';
@@ -3352,19 +3345,66 @@ export default function App() {
   const deliveriesSnapRef = useRef<string | null>(null);
   const vleOrdersSnapRef = useRef<string | null>(null);
   const fillerOrdersSnapRef = useRef<string | null>(null);
+  const fetchAllDataQueuedRef = useRef(false);
+
+  function resetClientOrderState() {
+    setClientAccountId('');
+    setVleExclusiveOrders([]);
+    setFillerOrders([]);
+    vleOrdersSnapRef.current = null;
+    fillerOrdersSnapRef.current = null;
+    activeWorkspaceOrderRef.current = null;
+    setActiveWorkspaceOrder(null);
+    ordersLookupRef.current = [];
+    outgoingMessagesRef.current.clear();
+    localTicksRef.current = {};
+    seenAckRef.current.delivered.clear();
+    seenAckRef.current.read.clear();
+    setClientOrderSuccessMsg('');
+    setWorkspaceStatusMsg(null);
+    try {
+      sessionStorage.removeItem('digiseva_pending_open_order_id');
+    } catch {}
+    endVoiceCall(true);
+    realtimeSocket.disconnect();
+  }
 
   // Fetch all backend data
   const fetchAllData = async () => {
-    if (fetchAllDataInFlightRef.current) return;
+    if (fetchAllDataInFlightRef.current) {
+      fetchAllDataQueuedRef.current = true;
+      return;
+    }
+    const requestSession = readStoredSession();
+    const requestRole = requestSession?.role ?? null;
+    const requestToken = requestSession?.token || '';
     fetchAllDataInFlightRef.current = true;
 
     try {
       const dashboardData = await safeFetchJson('/api/dashboard');
+      const currentSession = readStoredSession();
+      if (
+        (currentSession?.role ?? null) !== requestRole ||
+        (currentSession?.token || '') !== requestToken
+      ) return;
       if (!dashboardData?.success) return;
 
       // Restore the logged-in account's saved details from MongoDB/backend on
       // every dashboard sync, so a new device never shows blank fields.
       const account = dashboardData.account;
+      if (requestRole === 'client') {
+        const accountId = account?.role === 'client' ? String(account.id || '') : '';
+        if (requestSession?.accountId !== accountId) resetClientOrderState();
+        setClientAccountId(accountId);
+        if (
+          accountId &&
+          currentSession?.role === 'client' &&
+          currentSession.token === requestToken &&
+          currentSession.accountId !== accountId
+        ) {
+          writeStoredSession({ ...currentSession, accountId });
+        }
+      }
       if (account && typeof account === 'object' && account.role) {
         const accountName = String(account.name || '').trim();
         const accountPhone = String(account.phone || '').replace(/\D/g, '').slice(-10);
@@ -3489,6 +3529,10 @@ export default function App() {
       // Graceful silent fallback without throwing console errors
     } finally {
       fetchAllDataInFlightRef.current = false;
+      if (fetchAllDataQueuedRef.current) {
+        fetchAllDataQueuedRef.current = false;
+        void fetchAllData();
+      }
     }
   };
 
@@ -3610,31 +3654,18 @@ export default function App() {
     };
   }, []);
 
-  // Normalized client active orders across both Jan Seva Kendra and Form Filler orders
-  const clientPhoneNorm = (clientPhone || '').replace(/\D/g, '').slice(-10);
-  const matchedClientOrders = [
-    ...vleExclusiveOrders.filter(o => {
-      const oPhoneNorm = (o.clientPhone || '').replace(/\D/g, '').slice(-10);
-      return (clientPhoneNorm && oPhoneNorm === clientPhoneNorm) || (o.clientName && clientName && o.clientName.toLowerCase() === clientName.toLowerCase());
-    }),
-    ...fillerOrders.filter(o => {
-      const oPhoneNorm = (o.clientPhone || '').replace(/\D/g, '').slice(-10);
-      return (clientPhoneNorm && oPhoneNorm === clientPhoneNorm) || (o.clientName && clientName && o.clientName.toLowerCase() === clientName.toLowerCase());
-    })
-  ];
-  const rawClientOrders = matchedClientOrders.length > 0 ? matchedClientOrders : [
-    ...vleExclusiveOrders,
-    ...fillerOrders
-  ];
-  // Deduplicate broadcast orders present in both stores
-  const seenClientOrderIds = new Set<string>();
-  const clientActiveOrders = rawClientOrders.filter(o => {
-    if (seenClientOrderIds.has(o.id)) return false;
-    seenClientOrderIds.add(o.id);
-    return true;
-  });
+  const clientOrdersById = new Map<string, any>();
+  if (activeRole === 'client' && clientAccountId) {
+    [...vleExclusiveOrders, ...fillerOrders]
+      .filter(order => order.clientId === clientAccountId)
+      .forEach(order => clientOrdersById.set(order.id, order));
+  }
+  const clientActiveOrders = [...clientOrdersById.values()];
+  const matchedClientOrders = clientActiveOrders;
   // Incoming call accept karte waqt sahi order kholne ke liye latest list.
-  ordersLookupRef.current = [...vleExclusiveOrders, ...fillerOrders, ...clientActiveOrders];
+  ordersLookupRef.current = activeRole === 'client'
+    ? clientActiveOrders
+    : [...vleExclusiveOrders, ...fillerOrders];
 
   useEffect(() => {
     let pendingOrderId = '';
@@ -4194,7 +4225,7 @@ export default function App() {
       realtimeSocket.off('call:signal', onCallSignal);
       realtimeSocket.off('connect', joinRooms);
     };
-  }, [realtimeOrderIdsKey, activeRole, clientPhone, activeWorkspaceOrder?.id, vleDistrict, vleId, fillerDistrict]);
+  }, [realtimeOrderIdsKey, activeRole, clientPhone, clientAccountId, clientSessionToken, activeWorkspaceOrder?.id, vleDistrict, vleId, fillerDistrict]);
 
   useEffect(() => {
     if (!liveCameraToken) stopLiveCamera();
@@ -4232,14 +4263,8 @@ export default function App() {
       const token = liveCameraTokenRef.current;
       const session = liveCameraSessionInfoRef.current;
       if (activeRoleRef.current === 'client' && token && session && isClientCameraOnRef.current) {
-        realtimeSocket.emit('order:join', {
-          orderId: session.orderId,
-          role: 'client',
-          phone: session.clientPhone
-        }, () => {
-          realtimeSocket.emit('live-camera:join', { token }, () => {
-            realtimeSocket.emit('live-camera:ready', { token }, () => {});
-          });
+        realtimeSocket.emit('live-camera:join', { token }, () => {
+          realtimeSocket.emit('live-camera:ready', { token }, () => {});
         });
       } else if (activeRoleRef.current !== 'client') {
         const requested = requestedCameraSessionRef.current;
@@ -4510,7 +4535,28 @@ export default function App() {
 
   // Global Logout Handler
   const handleLogout = () => {
+    const wasClient = activeRole === 'client' || readStoredSession()?.role === 'client';
     clearStoredSession();
+    if (wasClient) {
+      resetClientOrderState();
+      setClientSessionToken('');
+      setClientName('');
+      setClientPhone('');
+      setClientEmail('');
+      setClientState('');
+      setClientDistrictFilter('');
+      setClientCityFilter('');
+      setExamApplicantName('');
+      setExamApplicantPhone('');
+      setExamApplicantEmail('');
+      setJanSevaDocApplicantName('');
+      setJanSevaDocAadhaar('');
+      setJanSevaDocEmail('');
+      try {
+        ['client_name', 'client_phone', 'client_email', 'client_state', 'client_district', 'client_city']
+          .forEach(key => localStorage.removeItem(key));
+      } catch {}
+    }
     setIsClientLoggedIn(false);
     setIsVleLoggedIn(false);
     setIsFormFillerLoggedIn(false);
@@ -6018,6 +6064,7 @@ export default function App() {
     const rawCity = String(savedUser.city || clientCityFilter || '').trim();
     const resolvedCity = sameAsStateValue(rawCity, resolvedState) ? '' : rawCity;
 
+    resetClientOrderState();
     if (resolvedName) setClientName(resolvedName);
     if (resolvedPhone) setClientPhone(resolvedPhone);
     if (resolvedEmail) setClientEmail(resolvedEmail);
@@ -6030,9 +6077,12 @@ export default function App() {
     localStorage.setItem('client_email', resolvedEmail || clientEmail);
     localStorage.setItem('client_state', resolvedState || clientState);
     if (resolvedDistrict) localStorage.setItem('client_district', resolvedDistrict);
+    else localStorage.removeItem('client_district');
     if (resolvedCity) localStorage.setItem('client_city', resolvedCity);
+    else localStorage.removeItem('client_city');
     writeStoredSession({
       role: 'client',
+      accountId: String(savedUser.id || ''),
       name: resolvedName || clientName,
       phone: resolvedPhone || clientPhone,
       email: resolvedEmail || clientEmail,
@@ -6042,12 +6092,15 @@ export default function App() {
       token: loginData.token,
       loggedInAt: Date.now()
     });
+    setClientAccountId(String(savedUser.id || ''));
+    setClientSessionToken(String(loginData.token || ''));
     setIsClientLoggedIn(true);
     setActiveRole('client');
     setPendingRole('client');
     setLegalAccepted(false);
     try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
     setShowLegalModal(true);
+    void fetchAllData();
   };
 
   const applyVleLoginResult = (loginData: any, refreshData = false) => {
@@ -8320,6 +8373,7 @@ export default function App() {
                     const rawCity = String(savedUser.city || clientCityFilter || '').trim();
                     const resolvedCity = sameAsStateValue(rawCity, resolvedState) ? '' : rawCity;
 
+                    resetClientOrderState();
                     if (resolvedName) setClientName(resolvedName);
                     if (resolvedPhone) setClientPhone(resolvedPhone);
                     if (resolvedEmail) setClientEmail(resolvedEmail);
@@ -8332,9 +8386,12 @@ export default function App() {
                     localStorage.setItem('client_email', resolvedEmail || clientEmail);
                     localStorage.setItem('client_state', resolvedState || clientState);
                     if (resolvedDistrict) localStorage.setItem('client_district', resolvedDistrict);
+                    else localStorage.removeItem('client_district');
                     if (resolvedCity) localStorage.setItem('client_city', resolvedCity);
+                    else localStorage.removeItem('client_city');
                     writeStoredSession({
                       role: 'client',
+                      accountId: String(savedUser.id || ''),
                       name: resolvedName || clientName,
                       phone: resolvedPhone || clientPhone,
                       email: resolvedEmail || clientEmail,
@@ -8344,12 +8401,15 @@ export default function App() {
                       token: loginData.token,
                       loggedInAt: Date.now()
                     });
+                    setClientAccountId(String(savedUser.id || ''));
+                    setClientSessionToken(String(loginData.token || ''));
                     setIsClientLoggedIn(true);
                     setActiveRole('client');
                     setPendingRole('client');
                     setLegalAccepted(false);
                     try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
                     setShowLegalModal(true);
+                    void fetchAllData();
                   } catch (error) {
                     setClientAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
                   } finally {
@@ -9325,7 +9385,7 @@ export default function App() {
                         <button
                           key={idx}
                           onClick={async () => {
-                            const targetOrder = clientActiveOrders[0] || vleExclusiveOrders[0];
+                            const targetOrder = clientActiveOrders[0];
                             if (targetOrder) {
                               setQuickQuestionSendingText(item.text);
                               try {
@@ -9336,7 +9396,7 @@ export default function App() {
                               }
                             }
                           }}
-                          disabled={(!clientActiveOrders.length && !vleExclusiveOrders.length) || Boolean(quickQuestionSendingText)}
+                          disabled={!clientActiveOrders.length || Boolean(quickQuestionSendingText)}
                           className="p-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-left text-xs font-semibold text-slate-200 hover:text-blue-300 transition-all flex items-center justify-between group disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           <span className="line-clamp-2">{item.text}</span>
@@ -14821,23 +14881,37 @@ export default function App() {
             </div>
 
             {feeGateActive && (
-              <div className="absolute inset-0 z-[80] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md">
-                <div className="w-full max-w-md overflow-hidden rounded-3xl border border-blue-500/40 bg-slate-900 shadow-2xl shadow-blue-950/60">
-                  <div className="border-b border-slate-800 bg-slate-900/95 p-5 sm:p-6">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/15 text-blue-300">
-                        <CreditCard className="h-5 w-5" />
+              <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto overscroll-contain bg-slate-950/80 p-3 backdrop-blur-md sm:items-center sm:p-4">
+                <div className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl border border-blue-500/40 bg-slate-900 shadow-2xl shadow-blue-950/60 sm:max-h-[calc(100dvh-2rem)]">
+                  <div className="border-b border-slate-800 bg-slate-900/95 p-4 sm:p-6">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-500/15 text-blue-300">
+                          <CreditCard className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-base font-black text-white">
+                            {activeRole === 'client' ? 'Fees Approval Required' : 'Set Government & Form Fees'}
+                          </h3>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            {activeRole === 'client'
+                              ? 'Fees dekh kar OK dabao. Tab tak chat locked rahega.'
+                              : 'Dono fees save hote hi citizen ko dikhengi. Citizen OK karega tab chat khulega.'}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <h3 className="text-base font-black text-white">
-                          {activeRole === 'client' ? 'Fees Approval Required' : 'Set Government & Form Fees'}
-                        </h3>
-                        <p className="mt-0.5 text-[11px] text-slate-400">
-                          {activeRole === 'client'
-                            ? 'Fees dekh kar OK dabao. Tab tak chat locked rahega.'
-                            : 'Dono fees save hote hi citizen ko dikhengi. Citizen OK karega tab chat khulega.'}
-                        </p>
-                      </div>
+                      {activeRole !== 'client' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveWorkspaceOrder(null);
+                            endVoiceCall(true);
+                          }}
+                          className="shrink-0 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                        >
+                          ← Back
+                        </button>
+                      )}
                     </div>
                   </div>
 

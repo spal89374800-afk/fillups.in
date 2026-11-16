@@ -68,7 +68,6 @@ authRouter.post('/auth/login', (req, res) => {
   }
   
   const user = saveOrUpdateUserAccount({
-    id: 'user_' + (phone || email || identifier || Date.now()).replace(/[^a-zA-Z0-9]/g, '').slice(-12),
     name: name || '',
     phone: phone || (!identifier?.includes('@') ? identifier : ''),
     email: email || (identifier?.includes('@') ? identifier : ''),

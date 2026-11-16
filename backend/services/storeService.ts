@@ -147,15 +147,18 @@ export function pendingMongoWriteCount(): number {
 }
 
 export function saveOrUpdateUserAccount(account: Partial<UserAccount> & { role: 'client' | 'vle' | 'filler' | 'expert' }): UserAccount {
-  const existingIdx = userAccountsStore.findIndex(u =>
-    u.role === account.role &&
-    (
+  const existingIdx = userAccountsStore.findIndex(u => {
+    if (u.role !== account.role) return false;
+    if (account.role === 'client') {
+      return Boolean(account.email) && normalizeEmail(u.email) === normalizeEmail(account.email);
+    }
+    return (
       (account.id && u.id === account.id) ||
       (account.cscId && u.cscId === account.cscId) ||
       (account.phone && u.phone === account.phone) ||
       (account.email && u.email === account.email)
-    )
-  );
+    );
+  });
 
   const now = new Date().toISOString();
   if (existingIdx >= 0) {
@@ -1657,12 +1660,34 @@ export function inferOrderScope(order: { serviceScope?: ServiceScope; orderType?
   return order.district ? 'district' : 'national';
 }
 
-export function orderBelongsToClient(order: { clientId?: string; clientPhone?: string; clientEmail?: string }, account?: UserAccount): boolean {
+export function orderBelongsToClient(
+  order: { id?: string; clientId?: string; clientPhone?: string; clientEmail?: string },
+  account?: UserAccount
+): boolean {
   if (!account || account.role !== 'client') return false;
-  const idMatch = !!account.id && order.clientId === account.id;
-  const phoneMatch = normalizePhone(account.phone).length === 10 && normalizePhone(order.clientPhone) === normalizePhone(account.phone);
-  const emailMatch = !!account.email && normalizeEmail(order.clientEmail) === normalizeEmail(account.email);
-  return idMatch || phoneMatch || emailMatch;
+  if (order.clientId && !/^client-\d+$/.test(order.clientId)) {
+    return order.clientId === account.id;
+  }
+
+  const phone = normalizePhone(order.clientPhone);
+  const email = normalizeEmail(order.clientEmail);
+  if (!phone && !email) return false;
+
+  const legacyOwners = userAccountsStore.filter(candidate =>
+    candidate.role === 'client' &&
+    (!phone || normalizePhone(candidate.phone) === phone) &&
+    (!email || normalizeEmail(candidate.email) === email)
+  );
+  if (legacyOwners.length !== 1 || legacyOwners[0].id !== account.id) return false;
+
+  order.clientId = account.id;
+  const found = order.id ? findAnyOrder(order.id) : null;
+  if (found) {
+    void persistOrder(found.order).catch(error => {
+      console.error(`[Order ownership migration] Could not persist owner for ${order.id}:`, error);
+    });
+  }
+  return true;
 }
 
 // =========================================================================
@@ -1987,6 +2012,7 @@ export async function persistAccount(account?: UserAccount): Promise<void> {
 
 export function isOrderVisibleToAccount(
   order: {
+    id?: string;
     status?: string;
     clientPhone?: string;
     clientEmail?: string;

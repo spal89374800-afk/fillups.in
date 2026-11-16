@@ -5,6 +5,7 @@ import {
   liveCameraSessionsStore,
   getAccountByToken,
   isOrderVisibleToAccount,
+  orderBelongsToClient,
   findAccountForOperator,
   markAccountOnline,
   markAccountOffline,
@@ -143,10 +144,12 @@ export function setRealtimeServer(server: Server): void {
         return { error: 'Order not found.' };
       }
       if (participantRole === 'client') {
-        const orderPhone = String(found.order.clientPhone || '').replace(/\D/g, '').slice(-10);
-        if (!phone || !orderPhone || phone !== orderPhone) {
-          return { error: 'This order is not linked to the logged-in client phone.' };
+        const account = getAccountByToken(tokenRaw) ||
+          getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token);
+        if (!account || account.role !== 'client' || !orderBelongsToClient(found.order, account)) {
+          return { error: 'This order is not linked to the logged-in citizen account.' };
         }
+        return { phone: String(account.phone || '').replace(/\D/g, '').slice(-10) };
       } else {
         // Operator join must prove a logged-in operator session that can access this order.
         const account = getAccountByToken(tokenRaw) ||
@@ -355,21 +358,19 @@ export function setRealtimeServer(server: Server): void {
       }
       // Room join miss ho gaya ho (page refresh, purana socket, join race) to
       // send ko fail mat karo — sender ko verify karke khud join kara do.
-      if (!joinedOrders.has(orderId)) {
-        const participantRole = payload.sender === 'operator' ? 'operator' : 'client';
-        const authorization = authorizeParticipant(
-          orderId,
-          participantRole,
-          String(payload.phone || ''),
-          String(payload.token || '')
-        );
-        if ('error' in authorization) {
-          acknowledge?.({ success: false, error: authorization.error });
-          return;
-        }
-        socket.join(orderRoom(orderId));
-        joinedOrders.set(orderId, { role: participantRole, phone: authorization.phone });
+      const participantRole = payload.sender === 'operator' ? 'operator' : 'client';
+      const authorization = authorizeParticipant(
+        orderId,
+        participantRole,
+        String(payload.phone || ''),
+        String(payload.token || '')
+      );
+      if ('error' in authorization) {
+        acknowledge?.({ success: false, error: authorization.error });
+        return;
       }
+      socket.join(orderRoom(orderId));
+      joinedOrders.set(orderId, { role: participantRole, phone: authorization.phone });
       const result = sendOrderMessage(orderId, payload);
       acknowledge?.(result);
       // Message ab `sendOrderMessage` ke andar per-message persist hota hai —
@@ -396,20 +397,15 @@ export function setRealtimeServer(server: Server): void {
         acknowledge?.({ success: false, error: 'Provide the order and message to update.' });
         return;
       }
-      // Joined socket ke liye dobara auth ki zaroorat nahi; warna phone/token
-      // se verify kar lo taaki join race status update ko na roke.
-      const joined = joinedOrders.get(orderId);
-      if (!joined || joined.role !== participantRole) {
-        const authorization = authorizeParticipant(
-          orderId,
-          participantRole,
-          String(payload?.phone || ''),
-          String(payload?.token || '')
-        );
-        if ('error' in authorization) {
-          acknowledge?.({ success: false, error: authorization.error });
-          return;
-        }
+      const authorization = authorizeParticipant(
+        orderId,
+        participantRole,
+        String(payload?.phone || ''),
+        String(payload?.token || '')
+      );
+      if ('error' in authorization) {
+        acknowledge?.({ success: false, error: authorization.error });
+        return;
       }
       const result = markOrderMessagesSeen(orderId, participantRole, upToMessageId, mode);
       acknowledge?.(result);
@@ -465,8 +461,8 @@ export function setRealtimeServer(server: Server): void {
     socket.on('live-camera:ready', (payload: { token?: string }, acknowledge?: (result: object) => void) => {
       const token = typeof payload?.token === 'string' ? payload.token : '';
       const session = liveCameraSessionsStore.find(item => item.token === token);
-      if (!session || session.status !== 'pending' || joinedOrders.get(session.orderId)?.role !== 'client') {
-        acknowledge?.({ success: false, error: 'Join the active order before starting the camera session.' });
+      if (!session || session.status !== 'pending' || !socket.rooms.has(cameraRoom(token))) {
+        acknowledge?.({ success: false, error: 'Join the active camera session before starting the camera.' });
         return;
       }
       socket.join(cameraRoom(token));
@@ -516,14 +512,18 @@ export function setRealtimeServer(server: Server): void {
         item.token === token && item.orderId === orderId && item.status === 'pending'
       );
       const targetSocket = server.sockets.sockets.get(targetSocketId);
-      const targetHasOrder = joinedOrdersBySocket.get(targetSocketId)?.has(orderId);
+      const senderOrderRole = joinedOrders.get(orderId)?.role;
+      const targetOrderRole = joinedOrdersBySocket.get(targetSocketId)?.get(orderId)?.role;
+      const senderIsAssignedOperator = senderOrderRole === 'operator' && socket.rooms.has(orderRoom(orderId));
+      const targetIsAssignedOperator = targetOrderRole === 'operator' && targetSocket?.rooms.has(orderRoom(orderId));
+      const senderIsCameraPeer = socket.rooms.has(cameraRoom(token));
+      const targetIsCameraPeer = targetSocket?.rooms.has(cameraRoom(token)) === true;
       if (
         !session ||
-        !joinedOrders.has(orderId) ||
-        !socket.rooms.has(cameraRoom(token)) ||
+        !senderIsCameraPeer ||
         !targetSocket ||
-        !targetHasOrder ||
-        !targetSocket.rooms.has(cameraRoom(token)) ||
+        !targetIsCameraPeer ||
+        senderIsAssignedOperator === targetIsAssignedOperator ||
         (!payload.description && !payload.candidate)
       ) {
         acknowledge?.({ success: false, error: 'Invalid or expired WebRTC signaling request.' });
@@ -546,7 +546,7 @@ export function setRealtimeServer(server: Server): void {
       const session = liveCameraSessionsStore.find(item =>
         item.token === token && item.orderId === orderId && item.status === 'pending'
       );
-      if (!session || !joinedOrders.has(orderId) || !socket.rooms.has(cameraRoom(token))) return;
+      if (!session || !socket.rooms.has(cameraRoom(token))) return;
       socket.to(cameraRoom(token)).emit('rtc:stop', { orderId, token });
     });
 
