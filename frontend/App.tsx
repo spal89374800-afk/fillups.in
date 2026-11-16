@@ -6843,17 +6843,7 @@ export default function App() {
             </div>
 
             {/* Card 3: Active Jan Seva Kendras */}
-            <div 
-              onClick={() => {
-                setStep('client_portal');
-                setClientPortalTab('jan_seva_docs');
-                if (soundAlertEnabled) playChime();
-                setTimeout(() => {
-                  document.getElementById('client-portal-top')?.scrollIntoView({ behavior: 'smooth' });
-                }, 80);
-              }}
-              className="relative p-[1.5px] rounded-2xl bg-gradient-to-b from-amber-300/50 via-amber-500/20 to-black/80 shadow-[0_16px_32px_-8px_rgba(0,0,0,0.9),0_4px_12px_rgba(245,158,11,0.2)] hover:shadow-[0_22px_40px_-6px_rgba(245,158,11,0.35),0_8px_16px_rgba(0,0,0,0.8)] transition-all duration-300 group hover:-translate-y-1.5 border-b-[3px] border-b-amber-950/80 cursor-pointer"
-            >
+            <div className="relative p-[1.5px] rounded-2xl bg-gradient-to-b from-amber-300/50 via-amber-500/20 to-black/80 shadow-[0_16px_32px_-8px_rgba(0,0,0,0.9),0_4px_12px_rgba(245,158,11,0.2)] hover:shadow-[0_22px_40px_-6px_rgba(245,158,11,0.35),0_8px_16px_rgba(0,0,0,0.8)] transition-all duration-300 group hover:-translate-y-1.5 border-b-[3px] border-b-amber-950/80">
               <div className="bg-gradient-to-b from-[#111927] to-[#080d14] rounded-2xl p-5 space-y-3 relative overflow-hidden h-full flex flex-col justify-between border-t border-t-white/20">
                 <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-amber-400/10 via-transparent to-transparent pointer-events-none" />
 
