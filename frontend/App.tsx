@@ -844,6 +844,7 @@ export default function App() {
   const [isDraggingOverProof, setIsDraggingOverProof] = useState(false);
   // Final PDF card drag state so a downloaded PDF can be dropped straight there.
   const [isDraggingOverFinalPdf, setIsDraggingOverFinalPdf] = useState(false);
+  const [isDraggingOverGovtQr, setIsDraggingOverGovtQr] = useState(false);
   // Chat photo picked (drag on desktop / long-press on mobile) to become proof.
   const [draggedChatImageUrl, setDraggedChatImageUrl] = useState<string | null>(null);
   const [pendingProofChatImage, setPendingProofChatImage] = useState<string | null>(null);
@@ -1044,6 +1045,7 @@ export default function App() {
       setIsDraggingOverWorkspace(false);
       setIsDraggingOverProof(false);
       setIsDraggingOverFinalPdf(false);
+      setIsDraggingOverGovtQr(false);
     }
   };
   const handleWorkspaceDrop = (e: React.DragEvent) => {
@@ -1051,6 +1053,7 @@ export default function App() {
     setIsDraggingOverWorkspace(false);
     setIsDraggingOverProof(false);
     setIsDraggingOverFinalPdf(false);
+    setIsDraggingOverGovtQr(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       attachFilesToChat(Array.from(e.dataTransfer.files));
     }
@@ -1140,6 +1143,69 @@ export default function App() {
     }
     const file = e.dataTransfer.files?.[0];
     if (file) void uploadFinalPdfFile(file);
+  };
+
+  const handleGovtQrImageFile = (file?: File) => {
+    if (!file) return;
+    const supportedTypes = new Set([
+      'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif',
+      'image/bmp', 'image/avif', 'image/heic', 'image/heif'
+    ]);
+    if (!supportedTypes.has(file.type.toLowerCase())) {
+      setWorkspaceStatusMsg({
+        text: t('Choose a JPG, PNG, WebP or other supported QR image.', 'JPG, PNG, WebP या समर्थित QR इमेज चुनें।'),
+        type: 'error'
+      });
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setWorkspaceStatusMsg({
+        text: t('QR image must be smaller than 8 MB.', 'QR इमेज 8 MB से छोटी होनी चाहिए।'),
+        type: 'error'
+      });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        setWorkspaceStatusMsg({ text: t('Could not read the QR image.', 'QR इमेज पढ़ी नहीं जा सकी।'), type: 'error' });
+        return;
+      }
+      setGovtQrImageInput(reader.result);
+      setWorkspaceStatusMsg({ text: t('QR image selected. Press Save to apply it.', 'QR इमेज चुनी गई। लागू करने के लिए Save दबाएँ।'), type: 'info' });
+    };
+    reader.onerror = () => {
+      setWorkspaceStatusMsg({ text: t('Could not read the QR image.', 'QR इमेज पढ़ी नहीं जा सकी।'), type: 'error' });
+    };
+    reader.readAsDataURL(file);
+  };
+  const handleGovtQrDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isSavingGovtDetails) return;
+    setIsDraggingOverGovtQr(true);
+    setIsDraggingOverWorkspace(true);
+  };
+  const handleGovtQrDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = e.relatedTarget as Node | null;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const outside =
+      e.clientX <= rect.left || e.clientX >= rect.right ||
+      e.clientY <= rect.top || e.clientY >= rect.bottom;
+    if (outside || (next && !e.currentTarget.contains(next))) {
+      setIsDraggingOverGovtQr(false);
+      if (outside) setIsDraggingOverWorkspace(false);
+    }
+  };
+  const handleGovtQrDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOverGovtQr(false);
+    setIsDraggingOverWorkspace(false);
+    if (isSavingGovtDetails) return;
+    handleGovtQrImageFile(e.dataTransfer.files?.[0]);
   };
 
   // Touch-friendly fallback for in-app drag: long-press a chat image, then tap
@@ -1705,26 +1771,6 @@ export default function App() {
 
   useEffect(() => () => {
     if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
-  }, []);
-
-  useEffect(() => {
-    try {
-      const pendingToast = sessionStorage.getItem('digiseva_pending_save_toast');
-      if (pendingToast) {
-        sessionStorage.removeItem('digiseva_pending_save_toast');
-        showSaveToast(pendingToast);
-      }
-      const pendingClientNotice = sessionStorage.getItem('digiseva_pending_client_notice');
-      if (pendingClientNotice) {
-        sessionStorage.removeItem('digiseva_pending_client_notice');
-        setClientOrderSuccessMsg(pendingClientNotice);
-        setOrderStatusFilter('all');
-        setClientPortalTab('orders');
-        setTimeout(() => {
-          document.getElementById('client-portal-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 900);
-      }
-    } catch {}
   }, []);
 
   // QR Code Payment Generator State in Workspace Panel
@@ -2820,6 +2866,7 @@ export default function App() {
   // kiya hua QR aur citizen ka likha hua UTR beech me wipe ho jaata hai.
   useEffect(() => {
     setGovtQrImageInput('');
+    setIsDraggingOverGovtQr(false);
     setGovtUpiInput(String((activeWorkspaceOrder as any)?.govtUpiId || ''));
     const currentGovtFee = Number((activeWorkspaceOrder as any)?.govtFee);
     setGovtFeeInput(Number.isFinite(currentGovtFee) ? String(currentGovtFee) : '');
@@ -5438,13 +5485,12 @@ export default function App() {
   };
 
   const refreshCitizenPageAfterSubmit = (notice: string, openOrderId?: string) => {
-    try {
-      sessionStorage.setItem('digiseva_pending_client_notice', notice);
-      sessionStorage.setItem('digiseva_pending_save_toast', '✅ Request submitted successfully!');
-      if (openOrderId) pendingOpenOrderId = openOrderId;
-    } catch {}
+    if (openOrderId) pendingOpenOrderId = openOrderId;
+    setClientOrderSuccessMsg(notice);
+    setOrderStatusFilter('all');
+    setClientPortalTab('orders');
+    setStep('client_portal');
     showSaveToast('✅ Request submitted successfully!');
-    setTimeout(() => window.location.reload(), 900);
   };
 
   const [isSubmittingExamForm, setIsSubmittingExamForm] = useState(false);
@@ -13345,12 +13391,12 @@ export default function App() {
               onDragLeave={handleWorkspaceDragLeave}
               onDrop={handleWorkspaceDrop}
             >
-              {isDraggingOverWorkspace && !isDraggingOverChat && !isDraggingOverProof && !isDraggingOverFinalPdf && (
+              {isDraggingOverWorkspace && !isDraggingOverChat && !isDraggingOverProof && !isDraggingOverFinalPdf && !isDraggingOverGovtQr && (
                 <div className="pointer-events-none absolute inset-0 z-[60] flex flex-col items-center justify-center gap-2 bg-blue-950/70 p-6 text-center text-white backdrop-blur-sm">
                   <FileUp className="h-10 w-10 animate-bounce text-cyan-300" />
                   <p className="text-sm font-black">📥 Yahan drop karein</p>
                   <p className="max-w-xs text-[11px] font-medium text-blue-100">
-                    Chat ke liye file attach hogi. Photo Proof card par drop karein to proof set hoga. Final PDF card par drop karein to PDF upload hoga.
+                    Chat ke liye file attach hogi. Photo Proof card par photo, Final PDF card par PDF, aur Government QR area par image drop karein.
                   </p>
                 </div>
               )}
@@ -14267,18 +14313,28 @@ export default function App() {
                             </label>
                             <label className="space-y-1">
                               <span className="text-[9px] font-semibold text-slate-400">Government QR Image</span>
-                              <span className="flex cursor-pointer items-center justify-center rounded-md bg-slate-700 px-2 py-1.5 text-[10px] font-bold text-white hover:bg-slate-600">
-                                {govtQrImageInput ? 'QR selected ✓' : 'Upload QR'}
+                              <span
+                                onDragOver={handleGovtQrDragOver}
+                                onDragLeave={handleGovtQrDragLeave}
+                                onDrop={handleGovtQrDrop}
+                                className={`flex min-h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed px-2 py-1.5 text-center text-[10px] font-bold transition-colors ${
+                                  isDraggingOverGovtQr
+                                    ? 'border-sky-300 bg-sky-500/20 text-sky-100'
+                                    : 'border-slate-600 bg-slate-700 text-white hover:bg-slate-600'
+                                }`}
+                              >
+                                {isDraggingOverGovtQr
+                                  ? '📥 Drop QR image here'
+                                  : govtQrImageInput
+                                    ? 'QR selected ✓ · drop or click to replace'
+                                    : 'Drop QR image here or click to upload'}
                                 <input
                                   type="file"
-                                  accept="image/*"
+                                  accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/bmp,image/avif,image/heic,image/heif"
                                   className="hidden"
                                   onChange={event => {
-                                    const file = event.target.files?.[0];
-                                    if (!file) return;
-                                    const reader = new FileReader();
-                                    reader.onload = () => setGovtQrImageInput(reader.result as string);
-                                    reader.readAsDataURL(file);
+                                    handleGovtQrImageFile(event.currentTarget.files?.[0]);
+                                    event.currentTarget.value = '';
                                   }}
                                 />
                               </span>
