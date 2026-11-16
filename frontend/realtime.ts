@@ -16,6 +16,7 @@ export const realtimeSocket = socketUrl
       autoConnect: false,
       reconnection: true,
       reconnectionAttempts: Infinity,
+      withCredentials: true,
       // WebSocket pehle try karo — polling handshake + upgrade ka extra
       // round-trip bachta hai, isliye chat message turant pahunchta hai.
       // WebSocket block ho (corporate proxy/firewall) to tryAllTransports
@@ -27,6 +28,7 @@ export const realtimeSocket = socketUrl
       autoConnect: false,
       reconnection: true,
       reconnectionAttempts: Infinity,
+      withCredentials: true,
       transports: ['websocket', 'polling'],
       tryAllTransports: true
     });

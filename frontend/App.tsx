@@ -322,19 +322,11 @@ export const FormCard3DIcon = ({
   );
 };
 
-// Persistent login session: stored locally so a returning user lands straight
-// on their dashboard without re-entering the OTP every time.
+// Authentication is held in an HttpOnly cookie. This in-memory shape is only
+// used to route the currently authenticated React session.
 type StoredSession = {
   role: 'client' | 'vle' | 'form_filler';
   accountId?: string;
-  name?: string;
-  phone?: string;
-  email?: string;
-  state?: string;
-  district?: string;
-  city?: string;
-  cscId?: string;
-  token?: string;
   loggedInAt: number;
 };
 
@@ -359,8 +351,29 @@ const WorkspaceSkeletonList = ({ count = 2 }: { count?: number }) => (
   </div>
 );
 
-const SESSION_STORAGE_KEY = 'digiseva_session';
 const LEGAL_ACCEPTED_KEY = 'digiseva_legal_accepted';
+let activeStoredSession: StoredSession | null = null;
+let pendingOpenOrderId: string | null = null;
+
+const LEGACY_ACCOUNT_STORAGE_KEYS = [
+  'digiseva_session', 'digiseva_admin_token',
+  'client_name', 'client_phone', 'client_email', 'client_state', 'client_district', 'client_city', 'client_category',
+  'vle_operator_name', 'vle_center_name', 'vle_csc_id', 'vle_phone', 'vle_email',
+  'vle_state', 'vle_district', 'vle_city', 'vle_photo_url', 'fillup_custom_pricing', 'fillup_vle_form_pricing',
+  'filler_operator_name', 'filler_phone', 'filler_email', 'filler_state', 'filler_district', 'filler_city',
+  'filler_photo_url'
+];
+
+function clearLegacyAccountStorage() {
+  if (typeof window === 'undefined') return;
+  try {
+    LEGACY_ACCOUNT_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
+    sessionStorage.removeItem('digiseva_pending_open_order_id');
+    sessionStorage.removeItem('digiseva_admin_token');
+  } catch {}
+}
+
+clearLegacyAccountStorage();
 
 const INDIAN_STATES = [
   'Andaman & Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar',
@@ -371,47 +384,26 @@ const INDIAN_STATES = [
   'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
 ];
 
-// A state / UT name is not a district or city. Older saved sessions sometimes
-// had the state name stored in the district/city field; ignore those values.
 const sameAsStateValue = (value?: string | null, state?: string | null) =>
   Boolean(value && state && value.trim().toLowerCase() === state.trim().toLowerCase());
 
-const readStoredDistrict = (districtKey: string, stateKey: string) => {
-  try {
-    const district = localStorage.getItem(districtKey) || '';
-    const state = localStorage.getItem(stateKey) || '';
-    return sameAsStateValue(district, state) ? '' : district;
-  } catch {
-    return '';
-  }
-};
-
 function readStoredSession(): StoredSession | null {
-  try {
-    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredSession;
-    if (!parsed || !['client', 'vle', 'form_filler'].includes(parsed.role)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  return activeStoredSession;
 }
 
 function writeStoredSession(session: StoredSession) {
-  try {
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-  } catch {}
+  activeStoredSession = {
+    role: session.role,
+    accountId: session.accountId,
+    loggedInAt: session.loggedInAt
+  };
 }
 
 function clearStoredSession() {
-  try {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-  } catch {}
+  activeStoredSession = null;
 }
 
-// Attach the signed-in account token to every same-origin API request so the
-// backend can enforce per-account data isolation and order ownership.
+// Auth cookies are sent only to API requests; the token is never exposed to JS.
 if (typeof window !== 'undefined' && !(window as any).__digisevaFetchPatched) {
   (window as any).__digisevaFetchPatched = true;
   const nativeFetch = window.fetch.bind(window);
@@ -425,22 +417,19 @@ if (typeof window !== 'undefined' && !(window as any).__digisevaFetchPatched) {
       return nativeFetch(input, init);
     }
 
-    const token = readStoredSession()?.token;
     const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
-    if (token && !headers.has('Authorization')) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
+    const requestInit: RequestInit = { ...init, headers, credentials: 'include' };
 
-    // Absolute backend URLs already carry the token — no fallback needed.
+    // Absolute backend URLs already target the API — no fallback needed.
     if (!requestUrl.startsWith('/api/')) {
-      return nativeFetch(input, { ...init, headers });
+      return nativeFetch(input, requestInit);
     }
 
-    const response = await nativeFetch(input, { ...init, headers });
+    const response = await nativeFetch(input, requestInit);
     // Static frontend host par `/api/...` wahan nahi hota (HTML/empty response).
     // Aise case me wahi request backend origin par dobara bhejo.
     if (shouldFallbackToApiOrigin(response)) {
-      return nativeFetch(`${API_FALLBACK_ORIGIN}${requestUrl}`, { ...init, headers });
+      return nativeFetch(`${API_FALLBACK_ORIGIN}${requestUrl}`, requestInit);
     }
     return response;
   };
@@ -497,10 +486,6 @@ export default function App() {
 
   // Navigation & Active Role State: 'none' | 'client' | 'vle' | 'form_filler'
   const [activeRole, setActiveRole] = useState<'none' | 'client' | 'vle' | 'form_filler'>(() => readStoredSession()?.role ?? 'none');
-  const [clientSessionToken, setClientSessionToken] = useState(() => {
-    const session = readStoredSession();
-    return session?.role === 'client' ? session.token || '' : '';
-  });
   const [lang, setLang] = useState<'EN' | 'HI'>(() => readStoredLanguage());
 
   const toggleLang = () => {
@@ -813,27 +798,9 @@ export default function App() {
     const session = readStoredSession();
     return session?.role === 'client' ? session.accountId || '' : '';
   });
-  const [clientName, setClientName] = useState(() => {
-    try {
-      return localStorage.getItem('client_name') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [clientPhone, setClientPhone] = useState(() => {
-    try {
-      return localStorage.getItem('client_phone') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [clientEmail, setClientEmail] = useState(() => {
-    try {
-      return localStorage.getItem('client_email') || '';
-    } catch {
-      return '';
-    }
-  });
+  const [clientName, setClientName] = useState('');
+  const [clientPhone, setClientPhone] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
   const [clientOtpSent, setClientOtpSent] = useState(false);
   const [clientMobileOtpCode, setClientMobileOtpCode] = useState('');
   const [clientOtpDeliveryMessage, setClientOtpDeliveryMessage] = useState('');
@@ -850,13 +817,7 @@ export default function App() {
   const vleAutoSubmittedCodeRef = useRef('');
   const vleRegAutoSubmittedCodeRef = useRef('');
   const fillerAutoSubmittedCodeRef = useRef('');
-  const [clientState, setClientState] = useState(() => {
-    try {
-      return localStorage.getItem('client_state') || '';
-    } catch {
-      return '';
-    }
-  });
+  const [clientState, setClientState] = useState('');
   const [clientDistrictFilter, setClientDistrictFilter] = useState('');
   const [clientCityFilter, setClientCityFilter] = useState('');
   const [clientOrderSuccessMsg, setClientOrderSuccessMsg] = useState('');
@@ -1387,14 +1348,7 @@ export default function App() {
   const [examApplicantPhone, setExamApplicantPhone] = useState('');
   const [examApplicantEmail, setExamApplicantEmail] = useState('');
   // Reservation category entered on the citizen form and shared with the operator.
-  const [examApplicantCategory, setExamApplicantCategory] = useState<GovtFeeCategoryKey>(() => {
-    try {
-      const saved = String(localStorage.getItem('client_category') || '').trim().toLowerCase();
-      return (GOVT_FEE_CATEGORIES.some(item => item.key === saved) ? saved : 'general') as GovtFeeCategoryKey;
-    } catch {
-      return 'general';
-    }
-  });
+  const [examApplicantCategory, setExamApplicantCategory] = useState<GovtFeeCategoryKey>('general');
 
   // Option 4: Jan Seva Kendra Documents (PAN Card, Certificates, CSC Govt Docs)
   const [selectedJanSevaDoc, setSelectedJanSevaDoc] = useState('');
@@ -1407,56 +1361,14 @@ export default function App() {
 
   // --- JAN SEVA KENDRA (VLE) AUTH & OPERATOR STATE ---
   const [isVleLoggedIn, setIsVleLoggedIn] = useState(() => readStoredSession()?.role === 'vle');
-  const [vleName, setVleName] = useState(() => {
-    try {
-      return localStorage.getItem('vle_operator_name') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [vleCenterName, setVleCenterName] = useState(() => {
-    try {
-      return localStorage.getItem('vle_center_name') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [vleId, setVleId] = useState(() => {
-    try {
-      return localStorage.getItem('vle_csc_id') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [vleState, setVleState] = useState(() => {
-    try {
-      return localStorage.getItem('vle_state') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [vleDistrict, setVleDistrict] = useState(() => readStoredDistrict('vle_district', 'vle_state'));
-  const [vleCity, setVleCity] = useState(() => {
-    try {
-      return localStorage.getItem('vle_city') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [vlePhone, setVlePhone] = useState(() => {
-    try {
-      return localStorage.getItem('vle_phone') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [vleEmail, setVleEmail] = useState(() => {
-    try {
-      return localStorage.getItem('vle_email') || '';
-    } catch {
-      return '';
-    }
-  });
+  const [vleName, setVleName] = useState('');
+  const [vleCenterName, setVleCenterName] = useState('');
+  const [vleId, setVleId] = useState('');
+  const [vleState, setVleState] = useState('');
+  const [vleDistrict, setVleDistrict] = useState('');
+  const [vleCity, setVleCity] = useState('');
+  const [vlePhone, setVlePhone] = useState('');
+  const [vleEmail, setVleEmail] = useState('');
   const [vleOtpSent, setVleOtpSent] = useState(false);
   const [vleMobileOtpCode, setVleMobileOtpCode] = useState('');
   const [vleRegistrationOtpCode, setVleRegistrationOtpCode] = useState('');
@@ -1472,51 +1384,15 @@ export default function App() {
   // --- FORM FILLER AUTH & STATE ---
   const [isFormFillerLoggedIn, setIsFormFillerLoggedIn] = useState(() => readStoredSession()?.role === 'form_filler');
   const [isFillerRegistering, setIsFillerRegistering] = useState(false);
-  const [fillerName, setFillerName] = useState(() => {
-    try {
-      return localStorage.getItem('filler_operator_name') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [fillerState, setFillerState] = useState(() => {
-    try {
-      return localStorage.getItem('filler_state') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [fillerDistrict, setFillerDistrict] = useState(() => readStoredDistrict('filler_district', 'filler_state'));
-  const [fillerCity, setFillerCity] = useState(() => {
-    try {
-      return localStorage.getItem('filler_city') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [fillerPhone, setFillerPhone] = useState(() => {
-    try {
-      return localStorage.getItem('filler_phone') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [fillerEmail, setFillerEmail] = useState(() => {
-    try {
-      return localStorage.getItem('filler_email') || '';
-    } catch {
-      return '';
-    }
-  });
+  const [fillerName, setFillerName] = useState('');
+  const [fillerState, setFillerState] = useState('');
+  const [fillerDistrict, setFillerDistrict] = useState('');
+  const [fillerCity, setFillerCity] = useState('');
+  const [fillerPhone, setFillerPhone] = useState('');
+  const [fillerEmail, setFillerEmail] = useState('');
   const [fillerPin, setFillerPin] = useState('');
   const [fillerPinConfirm, setFillerPinConfirm] = useState('');
-  const [fillerPhotoUrl, setFillerPhotoUrl] = useState(() => {
-    try {
-      return localStorage.getItem('filler_photo_url') || '';
-    } catch {
-      return '';
-    }
-  });
+  const [fillerPhotoUrl, setFillerPhotoUrl] = useState('');
 
   const [fillerOtpSent, setFillerOtpSent] = useState(false);
   const [fillerMobileOtpCode, setFillerMobileOtpCode] = useState('');
@@ -1562,51 +1438,6 @@ export default function App() {
     (document.getElementById('filler-otp-verify-form') as HTMLFormElement | null)?.requestSubmit();
   }, [fillerMobileOtpCode, fillerOtpSent, isFillerAuthBusy]);
 
-  // Restore the saved profile details for a returning (auto-logged-in) user so
-  // the dashboard has the right name, phone, district etc. on first paint.
-  useEffect(() => {
-    const session = readStoredSession();
-    if (!session) return;
-    if (session.role === 'client') {
-      if (session.name) setClientName(session.name);
-      if (session.phone) setClientPhone(session.phone);
-      if (session.email) setClientEmail(session.email);
-      if (session.state) setClientState(session.state);
-      if (session.district && !sameAsStateValue(session.district, session.state)) setClientDistrictFilter(session.district);
-      if (session.city && !sameAsStateValue(session.city, session.state)) setClientCityFilter(session.city);
-      if (session.name) setExamApplicantName(session.name);
-      if (session.phone) setExamApplicantPhone(session.phone);
-      if (session.email) setExamApplicantEmail(session.email);
-      if (session.name) setJanSevaDocApplicantName(session.name);
-      if (session.phone) setJanSevaDocAadhaar(session.phone);
-      if (session.email) setJanSevaDocEmail(session.email);
-    } else if (session.role === 'vle') {
-      if (session.name) setVleName(session.name);
-      if (session.phone) setVlePhone(session.phone);
-      if (session.email) setVleEmail(session.email);
-      if (session.state) setVleState(session.state);
-      if (session.district && !sameAsStateValue(session.district, session.state)) setVleDistrict(session.district);
-      if (session.city && !sameAsStateValue(session.city, session.state)) setVleCity(session.city);
-      if (session.cscId) setVleId(session.cscId);
-      try {
-        const savedCenter = localStorage.getItem('vle_center_name') || '';
-        const savedPhoto = localStorage.getItem('vle_photo_url') || '';
-        if (savedCenter) setVleCenterName(savedCenter);
-        if (savedPhoto.startsWith('data:image/') || /^https?:\/\//.test(savedPhoto)) setVlePhotoUrl(savedPhoto);
-        const savedCity = localStorage.getItem('vle_city') || '';
-        if (savedCity) setVleCity(savedCity);
-      } catch {}
-    } else if (session.role === 'form_filler') {
-      if (session.name) setFillerName(session.name);
-      if (session.phone) setFillerPhone(session.phone);
-      if (session.email) setFillerEmail(session.email);
-      if (session.state) setFillerState(session.state);
-      if (session.district && !sameAsStateValue(session.district, session.state)) setFillerDistrict(session.district);
-      if (session.city && !sameAsStateValue(session.city, session.state)) setFillerCity(session.city);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Auto-fill applicant details from the logged-in account. The fields stay fully
   // editable so the user can still type a different name / email / number.
   useEffect(() => {
@@ -1634,24 +1465,8 @@ export default function App() {
 
   // --- VLE DIRECTORY & DYNAMIC PRICING ---
   const [registeredVles, setRegisteredVles] = useState<any[]>([]);
-  const [vlePhotoUrl, setVlePhotoUrl] = useState(() => {
-    try {
-      const savedPhoto = localStorage.getItem('vle_photo_url') || '';
-      return savedPhoto.startsWith('data:image/') ? savedPhoto : '';
-    } catch {
-      return '';
-    }
-  });
-  const [customPricingList, setCustomPricingList] = useState<{ id: string; docName: string; price: string; govtFee?: string; govtFeeByCategory?: GovtFeeByCategory; cscFee?: string; feeName?: string; icon?: string; dept?: string; requirements?: string; scope?: 'district' | 'national' | 'online_form'; state?: string; operatorId?: string; operatorCscId?: string; operatorName?: string; operatorDistrict?: string; operatorCity?: string; operatorPhone?: string; serviceFee?: number }[]>(() => {
-    try {
-      const saved = localStorage.getItem('fillup_custom_pricing');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [];
-  });
+  const [vlePhotoUrl, setVlePhotoUrl] = useState('');
+  const [customPricingList, setCustomPricingList] = useState<{ id: string; docName: string; price: string; govtFee?: string; govtFeeByCategory?: GovtFeeByCategory; cscFee?: string; feeName?: string; icon?: string; dept?: string; requirements?: string; scope?: 'district' | 'national' | 'online_form'; state?: string; operatorId?: string; operatorCscId?: string; operatorName?: string; operatorDistrict?: string; operatorCity?: string; operatorPhone?: string; serviceFee?: number }[]>([]);
   const [newDocName, setNewDocName] = useState('');
   const [newDocGovtFee, setNewDocGovtFee] = useState('');
   const [newDocGovtFeeByCategory, setNewDocGovtFeeByCategory] = useState<GovtFeeByCategory>({});
@@ -1665,16 +1480,7 @@ export default function App() {
   const [newVleFormGovtFee, setNewVleFormGovtFee] = useState('');
   const [newVleFormGovtFeeByCategory, setNewVleFormGovtFeeByCategory] = useState<GovtFeeByCategory>({});
   const [newVleFormState, setNewVleFormState] = useState('');
-  const [vleFormFillingList, setVleFormFillingList] = useState<{ id: string; docName: string; price: string; govtFee?: string; govtFeeByCategory?: GovtFeeByCategory; feeName?: string; expertName?: string; requirements?: string; icon?: string; scope?: 'district' | 'national' | 'online_form'; state?: string }[]>(() => {
-    try {
-      const saved = localStorage.getItem('fillup_vle_form_pricing');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {}
-    return [];
-  });
+  const [vleFormFillingList, setVleFormFillingList] = useState<{ id: string; docName: string; price: string; govtFee?: string; govtFeeByCategory?: GovtFeeByCategory; feeName?: string; expertName?: string; requirements?: string; icon?: string; scope?: 'district' | 'national' | 'online_form'; state?: string }[]>([]);
   const [isSavingPricing, setIsSavingPricing] = useState(false);
   const [pricingJustUpdated, setPricingJustUpdated] = useState(false);
 
@@ -1977,15 +1783,12 @@ export default function App() {
       const clientMessageId = typeof payload.clientMessageId === 'string' && payload.clientMessageId
         ? payload.clientMessageId
         : `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      // Phone/token bhi bhejo — server inhi se sender verify karke room join
-      // kar sakta hai, isliye join miss hone par bhi send fail nahi hota.
-      const session = readStoredSession();
+      // The HttpOnly session cookie authenticates the socket and REST fallback.
       const senderIsClient = payload.sender !== 'operator';
       const messagePayload = {
         ...payload,
         clientMessageId,
-        phone: senderIsClient ? clientPhoneRef.current : '',
-        token: session?.token
+        phone: senderIsClient ? clientPhoneRef.current : ''
       };
 
       // Outbox ko bahut bada na hone do.
@@ -2110,8 +1913,7 @@ export default function App() {
       orderId,
       role,
       upToMessageId,
-      phone: role === 'client' ? clientPhoneRef.current : '',
-      token: readStoredSession()?.token
+      phone: role === 'client' ? clientPhoneRef.current : ''
     });
   };
 
@@ -2451,7 +2253,6 @@ export default function App() {
     new Promise(resolve => {
       const role = activeRoleRef.current === 'client' ? 'client' : 'operator';
       const phone = role === 'client' ? clientPhoneRef.current : '';
-      const token = readStoredSession()?.token;
       let settled = false;
       const timer = setTimeout(() => {
         if (settled) return;
@@ -2460,7 +2261,7 @@ export default function App() {
       }, 12000);
       realtimeSocket.emit(
         'order:join',
-        { orderId, role, phone, token },
+        { orderId, role, phone },
         (result: { success?: boolean; error?: string }) => {
           if (settled) return;
           settled = true;
@@ -3141,31 +2942,9 @@ export default function App() {
       setVleCity(resolvedCity);
       setVlePhotoUrl(resolvedPhoto);
 
-      try {
-        localStorage.setItem('vle_center_name', resolvedCenter);
-        localStorage.setItem('vle_operator_name', resolvedName);
-        localStorage.setItem('vle_csc_id', resolvedId);
-        localStorage.setItem('vle_phone', resolvedPhone);
-        localStorage.setItem('vle_email', resolvedEmail);
-        localStorage.setItem('vle_state', resolvedState);
-        localStorage.setItem('vle_district', resolvedDistrict);
-        localStorage.setItem('vle_city', resolvedCity);
-        if (resolvedPhoto) localStorage.setItem('vle_photo_url', resolvedPhoto);
-        else localStorage.removeItem('vle_photo_url');
-      } catch {}
-
-      const session = readStoredSession();
       writeStoredSession({
         role: 'vle',
-        name: resolvedName,
-        phone: resolvedPhone,
-        email: resolvedEmail,
-        state: resolvedState,
-        district: resolvedDistrict,
-        city: resolvedCity,
-        cscId: resolvedId,
-        token: session?.token,
-        loggedInAt: session?.loggedInAt || Date.now()
+        loggedInAt: readStoredSession()?.loggedInAt || Date.now()
       });
 
       setIsKendraDetailsModalOpen(false);
@@ -3274,28 +3053,9 @@ export default function App() {
       setFillerCity(resolvedCity);
       setFillerPhotoUrl(resolvedPhoto);
 
-      try {
-        localStorage.setItem('filler_operator_name', resolvedName);
-        localStorage.setItem('filler_phone', resolvedPhone);
-        localStorage.setItem('filler_email', resolvedEmail);
-        localStorage.setItem('filler_state', resolvedState);
-        localStorage.setItem('filler_district', resolvedDistrict);
-        localStorage.setItem('filler_city', resolvedCity);
-        if (resolvedPhoto) localStorage.setItem('filler_photo_url', resolvedPhoto);
-        else localStorage.removeItem('filler_photo_url');
-      } catch {}
-
-      const session = readStoredSession();
       writeStoredSession({
         role: 'form_filler',
-        name: resolvedName,
-        phone: resolvedPhone,
-        email: resolvedEmail,
-        state: resolvedState,
-        district: resolvedDistrict,
-        city: resolvedCity,
-        token: session?.token,
-        loggedInAt: session?.loggedInAt || Date.now()
+        loggedInAt: readStoredSession()?.loggedInAt || Date.now()
       });
 
       setIsFillerDetailsModalOpen(false);
@@ -3362,9 +3122,7 @@ export default function App() {
     seenAckRef.current.read.clear();
     setClientOrderSuccessMsg('');
     setWorkspaceStatusMsg(null);
-    try {
-      sessionStorage.removeItem('digiseva_pending_open_order_id');
-    } catch {}
+    pendingOpenOrderId = null;
     endVoiceCall(true);
     realtimeSocket.disconnect();
   }
@@ -3377,21 +3135,50 @@ export default function App() {
     }
     const requestSession = readStoredSession();
     const requestRole = requestSession?.role ?? null;
-    const requestToken = requestSession?.token || '';
     fetchAllDataInFlightRef.current = true;
 
     try {
       const dashboardData = await safeFetchJson('/api/dashboard');
       const currentSession = readStoredSession();
       if (
-        (currentSession?.role ?? null) !== requestRole ||
-        (currentSession?.token || '') !== requestToken
+        (currentSession?.role ?? null) !== requestRole
       ) return;
       if (!dashboardData?.success) return;
 
+      const account = dashboardData.account;
+      if (!currentSession && account?.role) {
+        const role = account.role === 'client'
+          ? 'client'
+          : account.role === 'vle'
+            ? 'vle'
+            : account.role === 'filler'
+              ? 'form_filler'
+              : null;
+        if (role) {
+          writeStoredSession({ role, accountId: String(account.id || ''), loggedInAt: Date.now() });
+          setActiveRole(role);
+          if (role === 'client') setClientAccountId(String(account.id || ''));
+          setIsClientLoggedIn(role === 'client');
+          setIsVleLoggedIn(role === 'vle');
+          setIsFormFillerLoggedIn(role === 'form_filler');
+          setStep(role === 'client' ? 'client_portal' : role === 'vle' ? 'vle_home' : 'form_filler_app');
+          if (!legalAccepted) {
+            setPendingRole(role);
+            setShowLegalModal(true);
+          }
+        }
+      } else if (currentSession && !account) {
+        clearStoredSession();
+        resetClientOrderState();
+        setIsClientLoggedIn(false);
+        setIsVleLoggedIn(false);
+        setIsFormFillerLoggedIn(false);
+        setActiveRole('none');
+        setStep('landing');
+      }
+
       // Restore the logged-in account's saved details from MongoDB/backend on
       // every dashboard sync, so a new device never shows blank fields.
-      const account = dashboardData.account;
       if (requestRole === 'client') {
         const accountId = account?.role === 'client' ? String(account.id || '') : '';
         if (requestSession?.accountId !== accountId) resetClientOrderState();
@@ -3399,7 +3186,6 @@ export default function App() {
         if (
           accountId &&
           currentSession?.role === 'client' &&
-          currentSession.token === requestToken &&
           currentSession.accountId !== accountId
         ) {
           writeStoredSession({ ...currentSession, accountId });
@@ -3465,9 +3251,6 @@ export default function App() {
         const json = takeServerSnapshot(pricingListSnapRef, dashboardData.pricingList);
         if (json !== null) {
           setCustomPricingList(prev => (JSON.stringify(prev) === json ? prev : dashboardData.pricingList));
-          try {
-            localStorage.setItem('fillup_custom_pricing', json);
-          } catch {}
         }
       }
 
@@ -3475,9 +3258,6 @@ export default function App() {
         const json = takeServerSnapshot(formFillingListSnapRef, dashboardData.formFillingList);
         if (json !== null) {
           setVleFormFillingList(prev => (JSON.stringify(prev) === json ? prev : dashboardData.formFillingList));
-          try {
-            localStorage.setItem('fillup_vle_form_pricing', json);
-          } catch {}
         }
       }
 
@@ -3668,16 +3448,10 @@ export default function App() {
     : [...vleExclusiveOrders, ...fillerOrders];
 
   useEffect(() => {
-    let pendingOrderId = '';
-    try {
-      pendingOrderId = sessionStorage.getItem('digiseva_pending_open_order_id') || '';
-    } catch {}
-    if (!pendingOrderId) return;
-    const pendingOrder = clientActiveOrders.find(order => order.id === pendingOrderId);
+    if (!pendingOpenOrderId) return;
+    const pendingOrder = clientActiveOrders.find(order => order.id === pendingOpenOrderId);
     if (!pendingOrder) return;
-    try {
-      sessionStorage.removeItem('digiseva_pending_open_order_id');
-    } catch {}
+    pendingOpenOrderId = null;
     setActiveWorkspaceOrder(pendingOrder);
   }, [clientActiveOrders]);
 
@@ -3694,6 +3468,12 @@ export default function App() {
   const realtimeOrderIdsKey = [...new Set(realtimeOrderIds)].sort().join(',');
 
   useEffect(() => {
+    if (activeRole === 'none') {
+      realtimeSocket.disconnect();
+      setIsRealtimeConnected(false);
+      return;
+    }
+
     const onConnect = () => {
       setIsRealtimeConnected(true);
       setHasRealtimeConnectedOnce(true);
@@ -4114,9 +3894,8 @@ export default function App() {
       if (!realtimeSocket.connected) return;
       const role = activeRoleRef.current === 'client' ? 'client' : 'operator';
       const phone = role === 'client' ? clientPhoneRef.current : '';
-      const token = readStoredSession()?.token;
       [...new Set(realtimeOrderIdsKey ? realtimeOrderIdsKey.split(',') : [])].forEach(orderId => {
-        realtimeSocket.emit('order:join', { orderId, role, phone, token }, (result: { success: boolean; error?: string }) => {
+        realtimeSocket.emit('order:join', { orderId, role, phone }, (result: { success: boolean; error?: string }) => {
           if (!result.success) console.warn(`Realtime order join failed for ${orderId}:`, result.error);
         });
       });
@@ -4125,13 +3904,11 @@ export default function App() {
           role: 'vle',
           district: vleDistrictRef.current,
           operatorIds: [vleIdRef.current],
-          token
         });
       } else if (activeRoleRef.current === 'form_filler') {
         realtimeSocket.emit('dispatch:join', {
           role: 'filler',
           district: fillerDistrictRef.current,
-          token
         });
       }
       // Reconnect ke baad pending/queued messages khud bhej do.
@@ -4230,7 +4007,7 @@ export default function App() {
       realtimeSocket.off('service-catalog:updated', onServiceCatalogUpdated);
       realtimeSocket.off('connect', joinRooms);
     };
-  }, [realtimeOrderIdsKey, activeRole, clientPhone, clientAccountId, clientSessionToken, activeWorkspaceOrder?.id, vleDistrict, vleId, fillerDistrict]);
+  }, [realtimeOrderIdsKey, activeRole, clientPhone, clientAccountId, activeWorkspaceOrder?.id, vleDistrict, vleId, fillerDistrict]);
 
   useEffect(() => {
     if (!liveCameraToken) stopLiveCamera();
@@ -4539,36 +4316,66 @@ export default function App() {
   }, [step]);
 
   // Global Logout Handler
-  const handleLogout = () => {
-    const wasClient = activeRole === 'client' || readStoredSession()?.role === 'client';
-    clearStoredSession();
-    if (wasClient) {
-      resetClientOrderState();
-      setClientSessionToken('');
-      setClientName('');
-      setClientPhone('');
-      setClientEmail('');
-      setClientState('');
-      setClientDistrictFilter('');
-      setClientCityFilter('');
-      setExamApplicantName('');
-      setExamApplicantPhone('');
-      setExamApplicantEmail('');
-      setJanSevaDocApplicantName('');
-      setJanSevaDocAadhaar('');
-      setJanSevaDocEmail('');
-      try {
-        ['client_name', 'client_phone', 'client_email', 'client_state', 'client_district', 'client_city']
-          .forEach(key => localStorage.removeItem(key));
-      } catch {}
+  const handleLogout = async () => {
+    let logoutError: Error | null = null;
+    try {
+      const response = await fetchWithRetry('/api/auth/logout', { method: 'POST' });
+      const data = await parseJsonResponse(response);
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'The server could not confirm logout.');
+      }
+    } catch (error) {
+      logoutError = error instanceof Error ? error : new Error('The server could not confirm logout.');
     }
+
+    clearStoredSession();
+    resetClientOrderState();
+    setClientName('');
+    setClientPhone('');
+    setClientEmail('');
+    setClientState('');
+    setClientDistrictFilter('');
+    setClientCityFilter('');
+    setExamApplicantName('');
+    setExamApplicantPhone('');
+    setExamApplicantEmail('');
+    setJanSevaDocApplicantName('');
+    setJanSevaDocAadhaar('');
+    setJanSevaDocEmail('');
+    setClientOtpSent(false);
+    setClientMobileOtpCode('');
+    setClientAccountId('');
+    setVleName('');
+    setVleCenterName('');
+    setVleId('');
+    setVlePhone('');
+    setVleEmail('');
+    setVleState('');
+    setVleDistrict('');
+    setVleCity('');
+    setVlePhotoUrl('');
+    setCustomPricingList([]);
+    setVleFormFillingList([]);
+    setFillerName('');
+    setFillerPhone('');
+    setFillerEmail('');
+    setFillerState('');
+    setFillerDistrict('');
+    setFillerCity('');
+    setFillerPhotoUrl('');
+    setFillerServices([]);
+    setPendingRole(null);
+    setShowLegalModal(false);
     setIsClientLoggedIn(false);
     setIsVleLoggedIn(false);
     setIsFormFillerLoggedIn(false);
     setActiveRole('none');
-    setActiveWorkspaceOrder(null);
     endVoiceCall(true);
     setStep('landing');
+    if (logoutError) {
+      console.error('Logout request failed:', logoutError);
+      showSaveToast('Could not confirm logout with the server. Please check your connection.', 'error');
+    }
   };
 
   // 📤 Asli file upload: files FormData (multipart) me server jaati hain,
@@ -5634,7 +5441,7 @@ export default function App() {
     try {
       sessionStorage.setItem('digiseva_pending_client_notice', notice);
       sessionStorage.setItem('digiseva_pending_save_toast', '✅ Request submitted successfully!');
-      if (openOrderId) sessionStorage.setItem('digiseva_pending_open_order_id', openOrderId);
+      if (openOrderId) pendingOpenOrderId = openOrderId;
     } catch {}
     showSaveToast('✅ Request submitted successfully!');
     setTimeout(() => window.location.reload(), 900);
@@ -5643,7 +5450,7 @@ export default function App() {
   const [isSubmittingExamForm, setIsSubmittingExamForm] = useState(false);
 
   // Live backend restarts (Render free tier sleeps/restarts) can invalidate an
-  // old login token. Instead of failing the form request with a vague error,
+  // old login session. Instead of failing the form request with a vague error,
   // clear the stale session and take the user back to the OTP login screen.
   // (Account data is stored in MongoDB, so logging in again restores access.)
   const recoverFromStaleSession = () => {
@@ -5664,7 +5471,7 @@ export default function App() {
       return;
     }
     const session = readStoredSession();
-    if (!session?.token || session.role !== 'client') {
+    if (session?.role !== 'client') {
       setClientOrderSuccessMsg('⚠️ Please log in as a Citizen (Gmail OTP) to send this request.');
       setStep('client_login');
       return;
@@ -5950,12 +5757,7 @@ export default function App() {
         setNewDocState('');
       }
 
-      // 1. Instantly save into localStorage for offline retention
-      try {
-        localStorage.setItem('fillup_custom_pricing', JSON.stringify(listToSave));
-      } catch {}
-
-      // 2. Save to this operator's own account only (server-side, per-account pricing)
+      // Save to this operator's own account only (server-side, per-account pricing).
       const res = await fetchWithRetry('/api/vle/pricing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -6077,28 +5879,12 @@ export default function App() {
     if (resolvedDistrict) setClientDistrictFilter(resolvedDistrict);
     if (resolvedCity) setClientCityFilter(resolvedCity);
 
-    localStorage.setItem('client_name', resolvedName || clientName);
-    localStorage.setItem('client_phone', resolvedPhone || clientPhone);
-    localStorage.setItem('client_email', resolvedEmail || clientEmail);
-    localStorage.setItem('client_state', resolvedState || clientState);
-    if (resolvedDistrict) localStorage.setItem('client_district', resolvedDistrict);
-    else localStorage.removeItem('client_district');
-    if (resolvedCity) localStorage.setItem('client_city', resolvedCity);
-    else localStorage.removeItem('client_city');
     writeStoredSession({
       role: 'client',
       accountId: String(savedUser.id || ''),
-      name: resolvedName || clientName,
-      phone: resolvedPhone || clientPhone,
-      email: resolvedEmail || clientEmail,
-      state: resolvedState || clientState,
-      district: resolvedDistrict || clientDistrictFilter,
-      city: resolvedCity || clientCityFilter,
-      token: loginData.token,
       loggedInAt: Date.now()
     });
     setClientAccountId(String(savedUser.id || ''));
-    setClientSessionToken(String(loginData.token || ''));
     setIsClientLoggedIn(true);
     setActiveRole('client');
     setPendingRole('client');
@@ -6135,27 +5921,8 @@ export default function App() {
     if (Array.isArray(savedPricing) && savedPricing.length > 0) setCustomPricingList(savedPricing);
     if (accountPhoto) setVlePhotoUrl(accountPhoto);
 
-    localStorage.setItem('vle_operator_name', resolvedName || vleName);
-    localStorage.setItem('vle_center_name', resolvedCenter || vleCenterName);
-    localStorage.setItem('vle_csc_id', resolvedCsc || vleId);
-    localStorage.setItem('vle_phone', resolvedPhone || vlePhone);
-    localStorage.setItem('vle_email', resolvedEmail || vleEmail);
-    if (accountState) localStorage.setItem('vle_state', accountState);
-    if (accountDistrict) localStorage.setItem('vle_district', accountDistrict);
-    if (accountCity) localStorage.setItem('vle_city', accountCity);
-    if (accountPhoto) {
-      try { localStorage.setItem('vle_photo_url', accountPhoto); } catch {}
-    }
     writeStoredSession({
       role: 'vle',
-      name: resolvedName || vleName,
-      phone: resolvedPhone || vlePhone,
-      email: resolvedEmail || vleEmail,
-      state: accountState || vleState,
-      district: accountDistrict || vleDistrict,
-      city: accountCity || vleCity,
-      cscId: resolvedCsc || vleId,
-      token: loginData.token,
       loggedInAt: Date.now()
     });
     setIsVleLoggedIn(true);
@@ -6187,24 +5954,8 @@ export default function App() {
     if (accountCity) setFillerCity(accountCity);
     if (accountPhoto) setFillerPhotoUrl(accountPhoto);
 
-    localStorage.setItem('filler_operator_name', resolvedName || fillerName);
-    localStorage.setItem('filler_phone', resolvedPhone || fillerPhone);
-    localStorage.setItem('filler_email', resolvedEmail || fillerEmail);
-    if (accountState) localStorage.setItem('filler_state', accountState);
-    if (accountDistrict) localStorage.setItem('filler_district', accountDistrict);
-    if (accountCity) localStorage.setItem('filler_city', accountCity);
-    if (accountPhoto) {
-      try { localStorage.setItem('filler_photo_url', accountPhoto); } catch {}
-    }
     writeStoredSession({
       role: 'form_filler',
-      name: resolvedName || fillerName,
-      phone: resolvedPhone || fillerPhone,
-      email: resolvedEmail || fillerEmail,
-      state: accountState || fillerState,
-      district: accountDistrict || fillerDistrict,
-      city: accountCity || fillerCity,
-      token: loginData.token,
       loggedInAt: Date.now()
     });
     setIsFormFillerLoggedIn(true);
@@ -8386,28 +8137,12 @@ export default function App() {
                     if (resolvedDistrict) setClientDistrictFilter(resolvedDistrict);
                     if (resolvedCity) setClientCityFilter(resolvedCity);
 
-                    localStorage.setItem('client_name', resolvedName || clientName);
-                    localStorage.setItem('client_phone', resolvedPhone || clientPhone);
-                    localStorage.setItem('client_email', resolvedEmail || clientEmail);
-                    localStorage.setItem('client_state', resolvedState || clientState);
-                    if (resolvedDistrict) localStorage.setItem('client_district', resolvedDistrict);
-                    else localStorage.removeItem('client_district');
-                    if (resolvedCity) localStorage.setItem('client_city', resolvedCity);
-                    else localStorage.removeItem('client_city');
                     writeStoredSession({
                       role: 'client',
                       accountId: String(savedUser.id || ''),
-                      name: resolvedName || clientName,
-                      phone: resolvedPhone || clientPhone,
-                      email: resolvedEmail || clientEmail,
-                      state: resolvedState || clientState,
-                      district: resolvedDistrict || clientDistrictFilter,
-                      city: resolvedCity || clientCityFilter,
-                      token: loginData.token,
                       loggedInAt: Date.now()
                     });
                     setClientAccountId(String(savedUser.id || ''));
-                    setClientSessionToken(String(loginData.token || ''));
                     setIsClientLoggedIn(true);
                     setActiveRole('client');
                     setPendingRole('client');
@@ -9905,7 +9640,6 @@ export default function App() {
                       onChange={(e) => {
                         const next = e.target.value as GovtFeeCategoryKey;
                         setExamApplicantCategory(next);
-                        try { localStorage.setItem('client_category', next); } catch {}
                       }}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
                     >
@@ -10614,7 +10348,6 @@ export default function App() {
                       onChange={(e) => {
                         const next = e.target.value as GovtFeeCategoryKey;
                         setExamApplicantCategory(next);
-                        try { localStorage.setItem('client_category', next); } catch {}
                       }}
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold"
                     >
@@ -11005,27 +10738,8 @@ export default function App() {
                     if (Array.isArray(savedPricing) && savedPricing.length > 0) setCustomPricingList(savedPricing);
                     if (accountPhoto) setVlePhotoUrl(accountPhoto);
 
-                    localStorage.setItem('vle_operator_name', resolvedName || vleName);
-                    localStorage.setItem('vle_center_name', resolvedCenter || vleCenterName);
-                    localStorage.setItem('vle_csc_id', resolvedCsc || vleId);
-                    localStorage.setItem('vle_phone', resolvedPhone || vlePhone);
-                    localStorage.setItem('vle_email', resolvedEmail || vleEmail);
-                    if (accountState) localStorage.setItem('vle_state', accountState);
-                    if (accountDistrict) localStorage.setItem('vle_district', accountDistrict);
-                    if (accountCity) localStorage.setItem('vle_city', accountCity);
-                    if (accountPhoto) {
-                      try { localStorage.setItem('vle_photo_url', accountPhoto); } catch {}
-                    }
                     writeStoredSession({
                       role: 'vle',
-                      name: resolvedName || vleName,
-                      phone: resolvedPhone || vlePhone,
-                      email: resolvedEmail || vleEmail,
-                      state: accountState || vleState,
-                      district: accountDistrict || vleDistrict,
-                      city: accountCity || vleCity,
-                      cscId: resolvedCsc || vleId,
-                      token: loginData.token,
                       loggedInAt: Date.now()
                     });
                     setIsVleLoggedIn(true);
@@ -11435,27 +11149,8 @@ export default function App() {
                   if (resolvedCity) setVleCity(resolvedCity);
                   if (resolvedPhoto) setVlePhotoUrl(resolvedPhoto);
                   await fetchAllData();
-                  localStorage.setItem('vle_operator_name', resolvedName || vleName);
-                  localStorage.setItem('vle_center_name', resolvedCenter || vleCenterName);
-                  localStorage.setItem('vle_csc_id', resolvedCsc || vleId);
-                  localStorage.setItem('vle_phone', resolvedPhone || vlePhone);
-                  localStorage.setItem('vle_email', resolvedEmail || vleEmail);
-                  localStorage.setItem('vle_state', resolvedState || vleState);
-                  localStorage.setItem('vle_district', resolvedDistrict || vleDistrict);
-                  localStorage.setItem('vle_city', resolvedCity || vleCity);
-                  if (resolvedPhoto) {
-                    try { localStorage.setItem('vle_photo_url', resolvedPhoto); } catch {}
-                  }
                   writeStoredSession({
                     role: 'vle',
-                    name: resolvedName || vleName,
-                    phone: resolvedPhone || vlePhone,
-                    email: resolvedEmail || vleEmail,
-                    state: resolvedState || vleState,
-                    district: resolvedDistrict || vleDistrict,
-                    city: resolvedCity || vleCity,
-                    cscId: resolvedCsc || vleId,
-                    token: registerData.token,
                     loggedInAt: Date.now()
                   });
                   setIsVleLoggedIn(true);
@@ -12027,7 +11722,6 @@ export default function App() {
                   onClick={async () => {
                     setIsSavingPricing(true);
                     try {
-                      localStorage.setItem('fillup_vle_form_pricing', JSON.stringify(vleFormFillingList));
                       const res = await fetchWithRetry('/api/vle/pricing', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -12685,21 +12379,8 @@ export default function App() {
                     if (accountDistrict) setFillerDistrict(accountDistrict);
                     if (accountCity) setFillerCity(accountCity);
 
-                    localStorage.setItem('filler_operator_name', resolvedName || fillerName);
-                    localStorage.setItem('filler_phone', resolvedPhone || fillerPhone);
-                    localStorage.setItem('filler_email', resolvedEmail || fillerEmail);
-                    if (accountState) localStorage.setItem('filler_state', accountState);
-                    if (accountDistrict) localStorage.setItem('filler_district', accountDistrict);
-                    if (accountCity) localStorage.setItem('filler_city', accountCity);
                     writeStoredSession({
                       role: 'form_filler',
-                      name: resolvedName || fillerName,
-                      phone: resolvedPhone || fillerPhone,
-                      email: resolvedEmail || fillerEmail,
-                      state: accountState || fillerState,
-                      district: accountDistrict || fillerDistrict,
-                      city: accountCity || fillerCity,
-                      token: loginData.token,
                       loggedInAt: Date.now()
                     });
                     setIsFormFillerLoggedIn(true);
@@ -15413,14 +15094,6 @@ export default function App() {
                   setVleEmail(nextEmail);
                   setKendraEditPhone(nextPhone);
                   setKendraEditEmail(nextEmail);
-                  try {
-                    localStorage.setItem('vle_phone', nextPhone);
-                    localStorage.setItem('vle_email', nextEmail);
-                    const session = readStoredSession();
-                    if (session && session.role === 'vle') {
-                      writeStoredSession({ ...session, phone: nextPhone, email: nextEmail });
-                    }
-                  } catch {}
                 }}
               />
 
@@ -15692,14 +15365,6 @@ export default function App() {
                   setFillerEmail(nextEmail);
                   setFillerEditPhone(nextPhone);
                   setFillerEditEmail(nextEmail);
-                  try {
-                    localStorage.setItem('filler_phone', nextPhone);
-                    localStorage.setItem('filler_email', nextEmail);
-                    const session = readStoredSession();
-                    if (session && session.role === 'form_filler') {
-                      writeStoredSession({ ...session, phone: nextPhone, email: nextEmail });
-                    }
-                  } catch {}
                 }}
               />
 

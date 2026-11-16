@@ -88,8 +88,6 @@ interface AdminOperatorView {
   activeBidCount: number;
 }
 
-const TOKEN_STORAGE_KEY = 'digiseva_admin_token';
-
 export function isAdminConsoleAvailableLocally(): boolean {
   if (typeof window === 'undefined') return false;
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
@@ -117,13 +115,8 @@ const SUSPENSION_REASON_PRESETS = [
   'Fake payment screenshot / UTR mismatch'
 ];
 
-const getStoredToken = () => {
-  if (typeof window === 'undefined') return '';
-  return sessionStorage.getItem(TOKEN_STORAGE_KEY) || localStorage.getItem(TOKEN_STORAGE_KEY) || '';
-};
-
 export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, language = 'EN' }) => {
-  const [token, setToken] = useState<string>(() => getStoredToken());
+  const [token, setToken] = useState('');
   const [tokenInput, setTokenInput] = useState<string>(token);
   const [summary, setSummary] = useState<SecuritySummary | null>(null);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
@@ -410,12 +403,9 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
     const clean = tokenInput.trim();
     setToken(clean);
     if (clean) {
-      sessionStorage.setItem(TOKEN_STORAGE_KEY, clean);
-      localStorage.setItem(TOKEN_STORAGE_KEY, clean);
-      setMessage({ text: 'Admin token saved.', type: 'ok' });
+      setMessage({ text: 'Admin token set for this page session.', type: 'ok' });
     } else {
-      sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      setMessage({ text: 'Admin token cleared.', type: 'ok' });
     }
   };
 

@@ -13,6 +13,7 @@ import {
 } from './storeService.ts';
 import { markOrderMessagesSeen, sendOrderMessage } from './orderMessageService.ts';
 import type { ChatMessage } from '../types/index.ts';
+import { readAuthSessionCookie } from './authCookieService.ts';
 
 let realtimeServer: Server | null = null;
 const joinedOrdersBySocket = new Map<string, Map<string, { role: 'client' | 'operator'; phone: string }>>();
@@ -145,7 +146,8 @@ export function setRealtimeServer(server: Server): void {
       }
       if (participantRole === 'client') {
         const account = getAccountByToken(tokenRaw) ||
-          getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token);
+          getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token) ||
+          getAccountByToken(readAuthSessionCookie(socket.handshake.headers.cookie));
         if (!account || account.role !== 'client' || !orderBelongsToClient(found.order, account)) {
           return { error: 'This order is not linked to the logged-in citizen account.' };
         }
@@ -153,7 +155,8 @@ export function setRealtimeServer(server: Server): void {
       } else {
         // Operator join must prove a logged-in operator session that can access this order.
         const account = getAccountByToken(tokenRaw) ||
-          getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token);
+          getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token) ||
+          getAccountByToken(readAuthSessionCookie(socket.handshake.headers.cookie));
         if (!account) {
           return { error: 'Operator login required to join this order chat.' };
         }
@@ -421,7 +424,8 @@ export function setRealtimeServer(server: Server): void {
       // 🟢 Real presence: socket connected = online. Email sirf offline operators ko jaayegi.
       const token = typeof payload?.token === 'string' ? payload.token : '';
       const account = getAccountByToken(token) ||
-        getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token);
+        getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token) ||
+        getAccountByToken(readAuthSessionCookie(socket.handshake.headers.cookie));
       if (account && (account.role === 'vle' || account.role === 'filler')) {
         registerOnline(socket.id, account);
       }

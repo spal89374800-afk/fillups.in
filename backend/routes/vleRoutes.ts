@@ -48,6 +48,7 @@ import { getRequestAccount, requireAccount } from '../middleware/securityMiddlew
 import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } from '../services/orderDispatchService.ts';
 import { emitOrderUpdate, emitServiceCatalogUpdated, isOperatorOnline } from '../services/realtimeService.ts';
 import { clearPublicCatalogCache } from '../services/publicCatalogService.ts';
+import { setAuthSessionCookie } from '../services/authCookieService.ts';
 
 const noLocalJanSevaMessage = 'Jan Seva isn’t available in your area yet. We’re working on it—please check back in 24 hours for an update. Thank you 😊✨';
 
@@ -89,10 +90,10 @@ vleRouter.post('/vle/login', (req, res) => {
   }
   registeredAccount.lastLoginAt = new Date().toISOString();
   void persistToMongo('userAccount', registeredAccount);
+  setAuthSessionCookie(res, registeredAccount.token);
   res.json({
     success: true,
     message: '✅ Jan Seva Kendra Operator Logged in successfully (Permanent Account Retention Active).',
-    token: registeredAccount.token,
     user: sanitizeAccountForClient(registeredAccount),
     // Saved Kendra profile (center name, photo, location) so a fresh device
     // shows the operator's real details instead of blank fields.
@@ -408,9 +409,9 @@ vleRouter.post('/vle/register', async (req, res) => {
   clearPublicCatalogCache();
   emitServiceCatalogUpdated();
 
+  setAuthSessionCookie(res, account.token);
   res.json({
     success: true,
-    token: account.token,
     user: sanitizeAccountForClient(account),
     operator: updatedVle,
     vle: updatedVle,

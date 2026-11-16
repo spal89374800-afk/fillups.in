@@ -8,6 +8,7 @@ import { resolveClientIp } from '../middleware/botShieldMiddleware.ts';
 import { isTurnstileEnabled, getTurnstileSiteKey, verifyTurnstileToken } from '../services/turnstileService.ts';
 import { checkOtpSendLimits, checkOtpVerifyLimits, registerOtpSend, registerOtpVerify } from '../services/otpGuardService.ts';
 import { sendTransactionalEmail } from '../services/emailService.ts';
+import { clearAuthSessionCookie, setAuthSessionCookie } from '../services/authCookieService.ts';
 
 export const authRouter = Router();
 
@@ -78,11 +79,11 @@ authRouter.post('/auth/login', (req, res) => {
     role: userRole
   });
 
+  setAuthSessionCookie(res, user.token);
   res.json({
     success: true,
     message: '✅ Logged in successfully. Account retained permanently in backend store (Zero Data Retention is NOT applied to logins).',
     retention: 'PERMANENT_ACCOUNT_STORAGE',
-    token: user.token,
     user: sanitizeAccountForClient(user)
   });
 });
@@ -120,12 +121,17 @@ authRouter.post('/auth/register', (req, res) => {
     role: userRole
   });
 
+  setAuthSessionCookie(res, user.token);
   res.json({
     success: true,
     message: '✅ User registered and retained in backend database.',
-    token: user.token,
     user: sanitizeAccountForClient(user)
   });
+});
+
+authRouter.post('/auth/logout', (_req, res) => {
+  clearAuthSessionCookie(res);
+  res.json({ success: true });
 });
 
 authRouter.get('/auth/users', (req, res) => {

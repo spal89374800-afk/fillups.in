@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { UserAccount, getAccountByToken } from '../services/storeService.ts';
 import { resolveClientIp } from './botShieldMiddleware.ts';
+import { readAuthSessionCookie } from '../services/authCookieService.ts';
 
 export function getRequestAccount(req: Request): UserAccount | undefined {
   const header = req.headers['authorization'];
@@ -10,7 +11,11 @@ export function getRequestAccount(req: Request): UserAccount | undefined {
     ? (req.body.authToken || req.body.token)
     : undefined;
   const queryToken = typeof req.query?.authToken === 'string' ? req.query.authToken : undefined;
-  return getAccountByToken(headerValue) || getAccountByToken(bodyToken) || getAccountByToken(queryToken);
+  const cookieToken = readAuthSessionCookie(req.headers.cookie);
+  return getAccountByToken(headerValue) ||
+    getAccountByToken(cookieToken) ||
+    getAccountByToken(bodyToken) ||
+    getAccountByToken(queryToken);
 }
 
 export function resolveAccount(req: Request, _res: Response, next: NextFunction) {

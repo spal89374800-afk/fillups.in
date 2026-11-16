@@ -2,35 +2,10 @@ import compression from 'compression';
 import express from 'express';
 import { apiRouter } from './routes/index.ts';
 import { botShieldMiddleware } from './middleware/botShieldMiddleware.ts';
+import { isAllowedCorsOrigin } from './services/corsOriginService.ts';
+import { readAuthSessionCookie } from './services/authCookieService.ts';
 
-// The app can be opened from more than one Render URL (the web service and a
-// separate frontend/static service). API calls from those origins must be
-// allowed, otherwise the browser reports a CORS/HTTP error on login.
-const EXTRA_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || process.env.FRONTEND_URL || '')
-  .split(',')
-  .map(value => value.trim().replace(/\/+$/, ''))
-  .filter(Boolean);
-
-export function isAllowedCorsOrigin(origin: string): boolean {
-  try {
-    const parsed = new URL(origin);
-    const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
-    if (host.endsWith('.onrender.com')) return true;
-    if (EXTRA_ALLOWED_ORIGINS.includes(parsed.origin)) return true;
-    const appUrl = process.env.APP_URL || process.env.VITE_APP_URL;
-    if (appUrl) {
-      try {
-        if (new URL(appUrl).origin === parsed.origin) return true;
-      } catch {
-        // Ignore malformed APP_URL.
-      }
-    }
-  } catch {
-    // Ignore malformed Origin headers.
-  }
-  return false;
-}
+export { isAllowedCorsOrigin } from './services/corsOriginService.ts';
 
 export function createExpressApp() {
   const app = express();
@@ -53,6 +28,15 @@ export function createExpressApp() {
     res.setHeader('Access-Control-Max-Age', '86400');
     if (req.method === 'OPTIONS') {
       return res.status(204).end();
+    }
+    next();
+  });
+
+  app.use((req, res, next) => {
+    const isSafeMethod = req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+    if (!isSafeMethod && readAuthSessionCookie(req.headers.cookie) && (!origin || !isAllowedCorsOrigin(origin))) {
+      return res.status(403).json({ success: false, error: 'Request origin is not allowed for cookie-authenticated actions.' });
     }
     next();
   });

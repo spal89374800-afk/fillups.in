@@ -25,6 +25,7 @@ import {
 import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } from '../services/orderDispatchService.ts';
 import { emitOrderUpdate, emitServiceCatalogUpdated } from '../services/realtimeService.ts';
 import { clearPublicCatalogCache } from '../services/publicCatalogService.ts';
+import { setAuthSessionCookie } from '../services/authCookieService.ts';
 import { consumeOtpVerification } from './authRoutes.ts';
 import { getRequestAccount, requireAccount } from '../middleware/securityMiddleware.ts';
 import { vleListStore } from '../services/storeService.ts';
@@ -95,7 +96,8 @@ fillerRouter.post('/filler/register', (req, res) => {
     pinUpdatedAt: new Date().toISOString(),
     pinFailedAttempts: 0
   });
-  res.status(201).json({ success: true, token: user.token, message: 'Form Filler account registered. You can now log in with these verified details.', user: sanitizeAccountForClient(user) });
+  setAuthSessionCookie(res, user.token);
+  res.status(201).json({ success: true, message: 'Form Filler account registered. You can now log in with these verified details.', user: sanitizeAccountForClient(user) });
 });
 
 // Form Expert Login (Permanent Account Retention per user instruction)
@@ -115,10 +117,10 @@ fillerRouter.post('/filler/login', (req, res) => {
     return res.status(401).json({ success: false, error: 'Verify the OTP sent to this phone and email before logging in.' });
   }
   registeredAccount.lastLoginAt = new Date().toISOString();
+  setAuthSessionCookie(res, registeredAccount.token);
   res.json({
     success: true,
     message: '✅ Form Expert Operator Logged in successfully (Permanent Account Retention Active).',
-    token: registeredAccount.token,
     user: sanitizeAccountForClient(registeredAccount)
   });
 });
