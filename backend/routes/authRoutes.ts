@@ -9,6 +9,7 @@ import { isTurnstileEnabled, getTurnstileSiteKey, verifyTurnstileToken } from '.
 import { checkOtpSendLimits, checkOtpVerifyLimits, registerOtpSend, registerOtpVerify } from '../services/otpGuardService.ts';
 import { sendTransactionalEmail } from '../services/emailService.ts';
 import { clearAuthSessionCookie, setAuthSessionCookie } from '../services/authCookieService.ts';
+import { accountBlockedPayload, findBlockedAccountByIdentity } from '../services/accountBlockService.ts';
 
 export const authRouter = Router();
 
@@ -17,6 +18,11 @@ function findClientAccountByEmail(email: string) {
   return userAccountsStore.find(account =>
     account.role === 'client' && normalizeEmail(account.email) === normalizedEmail
   );
+}
+
+function blockedIdentityResponse(input: { email?: unknown; phone?: unknown; role?: 'client' | 'vle' | 'filler' | 'expert' }) {
+  const account = findBlockedAccountByIdentity(input);
+  return account ? accountBlockedPayload(account) : null;
 }
 
 // ========================================================
@@ -71,6 +77,9 @@ authRouter.post('/auth/login', (req, res) => {
   ) {
     return res.status(400).json({ success: false, error: 'All details are required: full name, valid 10-digit mobile number, valid Gmail address, state, district, and city.' });
   }
+  const blocked = blockedIdentityResponse({ phone, email: email || identifier, role: userRole });
+  if (blocked) return res.status(403).json(blocked);
+
   if (!consumeOtpVerification(otpTarget, req.body.verificationToken, userRole, email || identifier)) {
     return res.status(401).json({ success: false, error: 'Verify the OTP sent to this phone and email before logging in.' });
   }
@@ -113,6 +122,9 @@ authRouter.post('/auth/register', (req, res) => {
   ) {
     return res.status(400).json({ success: false, error: 'All details are required: full name, valid mobile number, valid email address, state, district, and city.' });
   }
+  const blockedOnRegister = blockedIdentityResponse({ phone, email, role: userRole });
+  if (blockedOnRegister) return res.status(403).json(blockedOnRegister);
+
   if (findClientAccountByEmail(email)) {
     return res.status(409).json({
       success: false,
@@ -192,6 +204,8 @@ authRouter.post('/auth/client-login/send-otp', async (req, res) => {
       error: 'No Citizen account was found for this Gmail. Create an account first.'
     });
   }
+  const blockedForOtp = blockedIdentityResponse({ email, phone: account.phone, role: 'client' });
+  if (blockedForOtp) return res.status(403).json(blockedForOtp);
 
   const clientIp = resolveClientIp(req);
   const captcha = await verifyTurnstileToken(req.body?.captchaToken, clientIp);
@@ -265,6 +279,8 @@ authRouter.post('/auth/client-login/verify-otp', (req, res) => {
     delete activeOtpStore[email];
     return res.status(401).json({ success: false, error: 'The Gmail or OTP is invalid. Request a new code.' });
   }
+  const blockedForVerify = blockedIdentityResponse({ email, phone: account.phone, role: 'client' });
+  if (blockedForVerify) return res.status(403).json(blockedForVerify);
 
   const clientIp = resolveClientIp(req);
   const phone = String(account.phone || '').replace(/\D/g, '').slice(-10);
@@ -389,6 +405,8 @@ authRouter.post('/auth/google', async (req, res) => {
     registerOtpVerify({ phone, ip: clientIp });
 
     const { email, name, picture } = await verifyGoogleCredential(credential, clientId);
+    const blockedForGoogle = blockedIdentityResponse({ email, phone, role: userRole });
+    if (blockedForGoogle) return res.status(403).json(blockedForGoogle);
 
     const verificationToken = randomBytes(32).toString('hex');
     verifiedOtpGrants[verificationToken] = {
@@ -440,6 +458,8 @@ authRouter.post('/auth/client-login/google', async (req, res) => {
         error: 'No Citizen account was found for this Google account. Create an account first.'
       });
     }
+    const blockedForClientGoogle = blockedIdentityResponse({ email, phone: account.phone, role: 'client' });
+    if (blockedForClientGoogle) return res.status(403).json(blockedForClientGoogle);
 
     const clientIp = resolveClientIp(req);
     const phone = String(account.phone || '').replace(/\D/g, '').slice(-10);
@@ -497,6 +517,8 @@ authRouter.post('/auth/send-otp', async (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
     return res.status(400).json({ success: false, error: 'Enter a valid Gmail/email address.' });
   }
+  const blockedForSendOtp = blockedIdentityResponse({ phone: cleanPhone, email: normalizedEmail, role: userRole });
+  if (blockedForSendOtp) return res.status(403).json(blockedForSendOtp);
   if (userRole === 'client' && findClientAccountByEmail(normalizedEmail)) {
     return res.status(409).json({
       success: false,
@@ -613,6 +635,13 @@ authRouter.post('/auth/verify-otp', (req, res) => {
   registerOtpVerify({ phone: String(target), ip: resolveClientIp(req) });
 
   const cached = activeOtpStore[normalizedTarget];
+  if (cached) {
+    const blockedForOtpGrant = blockedIdentityResponse({ email: cached.email, phone: normalizedTarget, role: cached.role });
+    if (blockedForOtpGrant) {
+      delete activeOtpStore[normalizedTarget];
+      return res.status(403).json(blockedForOtpGrant);
+    }
+  }
 
   if (!cached || cached.expiresAt <= Date.now()) {
     delete activeOtpStore[normalizedTarget];

@@ -178,6 +178,12 @@ paymentRouter.get('/payments/order-intent/:orderId', requireAccount(), (req, res
   if (!isClient && !isOperator) {
     return res.status(403).json({ success: false, error: 'You do not have access to this order payment.' });
   }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({
+      success: false,
+      error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}. Payment is closed.`
+    });
+  }
   if (!found.order.acceptedById || !found.order.acceptedByName) {
     return res.status(409).json({ success: false, error: 'An operator must accept this order before UPI payment is available.' });
   }
@@ -313,6 +319,9 @@ paymentRouter.post('/payments/confirm-split', requireAccount(), async (req, res)
   }
   const found = findAnyOrder(String(orderId || ''));
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({ success: false, error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}. Payment cannot be confirmed.` });
+  }
 
   const account = getRequestAccount(req)!;
   const operator = resolveAcceptedOperator(found);
@@ -388,6 +397,9 @@ paymentRouter.post('/payments/client-confirm', requireAccount(), async (req, res
   }
   const found = findAnyOrder(String(orderId || ''));
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({ success: false, error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}. Payment cannot be confirmed.` });
+  }
 
   const account = getRequestAccount(req)!;
   if (!orderBelongsToClient(found.order, account)) {
@@ -471,6 +483,12 @@ paymentRouter.post('/orders/:orderId/fees', requireAccount(), async (req, res) =
   if (!accountIsAssignedOperator(account.id, account.cscId, operator)) {
     return res.status(403).json({ success: false, error: 'Only the assigned operator can set fees for this order.' });
   }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({
+      success: false,
+      error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}. Fees cannot be changed.`
+    });
+  }
 
   const order = found.order as any;
   if (order.status === 'pending') {
@@ -530,6 +548,12 @@ paymentRouter.post('/orders/:orderId/approve-fees', requireAccount(), async (req
   if (!orderBelongsToClient(order, account)) {
     return res.status(403).json({ success: false, error: 'Only the citizen who placed this request can approve the fees.' });
   }
+  if (order.status === 'cancelled') {
+    return res.status(409).json({
+      success: false,
+      error: `This order is cancelled. Reason: ${order.cancellationReason || 'Not specified'}.`
+    });
+  }
   if (!order.feesApprovalRequired) {
     return res.status(400).json({ success: false, error: 'This order does not require fee approval.' });
   }
@@ -552,6 +576,12 @@ paymentRouter.post('/payments/govt-details', requireAccount(), async (req, res) 
   const operator = resolveAcceptedOperator(found);
   if (!accountIsAssignedOperator(account.id, account.cscId, operator)) {
     return res.status(403).json({ success: false, error: 'Only the assigned Jan Seva operator or Form Filler Expert can set the government fee, UPI or QR for this order.' });
+  }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({
+      success: false,
+      error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}. Payment details cannot be changed.`
+    });
   }
 
   const cleanUpi = typeof upiId === 'string' ? upiId.trim().toLowerCase() : '';

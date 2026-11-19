@@ -29,6 +29,7 @@ import { setAuthSessionCookie } from '../services/authCookieService.ts';
 import { consumeOtpVerification } from './authRoutes.ts';
 import { getRequestAccount, requireAccount } from '../middleware/securityMiddleware.ts';
 import { vleListStore } from '../services/storeService.ts';
+import { accountBlockedPayload, findBlockedAccountByIdentity, isAccountBlocked } from '../services/accountBlockService.ts';
 
 const noLocalJanSevaMessage = 'Jan Seva isn’t available in your area yet. We’re working on it—please check back in 24 hours for an update. Thank you 😊✨';
 
@@ -73,6 +74,9 @@ fillerRouter.post('/filler/register', (req, res) => {
       error: '6 digit ka strong security PIN chunein — 123456, 111111 jaisa aasan PIN allowed nahi hai.'
     });
   }
+  const blockedForRegister = findBlockedAccountByIdentity({ phone: normalizedPhone, email: normalizedEmail, role: 'filler' });
+  if (blockedForRegister) return res.status(403).json(accountBlockedPayload(blockedForRegister));
+
   const existingAccount = userAccountsStore.find(account =>
     account.role === 'filler' &&
     (account.phone.replace(/\D/g, '').slice(-10) === normalizedPhone || account.email.trim().toLowerCase() === normalizedEmail)
@@ -112,6 +116,9 @@ fillerRouter.post('/filler/login', (req, res) => {
   );
   if (!registeredAccount) {
     return res.status(403).json({ success: false, error: 'No registered Form Filler account matches this phone and Gmail. Register first or check your details.' });
+  }
+  if (isAccountBlocked(registeredAccount)) {
+    return res.status(403).json(accountBlockedPayload(registeredAccount));
   }
   if (!consumeOtpVerification(phone, req.body.verificationToken, 'filler', email)) {
     return res.status(401).json({ success: false, error: 'Verify the OTP sent to this phone and email before logging in.' });

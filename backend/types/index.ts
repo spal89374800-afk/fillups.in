@@ -142,6 +142,16 @@ export interface VleOrder {
   lastActivityAt?: string;
   cancelledAt?: string;
   cancellationReason?: string;
+  cancelledById?: string;
+  cancelledByName?: string;
+  cancelledByRole?: string;
+  /** Kab proof aaya — non-payment block ka clock yahin se shuru hota hai. */
+  proofSubmittedAt?: string;
+  /** Citizen page khula rahe to har minute fresh hota hai (heartbeat). */
+  lastPresenceAt?: string;
+  presenceEndedAt?: string;
+  autoBlockedAt?: string;
+  autoBlockReason?: string;
 }
 
 export interface FillerOrder {
@@ -213,6 +223,16 @@ export interface FillerOrder {
   lastActivityAt?: string;
   cancelledAt?: string;
   cancellationReason?: string;
+  cancelledById?: string;
+  cancelledByName?: string;
+  cancelledByRole?: string;
+  /** Kab proof aaya — non-payment block ka clock yahin se shuru hota hai. */
+  proofSubmittedAt?: string;
+  /** Citizen page khula rahe to har minute fresh hota hai (heartbeat). */
+  lastPresenceAt?: string;
+  presenceEndedAt?: string;
+  autoBlockedAt?: string;
+  autoBlockReason?: string;
 }
 
 export interface OperatorSuspensionEntry {
@@ -222,6 +242,17 @@ export interface OperatorSuspensionEntry {
   note?: string;
   at: string;
   by?: string;
+}
+
+/** Admin block/unblock audit entry — citizen aur operator dono ke liye. */
+export interface AccountBlockEntry {
+  action: 'block' | 'unblock';
+  reason: string;
+  at: string;
+  by?: string;
+  orderId?: string;
+  operatorId?: string;
+  ip?: string;
 }
 
 export interface VleOperator {

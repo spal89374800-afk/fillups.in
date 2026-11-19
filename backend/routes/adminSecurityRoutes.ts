@@ -7,6 +7,7 @@ import {
   getBlockedIps,
   getSecurityEvents,
   getSecuritySummary,
+  resolveClientIp,
   unblockIp
 } from '../middleware/botShieldMiddleware.ts';
 import {
@@ -16,8 +17,19 @@ import {
   listLocalOperatorUnavailableRequests,
   resolveLocalOperatorUnavailableRequest,
   suspendOperatorByIdentifier,
-  unsuspendOperatorByIdentifier
+  unsuspendOperatorByIdentifier,
+  userAccountsStore,
+  vleOrdersStore,
+  fillerOrdersStore
 } from '../services/storeService.ts';
+import {
+  blockAccount,
+  findAccountById,
+  findAccountsForOrder,
+  isAccountBlocked,
+  operatorMetaForOrder,
+  unblockAccount
+} from '../services/accountBlockService.ts';
 
 export const adminSecurityRouter = Router();
 
@@ -102,6 +114,117 @@ adminSecurityRouter.post('/admin/security/unblock-ip', (req, res) => {
   }
   const removed = unblockIp(ip);
   res.json({ success: true, removed, ip, blockedIps: getBlockedIps() });
+});
+
+// ========================================================
+// 🚫 BLOCKED / FLAGGED USERS + ALL ORDERS (admin tracking)
+// ========================================================
+function adminUserView(account: any) {
+  const relatedOrders = [...vleOrdersStore, ...fillerOrdersStore].filter(order => {
+    const citizenMatch =
+      String(order.clientEmail || '').toLowerCase() === String(account.email || '').toLowerCase() ||
+      String(order.clientPhone || '').replace(/\D/g, '').slice(-10) === String(account.phone || '').replace(/\D/g, '').slice(-10);
+    const operatorIds = [order.acceptedByVleId, order.acceptedByFillerId, order.acceptedById]
+      .filter(Boolean)
+      .map(value => String(value));
+    const operatorMatch = Boolean(account.id && operatorIds.includes(String(account.id))) ||
+      Boolean(account.cscId && operatorIds.includes(String(account.cscId)));
+    return citizenMatch || operatorMatch;
+  });
+  return {
+    id: account.id,
+    cscId: account.cscId || '',
+    name: account.name || '',
+    phone: account.phone || '',
+    email: account.email || '',
+    role: account.role,
+    roleLabel: account.role === 'client' ? 'Citizen' : account.role === 'vle' ? 'Jan Seva Kendra' : 'Student/Form Expert',
+    accountStatus: account.accountStatus || 'active',
+    blocked: isAccountBlocked(account),
+    blockedAt: account.blockedAt,
+    blockReason: account.blockReason || (account.autoBlockReason ? String(account.autoBlockReason) : ''),
+    blockedOrderId: account.blockedOrderId || '',
+    blockedOperatorId: account.blockedOperatorId || '',
+    blockedOperatorName: account.blockedOperatorName || '',
+    lastBlockedIp: account.lastBlockedIp || '',
+    blockHistory: Array.isArray(account.blockHistory) ? account.blockHistory.slice(-10) : [],
+    orderIds: relatedOrders.map(order => String(order.id)).slice(0, 20)
+  };
+}
+
+adminSecurityRouter.get('/admin/users/blocked', (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const users = userAccountsStore
+    .filter(account => isAccountBlocked(account) || Boolean(account.blockHistory?.length) || Boolean((account as any).autoBlockReason))
+    .map(adminUserView)
+    .sort((a, b) => String(b.blockedAt || '').localeCompare(String(a.blockedAt || '')));
+  res.json({ success: true, count: users.length, users });
+});
+
+adminSecurityRouter.get('/admin/orders', (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const orders = [...vleOrdersStore, ...fillerOrdersStore]
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .map(order => {
+      const { client, operator } = findAccountsForOrder(order);
+      const op = operatorMetaForOrder(order);
+      const reason = order.cancellationReason
+        ? `Cancelled: ${order.cancellationReason}`
+        : order.autoBlockReason || '';
+      return {
+        id: order.id,
+        status: order.status,
+        createdAt: order.createdAt,
+        serviceName: order.serviceName || order.formTitle || 'Digital Service',
+        citizen: {
+          name: order.clientName || '',
+          phone: order.clientPhone || '',
+          email: order.clientEmail || '',
+          accountId: client?.id || '',
+          blocked: isAccountBlocked(client),
+          blockReason: client?.blockReason || ''
+        },
+        operator: {
+          id: op.id || '',
+          accountId: operator?.id || '',
+          name: op.name || '',
+          roleLabel: op.roleLabel || '',
+          blocked: isAccountBlocked(operator),
+          blockReason: operator?.blockReason || ''
+        },
+        reason,
+        isPaymentDoneInApp: Boolean(order.isPaymentDoneInApp),
+        paymentVerificationStatus: order.paymentVerificationStatus || '',
+        autoBlockedAt: order.autoBlockedAt || ''
+      };
+    });
+  res.json({ success: true, count: orders.length, orders });
+});
+
+adminSecurityRouter.post('/admin/users/:id/block', (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const account = findAccountById(req.params.id);
+  if (!account) return res.status(404).json({ success: false, error: 'Account not found.' });
+  const reason = String(req.body?.reason || '').trim().slice(0, 200);
+  if (reason.length < 3) {
+    return res.status(400).json({ success: false, error: 'Block reason is mandatory (at least 3 characters).' });
+  }
+  blockAccount(account, {
+    reason,
+    orderId: typeof req.body?.orderId === 'string' ? req.body.orderId : undefined,
+    ip: resolveClientIp(req),
+    actor: 'admin'
+  });
+  res.json({ success: true, message: `✅ Account blocked. Reason: ${reason}`, user: adminUserView(account) });
+});
+
+adminSecurityRouter.post('/admin/users/:id/unblock', (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const account = findAccountById(req.params.id);
+  if (!account) return res.status(404).json({ success: false, error: 'Account not found.' });
+  const reason = String(req.body?.reason || '').trim().slice(0, 200);
+  unblockAccount(account, { reason: reason || undefined, actor: 'admin' });
+  res.json({ success: true, message: '✅ Account unblocked. User can log in again.', user: adminUserView(account) });
 });
 
 // ========================================================

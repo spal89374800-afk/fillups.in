@@ -49,6 +49,7 @@ import { dispatchNewOrderToVle, dispatchNewOrderToFillers, dispatchOrderTaken } 
 import { emitOrderUpdate, emitServiceCatalogUpdated, isOperatorOnline } from '../services/realtimeService.ts';
 import { clearPublicCatalogCache } from '../services/publicCatalogService.ts';
 import { setAuthSessionCookie } from '../services/authCookieService.ts';
+import { accountBlockedPayload, findBlockedAccountByIdentity, isAccountBlocked } from '../services/accountBlockService.ts';
 
 const noLocalJanSevaMessage = 'Jan Seva isn’t available in your area yet. We’re working on it—please check back in 24 hours for an update. Thank you 😊✨';
 
@@ -84,6 +85,9 @@ vleRouter.post('/vle/login', (req, res) => {
   );
   if (!registeredAccount) {
     return res.status(403).json({ success: false, error: 'No registered operator account matches this CSC ID, phone, and Gmail. Register first or check your details.' });
+  }
+  if (isAccountBlocked(registeredAccount)) {
+    return res.status(403).json(accountBlockedPayload(registeredAccount));
   }
   if (!consumeOtpVerification(phone, req.body.verificationToken, 'vle', email)) {
     return res.status(401).json({ success: false, error: 'Verify the OTP sent to this phone and email before logging in.' });
@@ -343,6 +347,9 @@ vleRouter.post('/vle/register', async (req, res) => {
       });
     }
   }
+
+  const blockedForRegister = findBlockedAccountByIdentity({ phone: normalizedPhone, email: normalizedEmail, role: 'vle' });
+  if (blockedForRegister) return res.status(403).json(accountBlockedPayload(blockedForRegister));
 
   const existingAccount = userAccountsStore.find(account =>
     account.role === 'vle' &&

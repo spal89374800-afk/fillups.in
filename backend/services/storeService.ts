@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { AdminPaymentLedgerEntry, AdminPaymentLedgerStatus, VleOperator, VleOrder, FillerOrder, ServiceScope, OperatorSuspensionEntry } from '../types/index.ts';
+import { AdminPaymentLedgerEntry, AdminPaymentLedgerStatus, VleOperator, VleOrder, FillerOrder, ServiceScope, OperatorSuspensionEntry, AccountBlockEntry } from '../types/index.ts';
 import {
   UserAccountModel,
   VleOperatorModel,
@@ -118,6 +118,15 @@ export interface UserAccount {
   bidsSuspendedReason?: string;
   bidsSuspendedUntil?: string;
   suspensionHistory?: OperatorSuspensionEntry[];
+  // 🚫 Account-level block (citizen + operator). Primary identity: Gmail/mobile.
+  accountStatus?: 'active' | 'blocked';
+  blockedAt?: string;
+  blockReason?: string;
+  blockedOrderId?: string;
+  blockedOperatorId?: string;
+  blockedOperatorName?: string;
+  lastBlockedIp?: string;
+  blockHistory?: AccountBlockEntry[];
 }
 
 export let userAccountsStore: UserAccount[] = [];

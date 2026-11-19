@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import type { MouseEvent, TouchEvent } from 'react';
-import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Reply, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX, MonitorUp } from 'lucide-react';
+import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Reply, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX, MonitorUp, Ban } from 'lucide-react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
 import { BrandEmblem3D } from './components/BrandEmblem3D';
 export { BrandEmblem3D } from './components/BrandEmblem3D';
@@ -317,7 +317,26 @@ if (typeof window !== 'undefined' && !(window as any).__digisevaFetchPatched) {
     // Static frontend host par `/api/...` wahan nahi hota (HTML/empty response).
     // Aise case me wahi request backend origin par dobara bhejo.
     if (shouldFallbackToApiOrigin(response)) {
-      return nativeFetch(`${API_FALLBACK_ORIGIN}${requestUrl}`, requestInit);
+      const retried = await nativeFetch(`${API_FALLBACK_ORIGIN}${requestUrl}`, requestInit);
+      if (retried.status === 403) {
+        void retried.clone().json().then((payload: any) => {
+          if (payload?.code === 'ACCOUNT_BLOCKED') {
+            window.dispatchEvent(new CustomEvent('app:account-blocked', {
+              detail: { reason: payload.reason || payload.error || 'Auto-Blocked for Non-Payment' }
+            }));
+          }
+        }).catch(() => {});
+      }
+      return retried;
+    }
+    if (response.status === 403) {
+      void response.clone().json().then((payload: any) => {
+        if (payload?.code === 'ACCOUNT_BLOCKED') {
+          window.dispatchEvent(new CustomEvent('app:account-blocked', {
+            detail: { reason: payload.reason || payload.error || 'Auto-Blocked for Non-Payment' }
+          }));
+        }
+      }).catch(() => {});
     }
     return response;
   };
@@ -330,6 +349,14 @@ const MESSAGE_REPLY_DRAG_START_PX = 10;
 const MESSAGE_REPLY_DRAG_MAX_PX = 72;
 const MESSAGE_REPLY_DRAG_CONFIRM_PX = 48;
 
+// Operator cancel modal — reason codes backend ke CANCEL_REASONS se match.
+const CANCEL_REASON_OPTIONS = [
+  { code: 'server_down', en: 'Official Website / Server Down', hi: 'आधिकारिक वेबसाइट / सर्वर डाउन' },
+  { code: 'blurred_docs', en: 'Incomplete / Blurred Documents', hi: 'अधूरे / धुंधले दस्तावेज़' },
+  { code: 'citizen_request', en: 'Citizen Requested Cancellation', hi: 'नागरिक ने रद्द करने का अनुरोध किया' },
+  { code: 'other', en: 'Other', hi: 'अन्य' }
+] as const;
+
 export default function App() {
   const [legalAccepted, setLegalAccepted] = useState(() => {
     try {
@@ -340,6 +367,11 @@ export default function App() {
   });
   const [showLegalModal, setShowLegalModal] = useState(false);
   const [pendingRole, setPendingRole] = useState<'client' | 'vle' | 'form_filler' | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<any | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelNote, setCancelNote] = useState('');
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [blockedScreen, setBlockedScreen] = useState<{ reason: string } | null>(null);
 
   // Theme State: 'dark' | 'light'
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -3403,6 +3435,53 @@ export default function App() {
   ];
   const realtimeOrderIdsKey = [...new Set(realtimeOrderIds)].sort().join(',');
 
+  // 💓 Presence heartbeat: proof aa gaya aur payment nahi — aise order ke liye
+  // page khula rahe to har minute ping. Minimize/background me bhi yahi chalega.
+  // Isse "chat na kare par page khula ho" wala citizen kabhi block nahi hota.
+  const presenceOrderIdsKey = activeRole === 'client'
+    ? clientActiveOrders
+        .filter(order => !order.isPaymentDoneInApp &&
+          order.status !== 'cancelled' && order.status !== 'completed' &&
+          (order.previewPhotoProof || order.completedFormUploadedAt || order.status === 'proof_submitted'))
+        .map(order => String(order.id))
+        .sort()
+        .join(',')
+    : '';
+
+  useEffect(() => {
+    if (activeRole !== 'client' || !presenceOrderIdsKey) return;
+    const ids = presenceOrderIdsKey.split(',').filter(Boolean);
+    const ping = () => {
+      ids.forEach(id => {
+        void fetchWithRetry(`/api/orders/${encodeURIComponent(id)}/presence`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}'
+        }).catch(() => {});
+      });
+    };
+    ping();
+    const timer = window.setInterval(ping, 60_000);
+    const onPageHide = () => {
+      ids.forEach(id => {
+        try {
+          void fetch(`${API_FALLBACK_ORIGIN}/api/orders/${encodeURIComponent(id)}/abandon`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+            credentials: 'include',
+            keepalive: true
+          }).catch(() => {});
+        } catch {}
+      });
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [presenceOrderIdsKey, activeRole]);
+
   useEffect(() => {
     if (activeRole === 'none') {
       realtimeSocket.disconnect();
@@ -3831,8 +3910,15 @@ export default function App() {
       const role = activeRoleRef.current === 'client' ? 'client' : 'operator';
       const phone = role === 'client' ? clientPhoneRef.current : '';
       [...new Set(realtimeOrderIdsKey ? realtimeOrderIdsKey.split(',') : [])].forEach(orderId => {
-        realtimeSocket.emit('order:join', { orderId, role, phone }, (result: { success: boolean; error?: string }) => {
-          if (!result.success) console.warn(`Realtime order join failed for ${orderId}:`, result.error);
+        realtimeSocket.emit('order:join', { orderId, role, phone }, (result: { success: boolean; error?: string; blocked?: boolean; reason?: string }) => {
+          if (!result.success) {
+            if (result.blocked) {
+              window.dispatchEvent(new CustomEvent('app:account-blocked', {
+                detail: { reason: result.reason || result.error || 'Auto-Blocked for Non-Payment' }
+              }));
+            }
+            console.warn(`Realtime order join failed for ${orderId}:`, result.error);
+          }
         });
       });
       if (activeRoleRef.current === 'vle') {
@@ -4312,6 +4398,53 @@ export default function App() {
     if (logoutError) {
       console.error('Logout request failed:', logoutError);
       showSaveToast('Could not confirm logout with the server. Please check your connection.', 'error');
+    }
+  };
+
+  // 🚫 Block event (API 403 ya socket) milte hi poora screen lock.
+  useEffect(() => {
+    const onBlocked = (event: Event) => {
+      const detail = (event as CustomEvent<{ reason?: string }>).detail;
+      setBlockedScreen({ reason: detail?.reason || 'Auto-Blocked for Non-Payment' });
+    };
+    window.addEventListener('app:account-blocked', onBlocked);
+    realtimeSocket.on('account:blocked', onBlocked);
+    return () => {
+      window.removeEventListener('app:account-blocked', onBlocked);
+      realtimeSocket.off('account:blocked', onBlocked);
+    };
+  }, []);
+
+  // ✅ Operator cancel — reason mandatory. Citizen account BLOCK nahi hota.
+  const handleConfirmCancel = async () => {
+    if (!cancelTarget?.id || !cancelReason) return;
+    if (cancelReason === 'other' && cancelNote.trim().length < 3) {
+      showSaveToast(t('Please describe the reason (at least 3 characters).', 'कृपया कारण लिखें (कम से कम 3 अक्षर)।'), 'error');
+      return;
+    }
+    setIsCancelling(true);
+    try {
+      const res = await fetchWithRetry(`/api/orders/${encodeURIComponent(cancelTarget.id)}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: cancelReason, note: cancelNote.trim() })
+      });
+      const data = await parseJsonResponse(res);
+      if (!res.ok || !data.success) throw new Error(data.error || t('Could not cancel the order.', 'ऑर्डर रद्द नहीं हो सका।'));
+      setCancelTarget(null);
+      setCancelReason('');
+      setCancelNote('');
+      setActiveWorkspaceOrder(null);
+      setWorkspaceStatusMsg({
+        text: `🚫 ${t('Order cancelled', 'ऑर्डर रद्द')}: ${data.cancellationReason || ''}`,
+        type: 'error'
+      });
+      showSaveToast(`🚫 ${t('Order cancelled', 'ऑर्डर रद्द')}: ${data.cancellationReason || ''}`, 'success');
+      await fetchAllData();
+    } catch (error) {
+      showSaveToast(error instanceof Error ? error.message : t('Could not cancel the order.', 'ऑर्डर रद्द नहीं हो सका।'), 'error');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -9446,6 +9579,12 @@ export default function App() {
                         </span>
                       </div>
 
+                      {ord.status === 'cancelled' && ord.cancellationReason && (
+                        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] font-bold text-rose-200">
+                          {t('Cancelled', 'रद्द')}: {ord.cancellationReason}
+                        </div>
+                      )}
+
                       <div>
                         <h4 className="font-bold text-white text-base">{ord.serviceName || ord.formTitle}</h4>
                         <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-1.5">
@@ -13221,10 +13360,26 @@ export default function App() {
                 </span>
               </div>
 
-              {/* Action Buttons: QR Pay, Call, Minimize, Fullscreen, Close */}
+              {/* Action Buttons: Cancel, QR Pay, Call, Minimize, Fullscreen, Close */}
               <div className="flex items-center gap-2">
                 {/* QR Code Quick Modal Trigger */}
 
+                {/* 🚫 Cancel Order — Jan Seva Kendra + Form Expert dono ke liye. */}
+                {activeRole !== 'client' && !['cancelled', 'paid', 'completed'].includes(activeWorkspaceOrder.status) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCancelTarget(activeWorkspaceOrder);
+                      setCancelReason('');
+                      setCancelNote('');
+                    }}
+                    className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold items-center gap-1.5 transition-all shadow-md active:scale-95 flex"
+                    title={t('Cancel this order with a reason', 'इस ऑर्डर को कारण के साथ रद्द करें')}
+                  >
+                    <Ban className="w-4 h-4" />
+                    <span className="hidden sm:inline">{t('Cancel Order', 'ऑर्डर रद्द करें')}</span>
+                  </button>
+                )}
 
                 {/* Voice Call Trigger Button */}
                 <button
@@ -13398,6 +13553,25 @@ export default function App() {
                 <button onClick={() => setWorkspaceStatusMsg(null)} className="hover:text-white text-slate-400">
                   <X className="w-3.5 h-3.5" />
                 </button>
+              </div>
+            )}
+
+            {/* 🚫 Cancelled workspace — read-only banner. Chat/OK/payment sab band. */}
+            {activeWorkspaceOrder.status === 'cancelled' && (
+              <div className="px-4 py-3 border-b border-rose-500/30 bg-rose-950/70 flex items-start gap-2.5">
+                <Ban className="w-4 h-4 mt-0.5 text-rose-300 shrink-0" />
+                <div className="text-[11px] leading-relaxed text-rose-200">
+                  <p className="font-black">
+                    {t('This order has been cancelled.', 'यह ऑर्डर रद्द कर दिया गया है।')}
+                  </p>
+                  <p className="text-rose-300/90 mt-0.5">
+                    {t('Reason', 'कारण')}: {activeWorkspaceOrder.cancellationReason || t('Not specified', 'निर्दिष्ट नहीं')}
+                  </p>
+                  <p className="text-rose-300/70 mt-0.5 text-[10px]">
+                    {t('Chat and payment actions are closed. The citizen account is not blocked.',
+                      'चैट और भुगतान कार्य बंद हैं। नागरिक खाता ब्लॉक नहीं है।')}
+                  </p>
+                </div>
               </div>
             )}
 
@@ -13867,6 +14041,23 @@ export default function App() {
                           </button>
                         )}
 
+                        {/* Mobile cancel button — header chhupa ho to bhi reason ke saath cancel possible. */}
+                        {activeRole !== 'client' && !['cancelled', 'paid', 'completed'].includes(activeWorkspaceOrder.status) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCancelTarget(activeWorkspaceOrder);
+                              setCancelReason('');
+                              setCancelNote('');
+                            }}
+                            className="md:hidden p-2.5 rounded-xl border border-rose-500/40 bg-rose-600/90 hover:bg-rose-500 text-white flex items-center gap-1 text-xs font-bold"
+                            title={t('Cancel Order', 'ऑर्डर रद्द करें')}
+                            aria-label={t('Cancel Order', 'ऑर्डर रद्द करें')}
+                          >
+                            <Ban className="w-4 h-4" />
+                          </button>
+                        )}
+
                         {/* Mobile call button — sits next to the mic so calling stays
                             reachable even when the top bar is hidden. */}
                         <button
@@ -13894,8 +14085,9 @@ export default function App() {
                         <input
                           type="text"
                           value={chatInputText}
+                          disabled={activeWorkspaceOrder.status === 'cancelled'}
                           onChange={(e) => setChatInputText(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSendMessage(); } }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && activeWorkspaceOrder.status !== 'cancelled') { e.preventDefault(); handleSendMessage(); } }}
                           onFocus={(e) => {
                             hideMobileWorkspaceHeader();
                             const inputEl = e.currentTarget;
@@ -13908,14 +14100,18 @@ export default function App() {
                           enterKeyHint="send"
                           inputMode="text"
                           autoComplete="off"
-                          placeholder={activeRole === 'client' ? "Type message, record voice, or attach docs..." : "Type reply or record voice note..."}
+                          placeholder={activeWorkspaceOrder.status === 'cancelled'
+                            ? t('Chat closed — order cancelled', 'चैट बंद — ऑर्डर रद्द')
+                            : activeRole === 'client' ? "Type message, record voice, or attach docs..." : "Type reply or record voice note..."}
                           className="flex-1 min-w-0 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-base sm:text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
 
                         <button
                           onClick={handleSendMessage}
-                          disabled={isSendingMessage}
-                          title={isSendingMessage ? 'Sending…' : 'Send message'}
+                          disabled={isSendingMessage || activeWorkspaceOrder.status === 'cancelled'}
+                          title={activeWorkspaceOrder.status === 'cancelled'
+                            ? t('Order cancelled — chat closed', 'ऑर्डर रद्द — चैट बंद')
+                            : isSendingMessage ? 'Sending…' : 'Send message'}
                           className="p-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           {isSendingMessage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -16097,6 +16293,114 @@ export default function App() {
                 Delete
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚫 Cancel Order modal — Jan Seva Kendra + Form Expert. Reason mandatory. */}
+      {cancelTarget && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setCancelTarget(null)}
+        >
+          <div
+            className="w-full max-w-md bg-slate-900 border border-rose-500/30 rounded-2xl shadow-2xl p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-black text-white flex items-center gap-2">
+                  <Ban className="w-4 h-4 text-rose-400" />
+                  {t('Cancel Order', 'ऑर्डर रद्द करें')}
+                </h3>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {cancelTarget.serviceName || cancelTarget.formTitle || t('Order', 'ऑर्डर')} • {cancelTarget.id}
+                </p>
+              </div>
+              <button onClick={() => setCancelTarget(null)} className="text-slate-400 hover:text-white text-xs font-bold">✕</button>
+            </div>
+
+            <p className="mt-3 text-xs font-bold text-slate-300">
+              {t('Select a cancellation reason (mandatory) *', 'रद्द करने का कारण चुनें (अनिवार्य) *')}
+            </p>
+            <div className="mt-2 space-y-1.5">
+              {CANCEL_REASON_OPTIONS.map(option => (
+                <button
+                  key={option.code}
+                  type="button"
+                  onClick={() => setCancelReason(option.code)}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl border text-xs font-bold transition-colors ${
+                    cancelReason === option.code
+                      ? 'bg-rose-500/20 border-rose-400/60 text-rose-100'
+                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  {lang === 'HI' ? option.hi : option.en}
+                </button>
+              ))}
+            </div>
+
+            {cancelReason === 'other' && (
+              <textarea
+                value={cancelNote}
+                onChange={(event) => setCancelNote(event.target.value.slice(0, 160))}
+                placeholder={t('Write a short reason (at least 3 characters)…', 'संक्षिप्त कारण लिखें (कम से कम 3 अक्षर)…')}
+                rows={2}
+                className="mt-2 w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs outline-none focus:border-rose-400/70 resize-none"
+              />
+            )}
+
+            <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
+              {t('The citizen account will NOT be blocked. Chat, proof and payment actions will close immediately.',
+                'नागरिक खाता ब्लॉक नहीं होगा। चैट, प्रूफ और भुगतान कार्य तुरंत बंद हो जाएंगे।')}
+            </p>
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCancelTarget(null)}
+                className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800 text-slate-200 text-xs font-bold hover:bg-slate-700 transition-colors"
+              >
+                {t('Back', 'वापस')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmCancel()}
+                disabled={isCancelling || !cancelReason || (cancelReason === 'other' && cancelNote.trim().length < 3)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors"
+              >
+                {isCancelling && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <Ban className="w-3.5 h-3.5" />
+                {t('Confirm Cancellation', 'रद्द पक्का करें')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚫 Full-screen block overlay — blocked API 403 ya socket event par. */}
+      {blockedScreen && (
+        <div className="fixed inset-0 z-[200] bg-[#07090E]/97 backdrop-blur-md flex items-center justify-center p-5">
+          <div className="w-full max-w-md text-center space-y-4">
+            <div className="mx-auto w-16 h-16 rounded-full bg-rose-500/15 border border-rose-400/40 flex items-center justify-center">
+              <Ban className="w-8 h-8 text-rose-400" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-white">{t('Account Blocked', 'खाता ब्लॉक है')}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                {t('Your account has been restricted. Reason:', 'आपका खाता प्रतिबंधित है। कारण:')}
+              </p>
+              <p className="mt-1 text-sm font-bold text-rose-300">{blockedScreen.reason}</p>
+              <p className="mt-3 text-xs text-slate-500">
+                {t('Please contact the admin for review and unblocking.', 'समीक्षा और अनब्लॉक के लिए कृपया एडमिन से संपर्क करें।')}
+              </p>
+            </div>
+            <button
+              onClick={() => { setBlockedScreen(null); void handleLogout(); }}
+              className="px-5 py-2.5 rounded-xl bg-white/[0.08] border border-white/15 text-white text-sm font-bold hover:bg-white/[0.14] transition-colors"
+            >
+              {t('Log out', 'लॉग आउट')}
+            </button>
           </div>
         </div>
       )}

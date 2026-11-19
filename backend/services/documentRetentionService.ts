@@ -20,6 +20,7 @@ import {
 import { isMongoConnected } from '../config/db.ts';
 import { emitOrderUpdate } from './realtimeService.ts';
 import { computeFeeBreakdown } from './pricingService.ts';
+import { applyAutoBlockToOrder } from './accountBlockService.ts';
 
 // 🔒 ZERO DATA RETENTION: har document sirf 24 ghante tak store hota hai.
 // Upload ke waqt expiresAt stamp hota hai (10 baje upload = agle din 10 baje purge),
@@ -349,6 +350,15 @@ export async function purgeExpiredOrders(): Promise<void> {
       if (terminalAge >= ORDER_RETENTION_MS) {
         toDelete.push(order);
       }
+      return;
+    }
+
+    // 🚫 Non-payment auto-block: proof aa gaya, payment nahi, 2 ghanta tak
+    // koi heartbeat/action nahi. Page khula rahe to heartbeat isse rok deta hai.
+    const autoBlocked = await applyAutoBlockToOrder(order, now);
+    if (autoBlocked) {
+      emitOrderUpdate(order);
+      await persistOrder(order, { touchActivity: false });
       return;
     }
 

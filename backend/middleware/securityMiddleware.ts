@@ -3,6 +3,22 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { UserAccount, getAccountByToken } from '../services/storeService.ts';
 import { resolveClientIp } from './botShieldMiddleware.ts';
 import { readAuthSessionCookie } from '../services/authCookieService.ts';
+import { accountBlockedPayload, isAccountBlocked } from '../services/accountBlockService.ts';
+
+// Blocked account bhi logout/public-config call kar sakta hai — warna UI stuck ho jayega.
+function blockExemptPath(req: Request): boolean {
+  // Router /api par mount hai, isliye andar req.path '/auth/logout' hota hai —
+  // dono forms (mounted aur full originalUrl) match karo warna blocked user
+  // logout nahi kar paata aur overlay stuck ho jata hai.
+  const candidates = [
+    String(req.originalUrl || '').split('?')[0],
+    String(req.path || '')
+  ].map(value => value.replace(/\/+$/, ''));
+  return candidates.some(path =>
+    path === '/auth/logout' || path === '/api/auth/logout' ||
+    path === '/auth/public-config' || path === '/api/auth/public-config'
+  );
+}
 
 export function getRequestAccount(req: Request): UserAccount | undefined {
   const header = req.headers['authorization'];
@@ -18,10 +34,14 @@ export function getRequestAccount(req: Request): UserAccount | undefined {
     getAccountByToken(queryToken);
 }
 
-export function resolveAccount(req: Request, _res: Response, next: NextFunction) {
+export function resolveAccount(req: Request, res: Response, next: NextFunction) {
   const account = getRequestAccount(req);
   if (account) {
     (req as Request & { account?: UserAccount }).account = account;
+    if (!blockExemptPath(req) && isAccountBlocked(account)) {
+      res.status(403).json(accountBlockedPayload(account));
+      return;
+    }
   }
   next();
 }
@@ -34,6 +54,9 @@ export function requireAccount(role?: UserAccount['role']) {
     }
     if (role && account.role !== role) {
       return res.status(403).json({ success: false, error: 'This action is not allowed for your account type.' });
+    }
+    if (!blockExemptPath(req) && isAccountBlocked(account)) {
+      return res.status(403).json(accountBlockedPayload(account));
     }
     (req as Request & { account?: UserAccount }).account = account;
     next();

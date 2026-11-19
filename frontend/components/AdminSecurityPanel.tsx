@@ -106,6 +106,44 @@ interface LocalOperatorRequest {
   createdAt: string;
 }
 
+interface AdminTrackedUser {
+  id: string;
+  cscId?: string;
+  name: string;
+  phone: string;
+  email: string;
+  role: string;
+  roleLabel: string;
+  blocked: boolean;
+  blockedAt?: string;
+  blockReason?: string;
+  blockedOrderId?: string;
+  blockedOperatorId?: string;
+  blockedOperatorName?: string;
+  orderIds?: string[];
+  blockHistory?: { action: string; reason: string; at: string; by?: string }[];
+}
+
+interface AdminTrackedOrder {
+  id: string;
+  status: string;
+  createdAt: string;
+  serviceName: string;
+  citizen: { name: string; phone: string; email: string; accountId: string; blocked: boolean; blockReason: string };
+  operator: { id: string; accountId: string; name: string; roleLabel: string; blocked: boolean; blockReason: string };
+  reason: string;
+  isPaymentDoneInApp: boolean;
+  paymentVerificationStatus: string;
+  autoBlockedAt?: string;
+}
+
+const USER_BLOCK_REASON_PRESETS = [
+  'Auto-Blocked for Non-Payment',
+  'In-app payment bypass (direct UPI/WhatsApp)',
+  'Verified citizen complaint',
+  'Fake document / payment proof'
+];
+
 const SUSPENSION_REASON_PRESETS = [
   'In-app payment bypass — client ne direct UPI/WhatsApp se paisa diya',
   'Chat me phone/UPI share karke platform se bahar payment maanga',
@@ -149,12 +187,21 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   const knownLocalRequestIdsRef = useRef<Set<string>>(new Set());
   const hasLoadedLocalRequestsRef = useRef(false);
   const isLoadingLocalRequestsRef = useRef(false);
+  const [trackedUsers, setTrackedUsers] = useState<AdminTrackedUser[]>([]);
+  const [trackedOrders, setTrackedOrders] = useState<AdminTrackedOrder[]>([]);
+  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [orderSearch, setOrderSearch] = useState('');
+  const [blockTarget, setBlockTarget] = useState<AdminTrackedUser | null>(null);
+  const [blockReason, setBlockReason] = useState('');
+  const [blockBusyId, setBlockBusyId] = useState('');
 
   const authHeaders = useMemo<Record<string, string>>(() => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['x-admin-token'] = token;
     return headers;
   }, [token]);
+
+  const tr = (en: string, hi: string) => (language === 'HI' ? hi : en);
 
   const loadLedger = async () => {
     setLedgerLoading(true);
@@ -189,6 +236,25 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
       }
     } catch {}
     setOperatorsLoading(false);
+  }, [authHeaders]);
+
+  const loadTracking = useCallback(async () => {
+    setTrackingLoading(true);
+    try {
+      const [usersRes, ordersRes] = await Promise.all([
+        fetchWithRetry(adminApiUrl('/api/admin/users/blocked'), { headers: authHeaders }),
+        fetchWithRetry(adminApiUrl('/api/admin/orders'), { headers: authHeaders })
+      ]);
+      const usersData = await parseJsonResponse(usersRes);
+      const ordersData = await parseJsonResponse(ordersRes);
+      if (usersRes.ok && usersData.success && Array.isArray(usersData.users)) {
+        setTrackedUsers(usersData.users as AdminTrackedUser[]);
+      }
+      if (ordersRes.ok && ordersData.success && Array.isArray(ordersData.orders)) {
+        setTrackedOrders(ordersData.orders as AdminTrackedOrder[]);
+      }
+    } catch {}
+    setTrackingLoading(false);
   }, [authHeaders]);
 
   const loadLocalOperatorRequests = useCallback(async (notifyNew: boolean) => {
@@ -391,6 +457,10 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
   }, [token, loadOperators]);
 
   useEffect(() => {
+    if (isAdminConsoleAvailableLocally() && token) void loadTracking();
+  }, [token, loadTracking]);
+
+  useEffect(() => {
     if (!isAdminConsoleAvailableLocally() || !token) return;
     void loadLocalOperatorRequests(false);
     const interval = window.setInterval(() => {
@@ -427,6 +497,63 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
       setMessage({ text: error instanceof Error ? error.message : 'Action failed.', type: 'error' });
     }
   };
+
+  const confirmBlockUser = async () => {
+    if (!blockTarget) return;
+    if (blockReason.trim().length < 3) {
+      setMessage({ text: tr('Block reason is mandatory.', 'ब्लॉक का कारण अनिवार्य है।'), type: 'error' });
+      return;
+    }
+    setBlockBusyId(blockTarget.id);
+    try {
+      const res = await fetchWithRetry(adminApiUrl(`/api/admin/users/${encodeURIComponent(blockTarget.id)}/block`), {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ reason: blockReason.trim(), orderId: blockTarget.blockedOrderId || '' })
+      });
+      const data = await parseJsonResponse(res);
+      if (!res.ok || !data.success) throw new Error(data.error || tr('Could not block the account.', 'खाता ब्लॉक नहीं हो सका।'));
+      setMessage({ text: data.message || tr('Account blocked.', 'खाता ब्लॉक हो गया।'), type: 'ok' });
+      setBlockTarget(null);
+      setBlockReason('');
+      await loadTracking();
+    } catch (error) {
+      setMessage({ text: error instanceof Error ? error.message : tr('Action failed.', 'कार्य विफल।'), type: 'error' });
+    } finally {
+      setBlockBusyId('');
+    }
+  };
+
+  const toggleUserBlock = async (user: AdminTrackedUser) => {
+    if (!user.blocked) {
+      setBlockTarget(user);
+      setBlockReason('');
+      return;
+    }
+    setBlockBusyId(user.id);
+    try {
+      const res = await fetchWithRetry(adminApiUrl(`/api/admin/users/${encodeURIComponent(user.id)}/unblock`), {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ reason: tr('Admin review — block removed.', 'एडमिन समीक्षा के बाद ब्लॉक हटाया गया।') })
+      });
+      const data = await parseJsonResponse(res);
+      if (!res.ok || !data.success) throw new Error(data.error || tr('Could not unblock the account.', 'खाता अनब्लॉक नहीं हो सका।'));
+      setMessage({ text: data.message || tr('Account unblocked.', 'खाता अनब्लॉक हो गया।'), type: 'ok' });
+      await loadTracking();
+    } catch (error) {
+      setMessage({ text: error instanceof Error ? error.message : tr('Action failed.', 'कार्य विफल।'), type: 'error' });
+    } finally {
+      setBlockBusyId('');
+    }
+  };
+
+  const filteredTrackedOrders = trackedOrders.filter(order => {
+    const query = orderSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [order.id, order.citizen.name, order.citizen.phone, order.operator.name, order.reason]
+      .some(value => String(value || '').toLowerCase().includes(query));
+  });
 
   const blockedSet = useMemo(() => new Set(summary?.blockedIpList || []), [summary]);
 
@@ -797,6 +924,268 @@ export const AdminSecurityPanel: React.FC<AdminSecurityPanelProps> = ({ onBack, 
             </table>
           </div>
         </div>
+
+        {/* 🚫 Blocked / Flagged Users + All Orders tracking */}
+        <div className="rounded-2xl border border-rose-500/20 bg-[#0A1020]/80 p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Ban className="w-4 h-4 text-rose-300" />
+              <div>
+                <h2 className="text-sm font-black text-white">{tr('Blocked / Flagged Users', 'ब्लॉक / फ्लैग किए गए उपयोगकर्ता')}</h2>
+                <p className="text-[11px] text-slate-400">
+                  {tr('Citizen + operator accounts with full reason and order reference.', 'नागरिक + ऑपरेटर खाते, कारण और ऑर्डर संदर्भ सहित।')}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => void loadTracking()}
+              disabled={trackingLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] border border-white/10 text-xs text-slate-300 hover:bg-white/[0.12] disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${trackingLoading ? 'animate-spin' : ''}`} /> {tr('Refresh', 'रिफ्रेश')}
+            </button>
+          </div>
+          {trackedUsers.length === 0 ? (
+            <p className="rounded-xl border border-white/5 bg-black/20 px-3 py-4 text-center text-xs text-slate-400">
+              {tr('No blocked or flagged accounts.', 'कोई ब्लॉक या फ्लैग खाता नहीं है।')}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[11px]">
+                <thead className="text-slate-400 uppercase tracking-wider">
+                  <tr className="border-b border-white/10">
+                    <th className="py-2 pr-3">{tr('Name / Contact', 'नाम / संपर्क')}</th>
+                    <th className="py-2 pr-3">{tr('Role', 'भूमिका')}</th>
+                    <th className="py-2 pr-3">{tr('Order ID', 'ऑर्डर आईडी')}</th>
+                    <th className="py-2 pr-3">{tr('Reason', 'कारण')}</th>
+                    <th className="py-2">{tr('Action', 'कार्रवाई')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trackedUsers.map(user => (
+                    <tr key={user.id} className="border-b border-white/5 align-top">
+                      <td className="py-2 pr-3">
+                        <p className="font-bold text-white">{user.name || '-'}</p>
+                        <p className="text-slate-400">{user.phone || '-'}</p>
+                        <p className="text-slate-500">{user.email || '-'}</p>
+                      </td>
+                      <td className="py-2 pr-3 text-slate-300">{user.roleLabel}</td>
+                      <td className="py-2 pr-3 font-mono text-cyan-300">{user.blockedOrderId || user.orderIds?.[0] || '-'}</td>
+                      <td className="py-2 pr-3 text-rose-200">{user.blockReason || '-'}</td>
+                      <td className="py-2">
+                        <button
+                          onClick={() => void toggleUserBlock(user)}
+                          disabled={blockBusyId === user.id}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-bold disabled:opacity-50 ${
+                            user.blocked
+                              ? 'bg-emerald-500/15 border-emerald-400/30 text-emerald-200 hover:bg-emerald-500/25'
+                              : 'bg-rose-500/15 border-rose-400/30 text-rose-200 hover:bg-rose-500/25'
+                          }`}
+                        >
+                          {user.blocked ? <UserCheck className="w-3 h-3" /> : <UserX className="w-3 h-3" />}
+                          {user.blocked ? tr('Unblock', 'अनब्लॉक') : tr('Block', 'ब्लॉक')}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-[#0A1020]/80 p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-cyan-300" />
+              <div>
+                <h2 className="text-sm font-black text-white">{tr('All Orders', 'सभी ऑर्डर')}</h2>
+                <p className="text-[11px] text-slate-400">
+                  {tr('Citizen, operator, reason and payment state in one table.', 'नागरिक, ऑपरेटर, कारण और भुगतान स्थिति एक ही तालिका में।')}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
+                <input
+                  value={orderSearch}
+                  onChange={event => setOrderSearch(event.target.value)}
+                  placeholder={tr('Search order / citizen / operator', 'ऑर्डर / नागरिक / ऑपरेटर खोजें')}
+                  className="h-9 w-56 pl-8 pr-3 rounded-xl bg-[#090F1D] border border-white/10 text-xs text-white outline-none focus:border-cyan-400/70"
+                />
+              </div>
+              <button
+                onClick={() => void loadTracking()}
+                disabled={trackingLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] border border-white/10 text-xs text-slate-300 hover:bg-white/[0.12] disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${trackingLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+          {filteredTrackedOrders.length === 0 ? (
+            <p className="rounded-xl border border-white/5 bg-black/20 px-3 py-4 text-center text-xs text-slate-400">
+              {tr('No orders found.', 'कोई ऑर्डर नहीं मिला।')}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[11px]">
+                <thead className="text-slate-400 uppercase tracking-wider">
+                  <tr className="border-b border-white/10">
+                    <th className="py-2 pr-3">{tr('Order ID', 'ऑर्डर आईडी')}</th>
+                    <th className="py-2 pr-3">{tr('Citizen', 'नागरिक')}</th>
+                    <th className="py-2 pr-3">{tr('Assigned Operator', 'असाइन ऑपरेटर')}</th>
+                    <th className="py-2 pr-3">{tr('Reason', 'कारण')}</th>
+                    <th className="py-2 pr-3">{tr('Payment', 'भुगतान')}</th>
+                    <th className="py-2 pr-3">{tr('Citizen Toggle', 'नागरिक टॉगल')}</th>
+                    <th className="py-2">{tr('Operator Toggle', 'ऑपरेटर टॉगल')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTrackedOrders.map(order => (
+                    <tr key={order.id} className="border-b border-white/5 align-top">
+                      <td className="py-2 pr-3 font-mono text-cyan-300">{order.id}</td>
+                      <td className="py-2 pr-3">
+                        <p className="font-bold text-white">{order.citizen.name || '-'}</p>
+                        <p className="text-slate-400">{order.citizen.phone || '-'}</p>
+                      </td>
+                      <td className="py-2 pr-3">
+                        <p className="font-bold text-white">{order.operator.name || tr('Not assigned', 'असाइन नहीं')}</p>
+                        <p className="text-slate-400">{order.operator.roleLabel || '-'}</p>
+                        <p className="text-slate-500 font-mono">{order.operator.id || '-'}</p>
+                      </td>
+                      <td className={`py-2 pr-3 ${order.reason ? 'text-rose-200' : 'text-slate-500'}`}>{order.reason || '-'}</td>
+                      <td className="py-2 pr-3">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                          order.isPaymentDoneInApp
+                            ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/20'
+                            : 'bg-amber-500/15 text-amber-200 border border-amber-400/20'
+                        }`}>
+                          {order.isPaymentDoneInApp ? tr('Paid', 'पेड') : tr('Unpaid', 'अनपेड')}
+                        </span>
+                        {order.paymentVerificationStatus === 'reported' && (
+                          <p className="text-[10px] text-amber-300 mt-1">UTR reported — hold</p>
+                        )}
+                      </td>
+                      <td className="py-2">
+                        {order.citizen.accountId ? (
+                          <button
+                            onClick={() => {
+                              const user = trackedUsers.find(item => item.id === order.citizen.accountId);
+                              void toggleUserBlock(user || {
+                                id: order.citizen.accountId,
+                                name: order.citizen.name,
+                                phone: order.citizen.phone,
+                                email: order.citizen.email,
+                                role: 'client',
+                                roleLabel: tr('Citizen', 'नागरिक'),
+                                blocked: order.citizen.blocked,
+                                blockReason: order.citizen.blockReason,
+                                blockedOrderId: order.id
+                              });
+                            }}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-bold ${
+                              order.citizen.blocked
+                                ? 'bg-emerald-500/15 border-emerald-400/30 text-emerald-200 hover:bg-emerald-500/25'
+                                : 'bg-rose-500/15 border-rose-400/30 text-rose-200 hover:bg-rose-500/25'
+                            }`}
+                          >
+                            {order.citizen.blocked ? <UserCheck className="w-3 h-3" /> : <UserX className="w-3 h-3" />}
+                            {order.citizen.blocked ? tr('Unblock', 'अनब्लॉक') : tr('Block', 'ब्लॉक')}
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-500">-</span>
+                        )}
+                      </td>
+                      <td className="py-2">
+                        {order.operator.accountId ? (
+                          <button
+                            onClick={() => {
+                              const user = trackedUsers.find(item => item.id === order.operator.accountId);
+                              void toggleUserBlock(user || {
+                                id: order.operator.accountId,
+                                name: order.operator.name || tr('Operator', 'ऑपरेटर'),
+                                phone: '',
+                                email: '',
+                                role: order.operator.roleLabel.includes('Expert') ? 'filler' : 'vle',
+                                roleLabel: order.operator.roleLabel,
+                                blocked: order.operator.blocked,
+                                blockReason: order.operator.blockReason,
+                                blockedOrderId: order.id
+                              });
+                            }}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-bold ${
+                              order.operator.blocked
+                                ? 'bg-emerald-500/15 border-emerald-400/30 text-emerald-200 hover:bg-emerald-500/25'
+                                : 'bg-rose-500/15 border-rose-400/30 text-rose-200 hover:bg-rose-500/25'
+                            }`}
+                          >
+                            {order.operator.blocked ? <UserCheck className="w-3 h-3" /> : <UserX className="w-3 h-3" />}
+                            {order.operator.blocked ? tr('Unblock', 'अनब्लॉक') : tr('Block', 'ब्लॉक')}
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-500">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Block account modal */}
+        {blockTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 overflow-y-auto">
+            <div className="w-full max-w-lg rounded-2xl border border-rose-500/30 bg-[#0A1020] p-5 space-y-4 my-auto">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-black text-white">{tr('Block Account', 'खाता ब्लॉक करें')}</h3>
+                  <p className="text-[11px] text-slate-400">{blockTarget.name} • {blockTarget.phone || blockTarget.email}</p>
+                </div>
+                <button onClick={() => setBlockTarget(null)} className="text-slate-400 hover:text-white text-xs font-bold">✕</button>
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-bold text-slate-300">{tr('Reason (mandatory) *', 'कारण (अनिवार्य) *')}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {USER_BLOCK_REASON_PRESETS.map(preset => (
+                    <button
+                      key={preset}
+                      onClick={() => setBlockReason(preset)}
+                      className={`text-left text-[10px] px-2 py-1 rounded-lg border transition ${
+                        blockReason === preset
+                          ? 'bg-rose-500/20 border-rose-400/50 text-rose-100'
+                          : 'bg-white/[0.04] border-white/10 text-slate-300 hover:bg-white/[0.08]'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  value={blockReason}
+                  onChange={event => setBlockReason(event.target.value)}
+                  placeholder={tr('Ya apna reason likhein…', 'या अपना कारण लिखें…')}
+                  className="w-full h-9 px-3 rounded-xl bg-[#090F1D] border border-white/10 text-xs text-white outline-none focus:border-rose-400/70"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setBlockTarget(null)} className="px-4 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/[0.12]">
+                  {tr('Cancel', 'रद्द करें')}
+                </button>
+                <button
+                  onClick={() => void confirmBlockUser()}
+                  disabled={blockBusyId === blockTarget.id || blockReason.trim().length < 3}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 text-white text-xs font-bold disabled:opacity-50"
+                >
+                  <UserX className="w-3.5 h-3.5" /> {tr('Confirm Block', 'ब्लॉक पक्का करें')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Suspend modal */}
         {suspendTarget && (

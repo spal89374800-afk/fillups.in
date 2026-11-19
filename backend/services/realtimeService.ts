@@ -14,6 +14,7 @@ import {
 import { markOrderMessagesSeen, sendOrderMessage } from './orderMessageService.ts';
 import type { ChatMessage } from '../types/index.ts';
 import { readAuthSessionCookie } from './authCookieService.ts';
+import { accountBlockedPayload, isAccountBlocked } from './accountBlockService.ts';
 
 let realtimeServer: Server | null = null;
 const joinedOrdersBySocket = new Map<string, Map<string, { role: 'client' | 'operator'; phone: string }>>();
@@ -138,7 +139,7 @@ export function setRealtimeServer(server: Server): void {
       participantRole: 'client' | 'operator' | null,
       phoneRaw: string,
       tokenRaw: string
-    ): { error: string } | { phone: string } => {
+    ): { error: string; blocked?: boolean; reason?: string } | { phone: string } => {
       const phone = String(phoneRaw || '').replace(/\D/g, '').slice(-10);
       const found = orderId ? findAnyOrder(orderId) : null;
       if (!orderId || !found || !participantRole) {
@@ -151,6 +152,10 @@ export function setRealtimeServer(server: Server): void {
         if (!account || account.role !== 'client' || !orderBelongsToClient(found.order, account)) {
           return { error: 'This order is not linked to the logged-in citizen account.' };
         }
+        if (isAccountBlocked(account)) {
+          const payload = accountBlockedPayload(account);
+          return { error: payload.error, blocked: true, reason: payload.reason };
+        }
         return { phone: String(account.phone || '').replace(/\D/g, '').slice(-10) };
       } else {
         // Operator join must prove a logged-in operator session that can access this order.
@@ -159,6 +164,10 @@ export function setRealtimeServer(server: Server): void {
           getAccountByToken(readAuthSessionCookie(socket.handshake.headers.cookie));
         if (!account) {
           return { error: 'Operator login required to join this order chat.' };
+        }
+        if (isAccountBlocked(account)) {
+          const payload = accountBlockedPayload(account);
+          return { error: payload.error, blocked: true, reason: payload.reason };
         }
         if (account.role === 'client') {
           return { error: 'Citizen accounts cannot join as operator.' };
@@ -197,7 +206,15 @@ export function setRealtimeServer(server: Server): void {
       const participantRole = payload?.role === 'client' ? 'client' : payload?.role === 'operator' ? 'operator' : null;
       const authorization = authorizeParticipant(orderId, participantRole, String(payload?.phone || ''), String(payload?.token || ''));
       if ('error' in authorization) {
-        acknowledge?.({ success: false, error: authorization.error });
+        if (authorization.blocked) {
+          socket.emit('account:blocked', { reason: authorization.reason || authorization.error });
+        }
+        acknowledge?.({
+          success: false,
+          error: authorization.error,
+          blocked: Boolean(authorization.blocked),
+          reason: authorization.reason
+        });
         return;
       }
       socket.join(orderRoom(orderId));
@@ -372,6 +389,16 @@ export function setRealtimeServer(server: Server): void {
         acknowledge?.({ success: false, error: authorization.error });
         return;
       }
+      // REST guard ke saath socket bhi — warna purana socket cancelled order me
+      // message bhej ke usse dobara active kar deta hai.
+      const currentOrder = findAnyOrder(orderId);
+      if (currentOrder?.order.status === 'cancelled') {
+        acknowledge?.({
+          success: false,
+          error: `This order is cancelled. Reason: ${currentOrder.order.cancellationReason || 'Not specified'}. Chat is closed.`
+        });
+        return;
+      }
       socket.join(orderRoom(orderId));
       joinedOrders.set(orderId, { role: participantRole, phone: authorization.phone });
       const result = sendOrderMessage(orderId, payload);
@@ -410,6 +437,11 @@ export function setRealtimeServer(server: Server): void {
         acknowledge?.({ success: false, error: authorization.error });
         return;
       }
+      const currentOrder = findAnyOrder(orderId);
+      if (currentOrder?.order.status === 'cancelled') {
+        acknowledge?.({ success: false, error: 'This order is cancelled. Chat is closed.' });
+        return;
+      }
       const result = markOrderMessagesSeen(orderId, participantRole, upToMessageId, mode);
       acknowledge?.(result);
       // Tick timestamps bhi per-message persist hote hain (markOrderMessagesSeen
@@ -426,6 +458,11 @@ export function setRealtimeServer(server: Server): void {
       const account = getAccountByToken(token) ||
         getAccountByToken((socket.handshake.auth as { token?: string } | undefined)?.token) ||
         getAccountByToken(readAuthSessionCookie(socket.handshake.headers.cookie));
+      if (account && isAccountBlocked(account)) {
+        const payloadBlocked = accountBlockedPayload(account);
+        socket.emit('account:blocked', { reason: payloadBlocked.reason });
+        return;
+      }
       if (account && (account.role === 'vle' || account.role === 'filler')) {
         registerOnline(socket.id, account);
       }

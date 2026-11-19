@@ -12,6 +12,14 @@ import type { UserAccount } from '../services/storeService.ts';
 
 export const orderRouter = Router();
 
+// Cancel reason codes → exact text jo order aur citizen dashboard par dikhega.
+const CANCEL_REASONS: Record<string, string> = {
+  server_down: 'Official Website / Server Down',
+  blurred_docs: 'Incomplete / Blurred Documents',
+  citizen_request: 'Citizen Requested Cancellation',
+  other: 'Other'
+};
+
 function accountIsAssignedOperator(order: any, account?: UserAccount): boolean {
   if (!account) return false;
   if (account.role === 'vle') {
@@ -34,12 +42,131 @@ function accountCanAccessOrder(order: any, account?: UserAccount): boolean {
   return accountIsAssignedOperator(order, account);
 }
 
+// ✅ Operator cancel — reason mandatory, citizen BLOCK nahi hota.
+orderRouter.post('/orders/:id/cancel', async (req, res) => {
+  const found = findAnyOrder(req.params.id);
+  if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
+
+  const account = getRequestAccount(req);
+  if (!accountIsAssignedOperator(found.order, account)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Only the assigned Jan Seva Kendra or Form Expert can cancel this order.'
+    });
+  }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({ success: false, error: 'This order is already cancelled.', order: found.order });
+  }
+  // Paid/completed order ko cancel mat karo — warning payment ledger aur credentials
+  // already settle ho chuke hote hain. Unke liye admin review ka rasta hai.
+  if (found.order.status === 'paid' || found.order.status === 'completed' || found.order.isPaymentDoneInApp) {
+    return res.status(409).json({
+      success: false,
+      error: 'A paid or completed order cannot be cancelled here. Contact the admin for a refund review.'
+    });
+  }
+
+  const reasonCode = String(req.body?.reason || '').trim();
+  const note = String(req.body?.note || '').trim().slice(0, 160);
+  if (!CANCEL_REASONS[reasonCode]) {
+    return res.status(400).json({ success: false, error: 'Select a valid cancellation reason.' });
+  }
+  if (reasonCode === 'other' && note.length < 3) {
+    return res.status(400).json({ success: false, error: 'Please describe the cancellation reason (at least 3 characters).' });
+  }
+
+  const reasonText = reasonCode === 'other'
+    ? `Other — ${note}`
+    : CANCEL_REASONS[reasonCode];
+  const order = found.order;
+  order.status = 'cancelled';
+  order.cancelledAt = new Date().toISOString();
+  order.cancellationReason = reasonText;
+  order.cancelledById = account?.id || account?.cscId;
+  order.cancelledByName = account?.name;
+  order.cancelledByRole = account?.role === 'vle' ? 'Jan Seva Kendra' : 'Student/Form Expert';
+  // Koi bhi payment truth na chhodo — warna dispatch-whatsapp / payment endpoints
+  // cancelled order ko dobara paid kar sakte hain. Cancel = payment cancelled.
+  order.isPaymentDoneInApp = false;
+  delete order.paymentVerificationStatus;
+  delete order.paymentTxnId;
+  delete order.paymentReportedAt;
+  delete order.paymentSplits;
+  delete order.presenceEndedAt;
+  order.chatMessages = Array.isArray(order.chatMessages) ? order.chatMessages : [];
+  order.chatMessages.push({
+    id: 'm-cancel-' + Date.now(),
+    sender: 'operator',
+    senderName: order.cancelledByRole || 'System',
+    text: `🚫 Order cancelled. Reason: ${reasonText}. Citizen account is NOT blocked.`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  });
+
+  await persistOrder(order, { touchActivity: false });
+  emitOrderUpdate(order);
+  return res.json({
+    success: true,
+    message: `Order cancelled: ${reasonText}`,
+    cancellationReason: reasonText,
+    order
+  });
+});
+
+// 💓 Presence heartbeat — page khula rahe to block nahi. Ye lastActivityAt ko touch nahi karta.
+orderRouter.post('/orders/:id/presence', async (req, res) => {
+  const found = findAnyOrder(req.params.id);
+  if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
+  const account = getRequestAccount(req);
+  if (!account || !orderBelongsToClient(found.order, account)) {
+    return res.status(403).json({ success: false, error: 'Only the citizen who owns this order can send presence.' });
+  }
+  if (isTerminalOrderStatusForPresence(found.order.status)) {
+    return res.json({ success: true, ignored: true });
+  }
+
+  const now = Date.now();
+  const last = Date.parse(String(found.order.lastPresenceAt || ''));
+  if (Number.isFinite(last) && now - last < 30_000) {
+    return res.json({ success: true, throttled: true, lastPresenceAt: found.order.lastPresenceAt });
+  }
+  found.order.lastPresenceAt = new Date(now).toISOString();
+  delete found.order.presenceEndedAt;
+  await persistOrder(found.order, { touchActivity: false });
+  return res.json({ success: true, lastPresenceAt: found.order.lastPresenceAt });
+});
+
+// Tab close / navigate par hint. Final decision server sweep lega — beacon fail ho to bhi galat block nahi.
+orderRouter.post('/orders/:id/abandon', async (req, res) => {
+  const found = findAnyOrder(req.params.id);
+  if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
+  const account = getRequestAccount(req);
+  if (!account || !orderBelongsToClient(found.order, account)) {
+    return res.status(403).json({ success: false, error: 'Only the citizen who owns this order can mark presence ended.' });
+  }
+  if (isTerminalOrderStatusForPresence(found.order.status)) {
+    return res.json({ success: true, ignored: true });
+  }
+  found.order.presenceEndedAt = new Date().toISOString();
+  await persistOrder(found.order, { touchActivity: false });
+  return res.json({ success: true, presenceEndedAt: found.order.presenceEndedAt });
+});
+
+function isTerminalOrderStatusForPresence(status: unknown): boolean {
+  return status === 'cancelled' || status === 'completed' || status === 'expired';
+}
+
 // Send Live Chat Message in Workspace
 const handleSendMessage = async (req: any, res: any) => {
   const found = findAnyOrder(req.params.id);
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
   if (!accountCanAccessOrder(found.order, getRequestAccount(req))) {
     return res.status(403).json({ success: false, error: 'You do not have access to this order.' });
+  }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({
+      success: false,
+      error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}. Chat is closed.`
+    });
   }
   const result = sendOrderMessage(req.params.id, req.body);
   // Chat apni collection me per-message save hoti hai (sendOrderMessage ke
@@ -57,6 +184,12 @@ const handleDeleteMessage = async (req: any, res: any) => {
   const account = getRequestAccount(req);
   if (!accountCanAccessOrder(found.order, account)) {
     return res.status(403).json({ success: false, error: 'You do not have access to this order.' });
+  }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({
+      success: false,
+      error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}.`
+    });
   }
   // Client apne 'client' messages delete karta hai, operator apne 'operator'
   // messages — role server par decide hota hai, client se nahi aata.
@@ -85,8 +218,12 @@ orderRouter.post('/orders/:id/upload-proof', async (req, res) => {
   if (!accountIsAssignedOperator(found.order, getRequestAccount(req))) {
     return res.status(403).json({ success: false, error: 'Only the assigned operator can upload proof for this order.' });
   }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({ success: false, error: 'This order is cancelled. Proof can no longer be updated.' });
+  }
 
   const order = found.order;
+  if (!order.proofSubmittedAt) order.proofSubmittedAt = new Date().toISOString();
   order.previewPhotoProof = photoUrl;
   order.status = 'proof_submitted';
   let opName = 'Operator';
@@ -122,6 +259,9 @@ orderRouter.post('/orders/:id/approve-proof', async (req, res) => {
   }
 
   const order = found.order;
+  if (order.status === 'cancelled') {
+    return res.status(409).json({ success: false, error: `This order is cancelled. Reason: ${order.cancellationReason || 'Not specified'}.` });
+  }
   if (!order.previewPhotoProof || order.status !== 'proof_submitted') {
     return res.status(409).json({ success: false, error: 'There is no submitted photo proof to approve.' });
   }
@@ -248,6 +388,9 @@ orderRouter.post('/orders/:id/upload-doc', async (req, res) => {  const { id } =
   if (!accountCanAccessOrder(found.order, getRequestAccount(req))) {
     return res.status(403).json({ success: false, error: 'You do not have access to this order.' });
   }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({ success: false, error: 'This order is cancelled. Documents can no longer be uploaded.' });
+  }
 
   // Process under Zero Data Retention: Ephemeral in-memory transmission, auto-purged from server disk
   const doc = processDocumentWithZeroRetention({ name, type, url, size });
@@ -297,6 +440,13 @@ const handleDocumentBatchUpload = async (req: any, res: any) => {
   if (!accountCanAccessOrder(found.order, getRequestAccount(req))) {
     discardUploadedFiles();
     return res.status(403).json({ success: false, error: 'You do not have access to this order.' });
+  }
+  if (found.order.status === 'cancelled') {
+    discardUploadedFiles();
+    return res.status(409).json({
+      success: false,
+      error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}. Documents cannot be uploaded.`
+    });
   }
 
   const sender = req.body?.sender === 'operator' ? 'operator' : 'client';
@@ -431,6 +581,9 @@ orderRouter.post('/orders/:id/payment-report', async (req, res) => {
   if (!account || !orderBelongsToClient(found.order, account)) {
     return res.status(403).json({ success: false, error: 'Only the client who owns this order can report a payment.' });
   }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({ success: false, error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}.` });
+  }
   if (!found.order.isProofApprovedByClient) {
     return res.status(409).json({ success: false, error: 'The client must approve the work proof before payment can be reported.' });
   }
@@ -471,6 +624,12 @@ orderRouter.put('/orders/:id/credentials', async (req, res) => {
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
   if (!accountIsAssignedOperator(found.order, getRequestAccount(req))) {
     return res.status(403).json({ success: false, error: 'Only the assigned operator can edit these credentials.' });
+  }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({
+      success: false,
+      error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}.`
+    });
   }
   if (!found.order.isPaymentDoneInApp) {
     return res.status(409).json({ success: false, error: 'Credentials can be edited only after all payment legs are confirmed.' });
@@ -514,6 +673,13 @@ orderRouter.post('/orders/:id/dispatch-whatsapp', async (req, res) => {
   if (!found) return res.status(404).json({ success: false, error: 'Order not found.' });
   if (!accountCanAccessOrder(found.order, getRequestAccount(req))) {
     return res.status(403).json({ success: false, error: 'You do not have access to this order.' });
+  }
+  // 🚫 Critical: cancelled order ko kabhi bhi paid/active wapas mat karo.
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({
+      success: false,
+      error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}. Credentials cannot be dispatched.`
+    });
   }
 
   if (!found.order.isPaymentDoneInApp) {
@@ -575,6 +741,12 @@ orderRouter.post('/orders/:id/rate', async (req, res) => {
   const account = getRequestAccount(req);
   if (!account || !orderBelongsToClient(found.order, account)) {
     return res.status(403).json({ success: false, error: 'Only the client who owns this order can rate it.' });
+  }
+  if (found.order.status === 'cancelled') {
+    return res.status(409).json({
+      success: false,
+      error: `This order is cancelled. Reason: ${found.order.cancellationReason || 'Not specified'}.`
+    });
   }
 
   found.order.rating = Number(rating) || 5;
