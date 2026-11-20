@@ -7,6 +7,7 @@ export interface SendEmailInput {
   text: string;
   html?: string;
   senderName?: string;
+  replyTo?: string;
 }
 
 export interface SendEmailResult {
@@ -82,7 +83,8 @@ export async function sendTransactionalEmail(input: SendEmailInput): Promise<Sen
           to: [{ email: to }],
           subject,
           textContent: text,
-          ...(input.html ? { htmlContent: input.html } : {})
+          ...(input.html ? { htmlContent: input.html } : {}),
+          ...(input.replyTo ? { replyTo: { email: input.replyTo } } : {})
         })
       });
       if (!response.ok) {
@@ -112,7 +114,8 @@ export async function sendTransactionalEmail(input: SendEmailInput): Promise<Sen
           to: [to],
           subject,
           text,
-          ...(input.html ? { html: input.html } : {})
+          ...(input.html ? { html: input.html } : {}),
+          ...(input.replyTo ? { reply_to: input.replyTo } : {})
         })
       });
       if (!response.ok) {
@@ -141,6 +144,7 @@ export async function sendTransactionalEmail(input: SendEmailInput): Promise<Sen
           personalizations: [{ to: [{ email: to }] }],
           from: { email: sendgridFrom, name: senderName },
           subject,
+          ...(input.replyTo ? { replyTo: { email: input.replyTo } } : {}),
           content: [
             { type: 'text/plain', value: text },
             ...(input.html ? [{ type: 'text/html', value: input.html }] : [])
@@ -180,7 +184,8 @@ export async function sendTransactionalEmail(input: SendEmailInput): Promise<Sen
           to,
           subject,
           text,
-          ...(input.html ? { html: input.html } : {})
+          ...(input.html ? { html: input.html } : {}),
+          ...(input.replyTo ? { replyTo: input.replyTo } : {})
         });
         return { ok: true, via: `SMTP:${port}` };
       } catch (error) {

@@ -8,10 +8,14 @@ import { resolveClientIp } from '../middleware/botShieldMiddleware.ts';
 import { isTurnstileEnabled, getTurnstileSiteKey, verifyTurnstileToken } from '../services/turnstileService.ts';
 import { checkOtpSendLimits, checkOtpVerifyLimits, registerOtpSend, registerOtpVerify } from '../services/otpGuardService.ts';
 import { sendTransactionalEmail } from '../services/emailService.ts';
+import { buildOtpEmailHtml } from '../services/otpEmailTemplate.ts';
 import { clearAuthSessionCookie, setAuthSessionCookie } from '../services/authCookieService.ts';
 import { accountBlockedPayload, findBlockedAccountByIdentity } from '../services/accountBlockService.ts';
 
 export const authRouter = Router();
+
+const OTP_EMAIL_SENDER = 'fillupo';
+const OTP_REPLY_TO = 'supportfillupo.in@gmail.com';
 
 function findClientAccountByEmail(email: string) {
   const normalizedEmail = normalizeEmail(email);
@@ -233,7 +237,9 @@ authRouter.post('/auth/client-login/send-otp', async (req, res) => {
     to: account.email,
     subject: 'Your fillupo.in login OTP',
     text: `Your fillupo.in login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`,
-    senderName: 'fillupo.in'
+    html: buildOtpEmailHtml(code),
+    senderName: OTP_EMAIL_SENDER,
+    replyTo: OTP_REPLY_TO
   });
   if (!delivery.ok) {
     console.error('[client-login] OTP email delivery failed:', delivery.error);
@@ -555,7 +561,7 @@ authRouter.post('/auth/send-otp', async (req, res) => {
 
   const otpSubject = 'Your fillupo.in login OTP';
   const otpText = `Your fillupo.in login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`;
-  const senderName = 'fillupo.in';
+  const senderName = OTP_EMAIL_SENDER;
   const deliveryErrors: string[] = [];
   let deliveredVia = '';
 
@@ -565,7 +571,9 @@ authRouter.post('/auth/send-otp', async (req, res) => {
     to: normalizedEmail,
     subject: otpSubject,
     text: otpText,
-    senderName
+    html: buildOtpEmailHtml(code),
+    senderName,
+    replyTo: OTP_REPLY_TO
   });
   if (delivery.ok) {
     deliveredVia = delivery.via || 'Email';
