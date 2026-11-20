@@ -78,8 +78,10 @@ export async function fetchWithRetry(
   retries = 2
 ): Promise<Response> {
   const delays = [1500, 4000];
-  let url = path;
-  let usingFallback = false;
+  // On a static frontend host, go straight to the real API so the browser does
+  // not log a 404 for the relative /api/... request before the fallback kicks in.
+  let usingFallback = canUseFallback(path);
+  let url = usingFallback ? API_FALLBACK_ORIGIN + path : path;
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt++) {

@@ -98,7 +98,7 @@ export function PayoutSettingsPanel({ role, phone, email, language = 'EN', onSav
         setVerificationToken(token);
       }
 
-      const saveResponse = await fetch('/api/payments/profile', {
+      const saveResponse = await fetchWithRetry('/api/payments/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
