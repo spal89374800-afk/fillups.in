@@ -64,10 +64,20 @@ const SECTIONS: Array<{ no: number; title: string; points: string[] }> = [
       'In compliance with Indian IT and E-Commerce Rules, any grievance or complaint will be acknowledged within 48 hours and resolved within 30 days.',
       'Any legal disputes arising out of the use of fillupo.in shall be governed by the laws of India and fall under the exclusive jurisdiction of the courts in Lucknow, Uttar Pradesh.'
     ]
+  },
+  {
+    no: 8,
+    title: 'Intellectual Property & Acceptable Use Policy',
+    points: [
+      'Intellectual Property Rights: All website content, brand name (fillupo.in), logos, UI/UX design, software code, and workflow architecture are the exclusive intellectual property of fillupo.in. No user, operator, or third party is permitted to copy, clone, scrape, modify, or commercially exploit any part of the platform without prior written permission.',
+      'Acceptable Use & Account Security: Users must keep their login credentials and OTPs confidential. Any attempt to hack, reverse-engineer, spam, upload viruses, or use fillupo.in for any unlawful or fraudulent activity will result in immediate permanent termination and legal prosecution.',
+      'Age Eligibility: Services on fillupo.in are intended for individuals aged 18 years and above. Users under 18 may access the platform strictly under the supervision and consent of a parent or legal guardian.',
+      'Third-Party Portals Disclaimer: fillupo.in facilitates applications on external government and institutional portals. We have no control over and assume no responsibility for the availability, sudden fee revisions, rule changes, or technical failures of any third-party or government websites.'
+    ]
   }
 ];
 
-const SECTION_ICONS = [FileText, Shield, CreditCard, Lock, AlertCircle, Gavel, Gavel];
+const SECTION_ICONS = [FileText, Shield, CreditCard, Lock, AlertCircle, Gavel, Gavel, Shield];
 
 export default function PlatformLegalPolicy({ onBack, language = 'EN' }: PlatformLegalPolicyProps) {
   const tr = (en: string, hi: string) => (language === 'HI' ? hi : en);
