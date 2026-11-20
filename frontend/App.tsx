@@ -10804,11 +10804,14 @@ export default function App() {
 
               <div className="space-y-4 relative z-10">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">CSC / Operator ID</label>
+                  <label htmlFor="vle-csc-id" className="block text-xs font-medium text-slate-300 mb-1">CSC / Operator ID</label>
                   <input
+                    id="vle-csc-id"
+                    name="cscId"
                     type="text"
                     required
                     maxLength={25}
+                    autoComplete="username"
                     value={vleId}
                     onChange={(e) => setVleId(e.target.value.slice(0, 25))}
                     placeholder="CSC ID"
@@ -10817,10 +10820,13 @@ export default function App() {
                 </div>
                 {!vleLoginOtpSent && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">Gmail</label>
+                    <label htmlFor="vle-login-email" className="block text-xs font-medium text-slate-300 mb-1">Gmail</label>
                     <input
+                      id="vle-login-email"
+                      name="email"
                       type="email"
                       required
+                      autoComplete="email"
                       value={vleLoginEmailInput}
                       onChange={(e) => setVleLoginEmailInput(e.target.value.trim().toLowerCase())}
                       placeholder="Gmail ID"
@@ -10844,6 +10850,8 @@ export default function App() {
                 ) : (
                   <form onSubmit={handleVleLoginVerifyOtp} className="space-y-4">
                     <input
+                      id="vle-login-otp"
+                      name="one-time-code"
                       type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
