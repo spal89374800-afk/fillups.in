@@ -83,10 +83,19 @@ const SECTIONS: Array<{ no: number; title: string; points: string[] }> = [
       'Electronic Consent & Cookies (IT Act Section 10A): By registering via OTP, clicking "I Agree", or using fillupo.in, you provide legally binding electronic consent under Section 10A of the Information Technology Act, 2000. fillupo.in uses strictly necessary session cookies to keep your login, live screen sharing, and order dashboard functioning securely.',
       'Severability: If any provision of these Terms is found to be invalid or unenforceable by a court of law, the remaining provisions shall continue to remain in full force and legal effect.'
     ]
+  },
+  {
+    no: 10,
+    title: 'Refund Timeline, Tax Responsibility & Order Availability',
+    points: [
+      "Refund Timeline & 3-QR Responsibility: In eligible cancellation cases where a refund is approved before form processing begins, the refundable amount will be credited to the user's original UPI/bank source within 5 to 7 working days. Since operator charges (83%) and government fees are transferred directly via separate UPI QRs, fillupo.in is responsible only for refunding its 17% platform facilitation fee where applicable.",
+      'Tax & Statutory Compliance: Independent operators (Jan Seva Kendras and students) are solely responsible for reporting their earnings and paying any applicable Income Tax or GST on their 83% service revenue. fillupo.in is accountable only for tax compliance on its 17% platform commission.',
+      'No Guarantee of Order Volume: fillupo.in does not guarantee a fixed number of daily or monthly orders to any registered operator. Order allocation depends entirely on real-time citizen demand, location matching, and first-come-first-served acceptance.'
+    ]
   }
 ];
 
-const SECTION_ICONS = [FileText, Shield, CreditCard, Lock, AlertCircle, Gavel, Gavel, Shield, Shield];
+const SECTION_ICONS = [FileText, Shield, CreditCard, Lock, AlertCircle, Gavel, Gavel, Shield, Shield, Shield];
 
 export default function PlatformLegalPolicy({ onBack, language = 'EN' }: PlatformLegalPolicyProps) {
   const tr = (en: string, hi: string) => (language === 'HI' ? hi : en);
