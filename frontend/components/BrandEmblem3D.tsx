@@ -88,7 +88,7 @@ export const BrandEmblem3D = ({
             F
           </span>
           <span className={`${illupTextClass} font-black tracking-[0.22em] text-white self-center pb-0.5 font-['Poppins',sans-serif] brand-illup-text`}>
-            ILLUP
+            ILLUPO
           </span>
         </div>
         <div className="flex w-full items-center justify-center my-0.5 pointer-events-none">

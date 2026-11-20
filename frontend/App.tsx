@@ -6588,14 +6588,14 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Wordmark: Large F + ILLUP with 3D FIRM Showcase & High-Fidelity Horizon */}
+                {/* Wordmark: Large F + ILLUPO with 3D FIRM Showcase & High-Fidelity Horizon */}
                 <div className="flex flex-col items-center justify-center">
                   <div className="font-black tracking-normal text-white font-['Poppins'] flex items-baseline leading-none">
                     <span className="text-4xl sm:text-6xl font-serif italic font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-400 drop-shadow-[0_0_16px_rgba(6,182,212,0.6)] pr-1 leading-none select-none">
                       F
                     </span>
                     <span className="text-2xl sm:text-3xl font-black tracking-[0.22em] text-white self-center pb-1 font-['Poppins',sans-serif]">
-                      ILLUP
+                      ILLUPO
                     </span>
                   </div>
 
@@ -8480,7 +8480,7 @@ export default function App() {
               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-48 bg-cyan-500/15 blur-3xl pointer-events-none rounded-full" />
               <div className="absolute top-1/2 right-10 w-64 h-64 bg-blue-600/10 blur-3xl pointer-events-none rounded-full" />
 
-              {/* 1. Official 3D Computer Logo + F + ILLUP + Signature ECG Line */}
+              {/* 1. Official 3D Computer Logo + F + ILLUPO + Signature ECG Line */}
               <div className="flex flex-col items-center justify-center space-y-3 relative z-10">
                 <BrandEmblem3D
                   size="lg"
