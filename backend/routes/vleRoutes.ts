@@ -76,11 +76,11 @@ vleRouter.post('/vle/login', (req, res) => {
   // Returning operators log in with CSC ID + verified Gmail only. Name, mobile
   // and location are already stored on the account and are never re-entered.
   const { cscId, email } = req.body;
-  const normalizedCscId = String(cscId || '').trim().toLowerCase();
+  const normalizedCscId = normalizeCscId(cscId);
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const registeredAccount = userAccountsStore.find(account =>
     account.role === 'vle' &&
-    account.cscId?.trim().toLowerCase() === normalizedCscId &&
+    normalizeCscId(account.cscId) === normalizedCscId &&
     String(account.email || '').trim().toLowerCase() === normalizedEmail
   );
   if (!registeredAccount) {

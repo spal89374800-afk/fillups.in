@@ -11,6 +11,7 @@ import { sendTransactionalEmail } from '../services/emailService.ts';
 import { buildOtpEmailHtml } from '../services/otpEmailTemplate.ts';
 import { clearAuthSessionCookie, setAuthSessionCookie } from '../services/authCookieService.ts';
 import { accountBlockedPayload, findBlockedAccountByIdentity } from '../services/accountBlockService.ts';
+import { normalizeCscId } from '../services/identityValidation.ts';
 
 export const authRouter = Router();
 
@@ -27,12 +28,14 @@ function findClientAccountByEmail(email: string) {
 // Returning operators match on CSC ID + saved Gmail only. Name and mobile come
 // from the stored account, so they are never asked for again on login.
 function findVleAccountForLogin(cscId: unknown, email: unknown) {
-  const normalizedCscId = String(cscId || '').trim().toLowerCase();
+  // Registration stores CSC ID after stripping spaces/hyphens, so login must
+  // apply the exact same normalization or "1234 5678 9012" would never match.
+  const normalizedCscId = normalizeCscId(cscId);
   const normalizedEmail = normalizeEmail(email);
   if (!normalizedCscId || !normalizedEmail) return undefined;
   return userAccountsStore.find(account =>
     account.role === 'vle' &&
-    String(account.cscId || '').trim().toLowerCase() === normalizedCscId &&
+    normalizeCscId(account.cscId) === normalizedCscId &&
     normalizeEmail(account.email) === normalizedEmail
   );
 }
@@ -355,7 +358,7 @@ authRouter.post('/auth/client-login/verify-otp', (req, res) => {
 // naam/mobile dobara likhne ki zarurat nahi.
 authRouter.post('/auth/vle-login/send-otp', async (req, res) => {
   try {
-    const cscId = String(req.body?.cscId || '').trim();
+    const cscId = normalizeCscId(req.body?.cscId);
     const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
     if (!cscId) {
       return res.status(400).json({ success: false, error: 'CSC / Operator ID dalna zaroori hai.' });
@@ -411,7 +414,7 @@ authRouter.post('/auth/vle-login/send-otp', async (req, res) => {
     }
 
     // Distinct key so this flow never collides with registration OTP (keyed by phone).
-    activeOtpStore[`vle-login:${cscId.trim().toLowerCase()}`] = {
+    activeOtpStore[`vle-login:${cscId}`] = {
       code,
       email: normalizeEmail(account.email),
       role: 'vle',
@@ -428,10 +431,10 @@ authRouter.post('/auth/vle-login/send-otp', async (req, res) => {
 });
 
 authRouter.post('/auth/vle-login/verify-otp', (req, res) => {
-  const cscId = String(req.body?.cscId || '').trim();
+  const cscId = normalizeCscId(req.body?.cscId);
   const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
   const submittedCode = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
-  const otpKey = `vle-login:${cscId.toLowerCase()}`;
+  const otpKey = `vle-login:${cscId}`;
   if (!cscId || !email || !submittedCode) {
     return res.status(400).json({ success: false, error: 'CSC ID, Gmail aur OTP code zaroori hain.' });
   }
@@ -554,11 +557,11 @@ authRouter.post('/auth/google', async (req, res) => {
       : enteredDigits;
     let cscAccount: (typeof userAccountsStore)[number] | undefined;
     if (!/^[6-9]\d{9}$/.test(phone) && userRole === 'vle') {
-      const cscId = String(req.body?.cscId || '').trim().toLowerCase();
+      const cscId = normalizeCscId(req.body?.cscId);
       cscAccount = cscId
         ? userAccountsStore.find(account =>
             account.role === 'vle' &&
-            String(account.cscId || '').trim().toLowerCase() === cscId
+            normalizeCscId(account.cscId) === cscId
           )
         : undefined;
       if (cscAccount) {
