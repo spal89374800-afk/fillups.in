@@ -419,9 +419,7 @@ export default function App() {
 
   useEffect(() => {
     applyDocumentLanguage(lang);
-    document.title = lang === 'HI'
-      ? 'fillupo.in — ऑनलाइन जन सेवा एवं साइबर कैफ़े पोर्टल'
-      : 'fillupo.in — Online Jan Seva & Cyber Cafe Portal';
+    document.title = 'fillupo.in';
   }, [lang]);
   
   const [step, setStep] = useState<
