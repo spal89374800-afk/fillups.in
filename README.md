@@ -56,4 +56,4 @@ Checkout uses three separate single-recipient `upi://pay` intents after the citi
 3. **Operator Share** — the remaining 83% of the service fee to the operator's UPI ID, confirmed by the operator.
 
 The citizen total is `govtFee + serviceFee`; the admin fee is carved out of the service fee, not added on top. When all three legs are confirmed the order is marked paid in-app (`isPaymentDoneInApp`) and WhatsApp dispatch unlocks. A submitted UTR alone does not confirm payment. The app does not implement payment-provider webhooks; per-leg confirmation is manual. Per-operator pricing and all orders/chats are stored server-side and filtered by account (client, Jan Seva operator, or form filler).
-# fillups.in
+# fillupo.in

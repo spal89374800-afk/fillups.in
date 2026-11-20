@@ -28,8 +28,8 @@ export function PublicServicesIndexPage({ lang, initialServices }: PublicService
   useEffect(() => {
     applyUrlLanguage(lang);
     document.title = lang === 'hi'
-      ? 'सभी ऑनलाइन सरकारी सेवाएं और दस्तावेज़ | Fillups.in'
-      : 'All Online Government Services & Documents | Fillups.in';
+      ? 'सभी ऑनलाइन सरकारी सेवाएं और दस्तावेज़ | fillupo.in'
+      : 'All Online Government Services & Documents | fillupo.in';
   }, [lang]);
 
   useEffect(() => {
@@ -75,7 +75,7 @@ export function PublicServicesIndexPage({ lang, initialServices }: PublicService
       <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3">
           <a href="/" className="text-lg sm:text-xl font-black tracking-tight">
-            Fillups<span className="text-amber-400">.in</span>
+            fillupo<span className="text-amber-400">.in</span>
           </a>
           <nav className="flex items-center gap-2 text-sm font-bold">
             <a href="/" className="text-slate-300 hover:text-white px-2 py-1.5">{t('Home', 'होम')}</a>
@@ -166,7 +166,7 @@ export function PublicServicesIndexPage({ lang, initialServices }: PublicService
 
       <footer className="border-t border-slate-800 mt-8">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-          <span>© {new Date().getFullYear()} Fillups.in</span>
+          <span>© {new Date().getFullYear()} fillupo.in</span>
           <span>{t('Online Jan Seva & Cyber Cafe Portal', 'ऑनलाइन जन सेवा एवं साइबर कैफ़े पोर्टल')}</span>
         </div>
       </footer>

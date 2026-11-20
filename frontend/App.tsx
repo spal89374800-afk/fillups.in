@@ -420,8 +420,8 @@ export default function App() {
   useEffect(() => {
     applyDocumentLanguage(lang);
     document.title = lang === 'HI'
-      ? 'डिजीसेवा प्रो - ऑनलाइन जन सेवा एवं साइबर कैफ़े पोर्टल'
-      : 'DigiSeva Pro - Online Jan Seva & Cyber Cafe Portal';
+      ? 'fillupo.in — ऑनलाइन जन सेवा एवं साइबर कैफ़े पोर्टल'
+      : 'fillupo.in — Online Jan Seva & Cyber Cafe Portal';
   }, [lang]);
   
   const [step, setStep] = useState<
@@ -14786,7 +14786,7 @@ export default function App() {
                       {/* Real 1-Click WhatsApp Link */}
                       <a
                         href={`https://wa.me/91${activeWorkspaceOrder.clientPhone}?text=${encodeURIComponent(
-                          `Hello ${activeWorkspaceOrder.clientName}! Your ${activeWorkspaceOrder.serviceName || activeWorkspaceOrder.formTitle} application has been successfully submitted.\n\nApplication No: ${activeWorkspaceOrder.credentialsDispatched?.appNumber || ''}\nPortal Password: ${activeWorkspaceOrder.credentialsDispatched?.pass || ''}\n\nThank you! FILLUP Digital Citizen Services.`
+                          `Hello ${activeWorkspaceOrder.clientName}! Your ${activeWorkspaceOrder.serviceName || activeWorkspaceOrder.formTitle} application has been successfully submitted.\n\nApplication No: ${activeWorkspaceOrder.credentialsDispatched?.appNumber || ''}\nPortal Password: ${activeWorkspaceOrder.credentialsDispatched?.pass || ''}\n\nThank you! fillupo.in Digital Citizen Services.`
                         )}`}
                         target="_blank"
                         rel="noreferrer"
@@ -15993,7 +15993,7 @@ export default function App() {
               />
               <div className="space-y-1">
                 <h3 className="text-sm font-bold text-white tracking-wide">
-                  FILLUP | Digital Jan Seva Kendra
+                  fillupo.in | Digital Jan Seva Kendra
                 </h3>
                 <p className="text-xs text-slate-400 max-w-md">
                   Independent assistant platform. Not a government portal.
@@ -16028,7 +16028,7 @@ export default function App() {
           {/* Copyright */}
           <div className="text-center">
             <p className="text-xs text-slate-500 font-mono">
-              © 2026 FILLUP. All rights reserved.
+              © 2026 fillupo.in. All rights reserved.
             </p>
           </div>
         </div>
@@ -16129,7 +16129,7 @@ export default function App() {
             </div>
             <div className="p-5 space-y-4 overflow-y-auto flex-1">
               <p className="text-sm text-slate-300 leading-relaxed">
-                I have read and agree to the Terms & Conditions and Privacy Policy applicable to my role on FILLUP platform.
+                I have read and agree to the Terms & Conditions and Privacy Policy applicable to my role on fillupo.in platform.
               </p>
               <div className="flex flex-col gap-2">
                 <button

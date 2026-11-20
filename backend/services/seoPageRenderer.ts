@@ -113,7 +113,7 @@ function renderServiceBody(service: PublicService, lang: Lang): string {
   return `
   <div class="seo-page">
     <header class="seo-header">
-      <a class="seo-brand" href="/">Fillups<span>.in</span></a>
+      <a class="seo-brand" href="/">fillupo<span>.in</span></a>
       <nav>
         <a href="/services">${lang === 'hi' ? 'सभी सेवाएं' : 'All services'}</a>
         <a href="${lang === 'hi' ? `/services/${service.slug}` : `/hi/services/${service.slug}`}">${lang === 'hi' ? 'English' : 'हिंदी'}</a>
@@ -190,7 +190,7 @@ function renderServiceBody(service: PublicService, lang: Lang): string {
     </main>
 
     <footer class="seo-footer">
-      <span>© ${new Date().getFullYear()} Fillups.in</span>
+      <span>© ${new Date().getFullYear()} fillupo.in</span>
       <span>${lang === 'hi' ? 'ऑनलाइन जन सेवा एवं साइबर कैफ़े पोर्टल' : 'Online Jan Seva & Cyber Cafe Portal'}</span>
     </footer>
   </div>`;
@@ -262,7 +262,7 @@ function headTags(options: {
   bootstrap?: { name: string; value: unknown };
 }): string {
   const tags = [
-    `<title>${escapeHtml(options.title)} | Fillups.in</title>`,
+    `<title>${escapeHtml(options.title)} | fillupo.in</title>`,
     `<meta name="description" content="${escapeHtml(options.description)}" />`,
     `<meta name="robots" content="index, follow, max-image-preview:large" />`,
     `<link rel="canonical" href="${escapeHtml(options.canonical)}" />`,
@@ -270,7 +270,7 @@ function headTags(options: {
     `<link rel="alternate" hreflang="hi-IN" href="${escapeHtml(options.hiUrl)}" />`,
     `<link rel="alternate" hreflang="x-default" href="${escapeHtml(options.enUrl)}" />`,
     `<meta property="og:type" content="website" />`,
-    `<meta property="og:site_name" content="Fillups.in" />`,
+    `<meta property="og:site_name" content="fillupo.in" />`,
     `<meta property="og:title" content="${escapeHtml(options.title)}" />`,
     `<meta property="og:description" content="${escapeHtml(options.description)}" />`,
     `<meta property="og:url" content="${escapeHtml(options.canonical)}" />`,
@@ -329,7 +329,7 @@ export function renderServicePageHtml(
         },
         provider: {
           '@type': 'Organization',
-          name: 'Fillups.in',
+          name: 'fillupo.in',
           url: siteUrl
         },
         offers: service.fees.totalMin > 0 ? {
@@ -397,7 +397,7 @@ export function renderServicesIndexHtml(
   const body = `
   <div class="seo-page">
     <header class="seo-header">
-      <a class="seo-brand" href="/">Fillups<span>.in</span></a>
+      <a class="seo-brand" href="/">fillupo<span>.in</span></a>
       <nav>
         <a href="/services">${lang === 'hi' ? 'सभी सेवाएं' : 'All services'}</a>
         <a href="${lang === 'hi' ? '/services' : '/hi/services'}">${lang === 'hi' ? 'English' : 'हिंदी'}</a>
@@ -422,7 +422,7 @@ export function renderServicesIndexHtml(
       </section>
     </main>
     <footer class="seo-footer">
-      <span>© ${new Date().getFullYear()} Fillups.in</span>
+      <span>© ${new Date().getFullYear()} fillupo.in</span>
       <span>${lang === 'hi' ? 'ऑनलाइन जन सेवा एवं साइबर कैफ़े पोर्टल' : 'Online Jan Seva & Cyber Cafe Portal'}</span>
     </footer>
   </div>`;
@@ -458,7 +458,7 @@ export function renderServiceNotFoundHtml(baseHtml: string, lang: Lang, siteUrl:
   const body = `
   <div class="seo-page">
     <header class="seo-header">
-      <a class="seo-brand" href="/">Fillups<span>.in</span></a>
+      <a class="seo-brand" href="/">fillupo<span>.in</span></a>
       <nav><a href="/services">${lang === 'hi' ? 'सभी सेवाएं' : 'All services'}</a></nav>
     </header>
     <main class="seo-main">
