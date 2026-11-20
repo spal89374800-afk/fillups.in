@@ -483,7 +483,7 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
       broadcastBid.chatMessages.push({
         id: 'sys-routing-' + Date.now(),
         sender: 'operator',
-        senderName: 'DigiSeva Dispatch',
+        senderName: 'fillupo.in',
         text: noLocalJanSevaMessage,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       });
@@ -630,7 +630,7 @@ vleRouter.post('/vle/orders', requireAccount('client'), async (req, res) => {
   newOrder.chatMessages.push({
     id: 'sys-routing-' + Date.now(),
     sender: 'operator',
-    senderName: 'DigiSeva Dispatch',
+    senderName: 'fillupo.in',
     text: localOperatorUnavailable ? noLocalJanSevaMessage : `📢 ${routingNote}`,
     time: timeStr
   });

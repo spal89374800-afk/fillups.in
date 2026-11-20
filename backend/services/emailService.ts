@@ -59,7 +59,7 @@ export async function sendTransactionalEmail(input: SendEmailInput): Promise<Sen
 
   const subject = input.subject;
   const text = input.text;
-  const senderName = input.senderName || 'DigiSeva Pro';
+  const senderName = input.senderName || 'fillupo.in';
   const errors: string[] = [];
 
   const timeoutSignal = () => AbortSignal.timeout(15_000);
@@ -98,7 +98,7 @@ export async function sendTransactionalEmail(input: SendEmailInput): Promise<Sen
   // 2) Resend
   const resendKey = readEnvValue('RESEND_API_KEY');
   if (resendKey) {
-    const resendFrom = readEnvValue('RESEND_FROM') || 'DigiSeva Pro <onboarding@resend.dev>';
+    const resendFrom = readEnvValue('RESEND_FROM') || 'fillupo.in <onboarding@resend.dev>';
     try {
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',

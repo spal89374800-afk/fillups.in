@@ -231,9 +231,9 @@ authRouter.post('/auth/client-login/send-otp', async (req, res) => {
   const code = randomInt(1000, 10000).toString();
   const delivery = await sendTransactionalEmail({
     to: account.email,
-    subject: 'Your DigiSeva Pro login OTP',
-    text: `Your DigiSeva Pro login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`,
-    senderName: 'DigiSeva Pro'
+    subject: 'Your fillupo.in login OTP',
+    text: `Your fillupo.in login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`,
+    senderName: 'fillupo.in'
   });
   if (!delivery.ok) {
     console.error('[client-login] OTP email delivery failed:', delivery.error);
@@ -553,9 +553,9 @@ authRouter.post('/auth/send-otp', async (req, res) => {
 
   delete activeOtpStore[normalizedTarget];
 
-  const otpSubject = 'Your DigiSeva Pro login OTP';
-  const otpText = `Your DigiSeva Pro login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`;
-  const senderName = 'DigiSeva Pro';
+  const otpSubject = 'Your fillupo.in login OTP';
+  const otpText = `Your fillupo.in login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`;
+  const senderName = 'fillupo.in';
   const deliveryErrors: string[] = [];
   let deliveredVia = '';
 

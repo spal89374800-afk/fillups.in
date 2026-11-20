@@ -203,7 +203,7 @@ accountSecurityRouter.post('/account/identity/change', requireAccount(), async (
   // Owner ko alert — purani aur nayi dono Gmail par. Delivery fail ho to bhi
   // change rollback nahi hoga (email best-effort hai).
   const alertText = [
-    `Aapke DigiSeva Pro operator account ki login identity badli gayi hai.`,
+    `Aapke fillupo.in operator account ki login identity badli gayi hai.`,
     change.emailChanged ? `Gmail: ${change.oldEmail} -> ${change.newEmail}` : '',
     change.phoneChanged ? `Mobile: ${change.oldPhone} -> ${change.newPhone}` : '',
     `Agar ye change aapne nahi kiya, turant admin/support se sampark karein.`
@@ -212,7 +212,7 @@ accountSecurityRouter.post('/account/identity/change', requireAccount(), async (
   for (const to of alertTargets) {
     void sendTransactionalEmail({
       to,
-      subject: 'DigiSeva Pro — account identity changed',
+      subject: 'fillupo.in — account identity changed',
       text: alertText
     }).catch(() => {});
   }

@@ -656,7 +656,7 @@ orderRouter.put('/orders/:id/credentials', async (req, res) => {
   found.order.chatMessages.push({
     id: 'm-cred-edit-' + Date.now(),
     sender: 'operator',
-    senderName: 'DigiSeva',
+    senderName: 'fillupo.in',
     text: `✏️ Application credentials updated. Application No: ${appNumber} | Portal Password: ${pass}`,
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });

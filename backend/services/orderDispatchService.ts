@@ -61,7 +61,7 @@ export function buildOrderEmail(order: VleOrder | FillerOrder, title: string): {
     'Note: Aap offline the isliye email bheji gayi hai. Online aate hi email band ho jaayegi aur',
     'aapko in-app notification milengi. Ek time par sirf ek active order le sakte hain.',
     '',
-    '— DigiSeva Pro'
+    '— fillupo.in'
   ].join('\n');
   return { subject, text };
 }
@@ -210,7 +210,7 @@ export async function maybeCompleteOrder(order: any): Promise<boolean> {
   order.chatMessages.push({
     id: 'm-complete-' + Date.now(),
     sender: 'operator',
-    senderName: 'DigiSeva',
+    senderName: 'fillupo.in',
     text: '✅ Order complete! Payment confirmed aur completed form PDF dono verify ho gaye. Aap ab naya bid le sakte hain.',
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });

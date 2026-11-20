@@ -148,7 +148,7 @@ function autoConfirmAdminIfEligible(order: any, operatorName: string): boolean {
   order.chatMessages.push({
     id: 'm-auto-admin-' + Date.now(),
     sender: 'operator',
-    senderName: 'DigiSeva Payment',
+    senderName: 'fillupo.in',
     text: '✅ Admin fee auto-verified (citizen tick + operator government/share ticks). Admin ledger entry created.',
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });
@@ -355,7 +355,7 @@ paymentRouter.post('/payments/confirm-split', requireAccount(), async (req, res)
     found.order.chatMessages.push({
       id: 'm-paid-' + Date.now(),
       sender: 'operator',
-      senderName: 'DigiSeva Payment',
+      senderName: 'fillupo.in',
       text: '✅ All three payment legs are confirmed. Payment is complete and your credentials/workflow can now be dispatched.',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
