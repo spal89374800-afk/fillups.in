@@ -127,6 +127,51 @@ export default function TermsCitizen({ onBack, language = 'EN' }: TermsCitizenPr
             </div>
           </section>
 
+          <section className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/[0.08] p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Shield className="w-5 h-5 text-cyan-400" />
+              7. Additional Citizen Terms
+            </h2>
+            <div className="space-y-3 text-slate-300 leading-relaxed">
+              <ul className="list-disc list-inside space-y-2 ml-4">
+                <li>
+                  <strong className="text-white">{'Age Eligibility:'}</strong> You must be 18 years or older to create an account and place service requests on fillupo.in. Minors (under 18 years of age, such as school students) may only use fillupo.in under the direct supervision, guidance, and consent of a parent or legal guardian.
+                </li>
+                <li>
+                  <strong className="text-white">{'Mandatory Live Screen Verification:'}</strong> fillupo.in provides a Live Screen Sharing feature during form filling. You must carefully inspect and verify all details (Name, Father's/Mother's Name, Date of Birth, Category, Address, Photo, Signature) on the live screen before giving final confirmation. Once approved by you, fillupo.in or the operator will not be responsible for any spelling errors, wrong entries, or application rejection.
+                </li>
+                <li>
+                  <strong className="text-white">{'Live Session Cooperation & Portal Credentials Safety:'}</strong> During an active order, you must remain available on fillupo.in's in-built chat/call to verify the live screen and provide required OTPs promptly. If you become unresponsive for an extended period after work has begun, the operator may close the session without any refund. Once your form is submitted, it is your sole responsibility to download and safely store your receipt, registration number, and portal password (and change any shared login password immediately after completion).
+                </li>
+                <li>
+                  <strong className="text-white">{'Non-Payment & Post-Registration Absconding Policy:'}</strong> Final submission on the official portal is executed only after full payment verification. In many online forms, the Registration Number or Login Password is sent directly by the official portal to your registered mobile number and email address during registration or data entry. If you intentionally leave the session midway, upload a fake/edited payment proof, or refuse to pay after registration/form entry is completed:
+                  <ol className="list-decimal list-inside space-y-2 ml-4 mt-3">
+                    <li>Your account, mobile number, email ID, and device IP address will be automatically and permanently blocked on fillupo.in.</li>
+                    <li>Withholding payment after receiving service benefits or submitting fake payment proofs constitutes digital cheating and breach of contract under Indian Law (Bharatiya Nyaya Sanhita / IT Act). fillupo.in reserves the full right to file a police/cybercrime complaint using your submitted details and recover unpaid fees with penalty charges.</li>
+                  </ol>
+                </li>
+                <li>
+                  <strong className="text-white">{'Prohibition of False UPI Chargebacks:'}</strong> Raising false UPI chargebacks, bank transaction reversals, or cyber complaints after genuine form processing on fillupo.in is strictly prohibited and will lead to permanent blacklisting and legal recovery action.
+                </li>
+                <li>
+                  <strong className="text-white">{'Server Downtime & Fair Refund Rule:'}</strong> If the official government website crashes or stops responding during your live session, you will not be penalized or blocked; the operator will cancel the order under "Official Website / Server Down" or place it on hold until the portal resumes. Once processing begins or government fees are paid, no refund applies (pre-processing refunds take 5 to 7 working days to the original payment source).
+                </li>
+                <li>
+                  <strong className="text-white">{'Last-Minute Deadline Responsibility:'}</strong> You must submit your service request at least 24 to 48 hours before the official form deadline. fillupo.in will not be responsible if an application misses the deadline due to last-hour orders, slow government servers, or payment delays.
+                </li>
+                <li>
+                  <strong className="text-white">{'7-Day Chat Auto-Deletion:'}</strong> Along with 24-hour document auto-deletion, all in-built chat messages exchanged during the order are automatically deleted after 7 days of order completion.
+                </li>
+                <li>
+                  <strong className="text-white">{'Code of Conduct, Indemnity & Termination:'}</strong> Citizens must maintain respectful behavior during live calls and chats; abusive language or harassment will lead to permanent account termination without refund. You agree to indemnify and hold fillupo.in harmless from any legal claims arising from fake documents or unauthorized use of another person's details. fillupo.in reserves the right to suspend or terminate any account at any time without prior notice for policy violations.
+                </li>
+                <li>
+                  <strong className="text-white">{'Electronic Consent, Grievance & Jurisdiction:'}</strong> By registering via OTP, clicking "I Agree", or placing an order on fillupo.in, you provide legally binding electronic consent under Section 10A of the Information Technology Act, 2000. Any user complaint will be acknowledged within 48 hours and resolved within 30 days (Contact: supportfillupo.in@gmail.com). All legal disputes shall be governed by Indian law under the exclusive jurisdiction of the courts in Lucknow, Uttar Pradesh.
+                </li>
+              </ul>
+            </div>
+          </section>
+
           <div className="p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl text-center">
             <p className="text-cyan-200 font-medium">
               By using the FILLUP platform as a Citizen, you acknowledge that you have read, understood, and agree to be bound by these Terms & Conditions.
