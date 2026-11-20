@@ -24,6 +24,19 @@ function findClientAccountByEmail(email: string) {
   );
 }
 
+// Returning operators match on CSC ID + saved Gmail only. Name and mobile come
+// from the stored account, so they are never asked for again on login.
+function findVleAccountForLogin(cscId: unknown, email: unknown) {
+  const normalizedCscId = String(cscId || '').trim().toLowerCase();
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedCscId || !normalizedEmail) return undefined;
+  return userAccountsStore.find(account =>
+    account.role === 'vle' &&
+    String(account.cscId || '').trim().toLowerCase() === normalizedCscId &&
+    normalizeEmail(account.email) === normalizedEmail
+  );
+}
+
 function blockedIdentityResponse(input: { email?: unknown; phone?: unknown; role?: 'client' | 'vle' | 'filler' | 'expert' }) {
   const account = findBlockedAccountByIdentity(input);
   return account ? accountBlockedPayload(account) : null;
@@ -332,6 +345,153 @@ authRouter.post('/auth/client-login/verify-otp', (req, res) => {
     });
   }
   return res.status(400).json({ success: false, error: 'Invalid OTP. Please check the code and try again.' });
+});
+
+// ========================================================
+// 🔐 VLE RETURNING LOGIN — Gmail OTP (Google ka alternative)
+// ========================================================
+// CSC ID + saved Gmail par OTP bheja jata hai. Verify ke baad wahi
+// short-lived grant banega jo /api/vle/login consume karta hai — isliye
+// naam/mobile dobara likhne ki zarurat nahi.
+authRouter.post('/auth/vle-login/send-otp', async (req, res) => {
+  try {
+    const cscId = String(req.body?.cscId || '').trim();
+    const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
+    if (!cscId) {
+      return res.status(400).json({ success: false, error: 'CSC / Operator ID dalna zaroori hai.' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, error: 'Gmail address sahi daalein.' });
+    }
+
+    const account = findVleAccountForLogin(cscId, email);
+    if (!account) {
+      return res.status(403).json({ success: false, error: 'CSC ID aur Gmail registered account se match nahi kiye.' });
+    }
+    const phone = String(account.phone || '').replace(/\D/g, '').slice(-10);
+    const blockedForOtp = blockedIdentityResponse({ email, phone, role: 'vle' });
+    if (blockedForOtp) return res.status(403).json(blockedForOtp);
+
+    const clientIp = resolveClientIp(req);
+    const captcha = await verifyTurnstileToken(req.body?.captchaToken, clientIp);
+    if (!captcha.success) {
+      return res.status(403).json({
+        success: false,
+        error: 'Verification failed. Please refresh the page and try again.'
+      });
+    }
+
+    const otpGuard = checkOtpSendLimits({ phone, ip: clientIp });
+    if (!otpGuard.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: otpGuard.message,
+        reason: otpGuard.reason,
+        retryAfterMinutes: otpGuard.retryAfterMinutes
+      });
+    }
+    registerOtpSend({ phone, ip: clientIp });
+
+    const code = randomInt(1000, 10000).toString();
+    const delivery = await sendTransactionalEmail({
+      to: String(account.email || '').trim(),
+      subject: 'Your fillupo.in login OTP',
+      text: `Your fillupo.in login verification code is ${code}. Enter it on the login page. It expires in 10 minutes.`,
+      html: buildOtpEmailHtml(code),
+      senderName: OTP_EMAIL_SENDER,
+      replyTo: OTP_REPLY_TO
+    });
+    if (!delivery.ok) {
+      console.error('[vle-login] OTP email delivery failed:', delivery.error);
+      return res.status(502).json({
+        success: false,
+        code: 'OTP_DELIVERY_FAILED',
+        error: 'Verification code bhejne me dikkat aayi. Dobara try karein.'
+      });
+    }
+
+    // Distinct key so this flow never collides with registration OTP (keyed by phone).
+    activeOtpStore[`vle-login:${cscId.trim().toLowerCase()}`] = {
+      code,
+      email: normalizeEmail(account.email),
+      role: 'vle',
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      attempts: 0
+    };
+    return res.json({ success: true, channel: delivery.via || 'Email', email });
+  } catch (error) {
+    console.error('[vle-login] OTP send failed:', error);
+    if (!res.headersSent) {
+      return res.status(500).json({ success: false, error: 'Verification code bhejne me dikkat aayi.' });
+    }
+  }
+});
+
+authRouter.post('/auth/vle-login/verify-otp', (req, res) => {
+  const cscId = String(req.body?.cscId || '').trim();
+  const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
+  const submittedCode = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+  const otpKey = `vle-login:${cscId.toLowerCase()}`;
+  if (!cscId || !email || !submittedCode) {
+    return res.status(400).json({ success: false, error: 'CSC ID, Gmail aur OTP code zaroori hain.' });
+  }
+
+  const account = findVleAccountForLogin(cscId, email);
+  if (!account) {
+    delete activeOtpStore[otpKey];
+    return res.status(401).json({ success: false, error: 'CSC ID ya Gmail galat hai.' });
+  }
+  const phone = String(account.phone || '').replace(/\D/g, '').slice(-10);
+  const blockedForVerify = blockedIdentityResponse({ email, phone, role: 'vle' });
+  if (blockedForVerify) return res.status(403).json(blockedForVerify);
+
+  const clientIp = resolveClientIp(req);
+  const verifyGuard = checkOtpVerifyLimits({ phone, ip: clientIp });
+  if (!verifyGuard.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: verifyGuard.message,
+      reason: verifyGuard.reason,
+      retryAfterMinutes: verifyGuard.retryAfterMinutes
+    });
+  }
+  registerOtpVerify({ phone, ip: clientIp });
+
+  const cached = activeOtpStore[otpKey];
+  if (!cached || cached.expiresAt <= Date.now() || cached.role !== 'vle' || cached.email !== email) {
+    delete activeOtpStore[otpKey];
+    return res.status(400).json({ success: false, error: 'OTP expire ho gaya. Naya code mangayein.' });
+  }
+  if (!/^\d{4}$/.test(submittedCode)) {
+    return res.status(400).json({ success: false, error: '4-digit OTP daalein.' });
+  }
+
+  cached.attempts += 1;
+  const submittedBuffer = Buffer.from(submittedCode);
+  const expectedBuffer = Buffer.from(cached.code);
+  const isValid = submittedBuffer.length === expectedBuffer.length && timingSafeEqual(submittedBuffer, expectedBuffer);
+  if (!isValid) {
+    if (cached.attempts >= 5) {
+      delete activeOtpStore[otpKey];
+      return res.status(429).json({ success: false, error: 'Bahut galat attempts. Naya OTP mangayein.' });
+    }
+    return res.status(400).json({ success: false, error: 'OTP galat hai. Dobara check karein.' });
+  }
+
+  delete activeOtpStore[otpKey];
+  const verificationToken = randomBytes(32).toString('hex');
+  verifiedOtpGrants[verificationToken] = {
+    target: phone,
+    email: normalizeEmail(account.email),
+    role: 'vle',
+    expiresAt: Date.now() + 5 * 60 * 1000
+  };
+  return res.json({
+    success: true,
+    verified: true,
+    verificationToken,
+    email: normalizeEmail(account.email)
+  });
 });
 
 // ========================================================

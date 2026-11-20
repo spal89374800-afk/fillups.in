@@ -1363,6 +1363,10 @@ export default function App() {
   const [vlePinConfirm, setVlePinConfirm] = useState('');
   const [vleOtpDeliveryMessage, setVleOtpDeliveryMessage] = useState('');
   const [vleAuthError, setVleAuthError] = useState('');
+  const [vleLoginOtpMode, setVleLoginOtpMode] = useState(false);
+  const [vleLoginOtpSent, setVleLoginOtpSent] = useState(false);
+  const [vleLoginEmailInput, setVleLoginEmailInput] = useState('');
+  const [vleLoginOtpCode, setVleLoginOtpCode] = useState('');
   const [isVleAuthBusy, setIsVleAuthBusy] = useState(false);
   const [verifyingGovt, setVerifyingGovt] = useState(false);
   const vleOtpAutoVerifyRef = useRef(false);
@@ -6162,6 +6166,75 @@ export default function App() {
     }
   };
 
+  const handleVleLoginSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isVleAuthBusy) return;
+    setVleAuthError('');
+    if (!isNonEmpty(vleId)) {
+      setVleAuthError('CSC / Operator ID dalna zaroori hai.');
+      return;
+    }
+    if (!isValidEmail(vleLoginEmailInput)) {
+      setVleAuthError('Gmail address sahi daalein.');
+      return;
+    }
+    setIsVleAuthBusy(true);
+    try {
+      const captchaToken = await getCaptchaToken();
+      const response = await fetchWithRetry('/api/auth/vle-login/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cscId: vleId, email: vleLoginEmailInput, captchaToken })
+      });
+      const data = await parseJsonResponse(response);
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Verification code bhejne me dikkat aayi.');
+      }
+      setVleLoginOtpSent(true);
+      setVleLoginOtpCode('');
+    } catch (error) {
+      setVleAuthError(error instanceof Error ? error.message : 'Verification code bhejne me dikkat aayi.');
+    } finally {
+      setIsVleAuthBusy(false);
+    }
+  };
+
+  const handleVleLoginVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isVleAuthBusy || vleLoginOtpCode.length !== 4) return;
+    setVleAuthError('');
+    setIsVleAuthBusy(true);
+    try {
+      const verifyResponse = await fetchWithRetry('/api/auth/vle-login/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cscId: vleId, email: vleLoginEmailInput, code: vleLoginOtpCode })
+      });
+      const verifyData = await parseJsonResponse(verifyResponse);
+      if (!verifyResponse.ok || !verifyData.verified || !verifyData.verificationToken) {
+        throw new Error(verifyData.error || 'OTP verify nahi hua. Dobara try karein.');
+      }
+      const loginResponse = await fetchWithRetry('/api/vle/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cscId: vleId,
+          email: verifyData.email || vleLoginEmailInput,
+          verificationToken: verifyData.verificationToken
+        })
+      });
+      const loginData = await parseJsonResponse(loginResponse);
+      if (!loginResponse.ok || !loginData.success) {
+        throw new Error(loginData.error || 'Operator login failed. Please try again.');
+      }
+      applyVleLoginResult(loginData);
+    } catch (error) {
+      setVleAuthError(error instanceof Error ? error.message : 'Login failed. Please try again.');
+    } finally {
+      setIsVleAuthBusy(false);
+    }
+  };
+
   const handleVleRegisterGoogleCredential = async (credential: string) => {
     if (verifyingGovt) return;
     setVleAuthError('');
@@ -10743,17 +10816,64 @@ export default function App() {
                     className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
-                <p className="text-[11px] leading-relaxed text-slate-500">
-                  Google Gmail verify karne ke baad aapka saved profile apne aap load ho jayega. Naam aur mobile number dobara likhne ki zarurat nahi.
-                </p>
                 {vleAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{vleAuthError}</p>}
-                <GoogleSignInButton
-                  onCredential={handleVleGoogleCredential}
-                  disabled={isVleAuthBusy || !isNonEmpty(vleId)}
-                />
-                {isVleAuthBusy && (
-                  <p className="text-center text-xs text-purple-300 font-semibold">Gmail verify karke dashboard khol rahe hain…</p>
+                {!vleLoginOtpMode ? (
+                  <>
+                    <GoogleSignInButton
+                      onCredential={handleVleGoogleCredential}
+                      disabled={isVleAuthBusy || !isNonEmpty(vleId)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { setVleLoginOtpMode(true); setVleAuthError(''); }}
+                      className="w-full text-center text-xs text-purple-400 hover:text-purple-300 hover:underline font-semibold"
+                    >
+                      Gmail OTP se login
+                    </button>
+                  </>
+                ) : !vleLoginOtpSent ? (
+                  <form onSubmit={handleVleLoginSendOtp} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1">Gmail</label>
+                      <input
+                        type="email"
+                        required
+                        value={vleLoginEmailInput}
+                        onChange={(e) => setVleLoginEmailInput(e.target.value.trim().toLowerCase())}
+                        placeholder="Gmail ID"
+                        className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <button type="submit" disabled={isVleAuthBusy || !isNonEmpty(vleId)} className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-extrabold text-sm disabled:opacity-60">
+                      OTP bhejein
+                    </button>
+                    <button type="button" onClick={() => { setVleLoginOtpMode(false); setVleAuthError(''); }} className="w-full text-center text-xs text-slate-400 hover:text-white">
+                      ← Google se verify karein
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleVleLoginVerifyOtp} className="space-y-4">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete="one-time-code"
+                      maxLength={4}
+                      required
+                      value={vleLoginOtpCode}
+                      onChange={(e) => setVleLoginOtpCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="4-digit code"
+                      className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                    <button type="submit" disabled={isVleAuthBusy || vleLoginOtpCode.length !== 4} className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-extrabold text-sm disabled:opacity-60">
+                      Verify &amp; Login
+                    </button>
+                    <button type="button" onClick={() => { setVleLoginOtpSent(false); setVleLoginOtpCode(''); setVleAuthError(''); }} className="w-full text-center text-xs text-slate-400 hover:text-white">
+                      ← Back
+                    </button>
+                  </form>
                 )}
+                {isVleAuthBusy && <p className="text-center text-xs text-purple-300 font-semibold">Verifying…</p>}
               </div>
 
               <div className="pt-2 text-center relative z-10">
@@ -10761,6 +10881,8 @@ export default function App() {
                   onClick={() => {
                     setVleOtpSent(false);
                     setVleRegistrationOtpCode('');
+                    setVleLoginOtpSent(false);
+                    setVleLoginOtpCode('');
                     setVleAuthError('');
                     setStep('vle_register');
                   }}
@@ -10788,6 +10910,8 @@ export default function App() {
                 onClick={() => {
                   setVleOtpSent(false);
                   setVleRegistrationOtpCode('');
+                  setVleLoginOtpSent(false);
+                  setVleLoginOtpCode('');
                   setVleAuthError('');
                   setStep('vle_login');
                 }}
