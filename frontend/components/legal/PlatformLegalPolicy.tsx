@@ -74,10 +74,19 @@ const SECTIONS: Array<{ no: number; title: string; points: string[] }> = [
       'Age Eligibility: Services on fillupo.in are intended for individuals aged 18 years and above. Users under 18 may access the platform strictly under the supervision and consent of a parent or legal guardian.',
       'Third-Party Portals Disclaimer: fillupo.in facilitates applications on external government and institutional portals. We have no control over and assume no responsibility for the availability, sudden fee revisions, rule changes, or technical failures of any third-party or government websites.'
     ]
+  },
+  {
+    no: 9,
+    title: 'Financial Liability Cap, Electronic Consent & Severability',
+    points: [
+      'Maximum Financial Liability Cap: Under all circumstances, the maximum cumulative liability of fillupo.in towards any user or operator for any claim, dispute, or service issue shall be strictly limited to the 17% platform facilitation fee actually received by fillupo.in for that specific order. fillupo.in shall never be liable for any indirect, consequential, or speculative damages (such as loss of job opportunity, exam failure, or missed deadlines).',
+      'Electronic Consent & Cookies (IT Act Section 10A): By registering via OTP, clicking "I Agree", or using fillupo.in, you provide legally binding electronic consent under Section 10A of the Information Technology Act, 2000. fillupo.in uses strictly necessary session cookies to keep your login, live screen sharing, and order dashboard functioning securely.',
+      'Severability: If any provision of these Terms is found to be invalid or unenforceable by a court of law, the remaining provisions shall continue to remain in full force and legal effect.'
+    ]
   }
 ];
 
-const SECTION_ICONS = [FileText, Shield, CreditCard, Lock, AlertCircle, Gavel, Gavel, Shield];
+const SECTION_ICONS = [FileText, Shield, CreditCard, Lock, AlertCircle, Gavel, Gavel, Shield, Shield];
 
 export default function PlatformLegalPolicy({ onBack, language = 'EN' }: PlatformLegalPolicyProps) {
   const tr = (en: string, hi: string) => (language === 'HI' ? hi : en);
