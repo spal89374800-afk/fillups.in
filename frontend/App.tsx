@@ -31,6 +31,7 @@ const TermsCitizen = lazy(() => import('./components/legal/TermsCitizen'));
 const TermsJanSeva = lazy(() => import('./components/legal/TermsJanSeva'));
 const TermsFormFiller = lazy(() => import('./components/legal/TermsFormFiller'));
 const PrivacyPolicy = lazy(() => import('./components/legal/PrivacyPolicy'));
+const PlatformLegalPolicy = lazy(() => import('./components/legal/PlatformLegalPolicy'));
 const QRCodeSVG = lazy(() =>
   import('qrcode.react').then(module => ({ default: module.QRCodeSVG }))
 );
@@ -437,6 +438,7 @@ export default function App() {
     | 'terms_janseva'
     | 'terms_formfiller'
     | 'privacy_policy'
+    | 'platform_legal_policy'
   >(() => {
     const session = readStoredSession();
     if (session?.role === 'client') return 'client_portal';
@@ -16012,6 +16014,16 @@ export default function App() {
           </div>
 
           {/* Legal Links */}
+          <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
+            <button
+              type="button"
+              onClick={() => setStep('platform_legal_policy')}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all"
+            >
+              <FileText className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Platform Terms & Legal Policy — fillupo.in</span>
+            </button>
+          </div>
 
           {/* Copyright */}
           <div className="text-center">
@@ -16090,6 +16102,23 @@ export default function App() {
           }} language={lang} />
         </Suspense>
       )}
+      {step === 'platform_legal_policy' && (
+        <Suspense fallback={<LazyFeatureFallback />}>
+          <PlatformLegalPolicy onBack={() => {
+            if (showLegalModal || pendingRole) {
+              setShowLegalModal(true);
+              setStep('landing');
+              return;
+            } else {
+              const session = readStoredSession();
+              if (session?.role === 'client') setStep('client_portal');
+              else if (session?.role === 'vle') setStep('vle_home');
+              else if (session?.role === 'form_filler') setStep('form_filler_app');
+              else setStep('landing');
+            }
+          }} language={lang} />
+        </Suspense>
+      )}
 
       {showLegalModal && pendingRole && (
         <div className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
@@ -16128,6 +16157,18 @@ export default function App() {
                   className="w-full px-4 py-2.5 rounded-xl bg-purple-600/10 hover:bg-purple-600/20 border border-purple-400/40 text-purple-300 hover:text-white text-sm font-semibold transition-all"
                 >
                   View Privacy Policy
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowLegalModal(false);
+                    setStep('platform_legal_policy');
+                  }}
+                  className="w-full px-4 py-2.5 rounded-xl bg-amber-600/10 hover:bg-amber-600/20 border border-amber-400/40 text-amber-300 hover:text-white text-sm font-semibold transition-all"
+                >
+                  View Platform Terms &amp; Legal Policy
                 </button>
               </div>
               <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl bg-slate-950/50 border border-white/[0.06]">
