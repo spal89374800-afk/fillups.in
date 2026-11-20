@@ -25,18 +25,38 @@ function findClientAccountByEmail(email: string) {
   );
 }
 
+// CSC ID comparison key: digits only, last 12. Registration stores plain 12
+// digits, but older records may carry a prefix; this keeps every login path
+// consistent for spaced, hyphenated or prefixed IDs.
+function cscIdKey(value: unknown): string {
+  return normalizeCscId(value).replace(/\D/g, '').slice(-12);
+}
+
+function maskedGmail(value: unknown): string {
+  const email = normalizeEmail(value);
+  const at = email.indexOf('@');
+  if (at <= 0) return '';
+  return `${email.slice(0, 1)}***${email.slice(at)}`;
+}
+
 // Returning operators match on CSC ID + saved Gmail only. Name and mobile come
 // from the stored account, so they are never asked for again on login.
 function findVleAccountForLogin(cscId: unknown, email: unknown) {
-  // Registration stores CSC ID after stripping spaces/hyphens, so login must
-  // apply the exact same normalization or "1234 5678 9012" would never match.
-  const normalizedCscId = normalizeCscId(cscId);
+  const key = cscIdKey(cscId);
   const normalizedEmail = normalizeEmail(email);
-  if (!normalizedCscId || !normalizedEmail) return undefined;
+  if (!key || !normalizedEmail) return undefined;
   return userAccountsStore.find(account =>
     account.role === 'vle' &&
-    normalizeCscId(account.cscId) === normalizedCscId &&
+    cscIdKey(account.cscId) === key &&
     normalizeEmail(account.email) === normalizedEmail
+  );
+}
+
+function findVleAccountByCscId(cscId: unknown) {
+  const key = cscIdKey(cscId);
+  if (!key) return undefined;
+  return userAccountsStore.find(account =>
+    account.role === 'vle' && cscIdKey(account.cscId) === key
   );
 }
 
@@ -358,7 +378,7 @@ authRouter.post('/auth/client-login/verify-otp', (req, res) => {
 // naam/mobile dobara likhne ki zarurat nahi.
 authRouter.post('/auth/vle-login/send-otp', async (req, res) => {
   try {
-    const cscId = normalizeCscId(req.body?.cscId);
+    const cscId = cscIdKey(req.body?.cscId);
     const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
     if (!cscId) {
       return res.status(400).json({ success: false, error: 'CSC / Operator ID dalna zaroori hai.' });
@@ -369,7 +389,15 @@ authRouter.post('/auth/vle-login/send-otp', async (req, res) => {
 
     const account = findVleAccountForLogin(cscId, email);
     if (!account) {
-      return res.status(403).json({ success: false, error: 'CSC ID aur Gmail registered account se match nahi kiye.' });
+      const cscAccount = findVleAccountByCscId(cscId);
+      if (!cscAccount) {
+        return res.status(403).json({ success: false, error: 'CSC ID registered nahi hai. 12-digit Digital Seva ID check karein.' });
+      }
+      return res.status(403).json({
+        success: false,
+        code: 'GMAIL_MISMATCH',
+        error: `Gmail is CSC ID ke registered Gmail se match nahi karti. Registered Gmail: ${maskedGmail(cscAccount.email)}`
+      });
     }
     const phone = String(account.phone || '').replace(/\D/g, '').slice(-10);
     const blockedForOtp = blockedIdentityResponse({ email, phone, role: 'vle' });
@@ -431,7 +459,7 @@ authRouter.post('/auth/vle-login/send-otp', async (req, res) => {
 });
 
 authRouter.post('/auth/vle-login/verify-otp', (req, res) => {
-  const cscId = normalizeCscId(req.body?.cscId);
+  const cscId = cscIdKey(req.body?.cscId);
   const email = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : '';
   const submittedCode = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
   const otpKey = `vle-login:${cscId}`;
@@ -557,13 +585,8 @@ authRouter.post('/auth/google', async (req, res) => {
       : enteredDigits;
     let cscAccount: (typeof userAccountsStore)[number] | undefined;
     if (!/^[6-9]\d{9}$/.test(phone) && userRole === 'vle') {
-      const cscId = normalizeCscId(req.body?.cscId);
-      cscAccount = cscId
-        ? userAccountsStore.find(account =>
-            account.role === 'vle' &&
-            normalizeCscId(account.cscId) === cscId
-          )
-        : undefined;
+      const cscId = cscIdKey(req.body?.cscId);
+      cscAccount = cscId ? findVleAccountByCscId(cscId) : undefined;
       if (cscAccount) {
         phone = String(cscAccount.phone || '').replace(/\D/g, '').slice(-10);
       }
