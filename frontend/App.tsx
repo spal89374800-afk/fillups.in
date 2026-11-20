@@ -1363,7 +1363,6 @@ export default function App() {
   const [vlePinConfirm, setVlePinConfirm] = useState('');
   const [vleOtpDeliveryMessage, setVleOtpDeliveryMessage] = useState('');
   const [vleAuthError, setVleAuthError] = useState('');
-  const [vleLoginOtpMode, setVleLoginOtpMode] = useState(false);
   const [vleLoginOtpSent, setVleLoginOtpSent] = useState(false);
   const [vleLoginEmailInput, setVleLoginEmailInput] = useState('');
   const [vleLoginOtpCode, setVleLoginOtpCode] = useState('');
@@ -10816,41 +10815,32 @@ export default function App() {
                     className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
+                {!vleLoginOtpSent && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">Gmail</label>
+                    <input
+                      type="email"
+                      required
+                      value={vleLoginEmailInput}
+                      onChange={(e) => setVleLoginEmailInput(e.target.value.trim().toLowerCase())}
+                      placeholder="Gmail ID"
+                      className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                )}
                 {vleAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{vleAuthError}</p>}
-                {!vleLoginOtpMode ? (
+                {!vleLoginOtpSent ? (
                   <>
+                    <form onSubmit={handleVleLoginSendOtp}>
+                      <button type="submit" disabled={isVleAuthBusy || !isNonEmpty(vleId) || !isValidEmail(vleLoginEmailInput)} className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-extrabold text-sm disabled:opacity-60">
+                        Send OTP
+                      </button>
+                    </form>
                     <GoogleSignInButton
                       onCredential={handleVleGoogleCredential}
                       disabled={isVleAuthBusy || !isNonEmpty(vleId)}
                     />
-                    <button
-                      type="button"
-                      onClick={() => { setVleLoginOtpMode(true); setVleAuthError(''); }}
-                      className="w-full text-center text-xs text-purple-400 hover:text-purple-300 hover:underline font-semibold"
-                    >
-                      Gmail OTP se login
-                    </button>
                   </>
-                ) : !vleLoginOtpSent ? (
-                  <form onSubmit={handleVleLoginSendOtp} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1">Gmail</label>
-                      <input
-                        type="email"
-                        required
-                        value={vleLoginEmailInput}
-                        onChange={(e) => setVleLoginEmailInput(e.target.value.trim().toLowerCase())}
-                        placeholder="Gmail ID"
-                        className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      />
-                    </div>
-                    <button type="submit" disabled={isVleAuthBusy || !isNonEmpty(vleId)} className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-extrabold text-sm disabled:opacity-60">
-                      OTP bhejein
-                    </button>
-                    <button type="button" onClick={() => { setVleLoginOtpMode(false); setVleAuthError(''); }} className="w-full text-center text-xs text-slate-400 hover:text-white">
-                      ← Google se verify karein
-                    </button>
-                  </form>
                 ) : (
                   <form onSubmit={handleVleLoginVerifyOtp} className="space-y-4">
                     <input
