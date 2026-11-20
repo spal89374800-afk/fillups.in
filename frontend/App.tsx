@@ -6031,11 +6031,16 @@ export default function App() {
   };
 
   // Google credential ko backend par verify karo → short-lived grant milta hai.
-  const requestGoogleGrant = async (credential: string, target: string, role: 'client' | 'vle' | 'filler') => {
+  const requestGoogleGrant = async (
+    credential: string,
+    target: string,
+    role: 'client' | 'vle' | 'filler',
+    cscId = ''
+  ) => {
     const googleResponse = await fetchWithRetry('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential, target, role })
+      body: JSON.stringify({ credential, target, role, cscId })
     });
     const googleData = await parseJsonResponse(googleResponse);
     if (!googleResponse.ok || !googleData.success || !googleData.verificationToken) {
@@ -6126,30 +6131,22 @@ export default function App() {
   const handleVleGoogleCredential = async (credential: string) => {
     if (isVleAuthBusy) return;
     setVleAuthError('');
-    const missing = collectMissingFields([
-      { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
-      { label: 'Operator Name', ok: isNonEmpty(vleName) },
-      { label: '10-Digit Mobile Number', ok: isValidMobile(vlePhone) }
-    ]);
-    if (missing.length > 0) {
-      setVleAuthError(requiredFieldsMessage(missing));
+    if (!isNonEmpty(vleId)) {
+      setVleAuthError('CSC / Operator ID dalna zaroori hai.');
       return;
     }
     setIsVleAuthBusy(true);
     try {
-      const { email, verificationToken } = await requestGoogleGrant(credential, vlePhone, 'vle');
+      // Saved mobile is resolved by CSC ID on the backend — no name or mobile
+      // field on the returning-operator login screen.
+      const { email, verificationToken } = await requestGoogleGrant(credential, '', 'vle', vleId);
       setVleEmail(email);
       const loginResponse = await fetchWithRetry('/api/vle/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cscId: vleId,
-          name: vleName,
-          phone: vlePhone,
           email,
-          state: vleState,
-          district: vleDistrict,
-          city: vleCity,
           verificationToken
         })
       });
@@ -10733,275 +10730,31 @@ export default function App() {
                 </div>
               </div>
 
-              {!vleOtpSent ? (
-                <form onSubmit={async (e) => {
-                  e.preventDefault();
-                  setVleAuthError('');
-                  const missingVleLoginFields = collectMissingFields([
-                    { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
-                    { label: 'Operator Name', ok: isNonEmpty(vleName) },
-                    { label: '10-Digit Mobile Number', ok: isValidMobile(vlePhone) },
-                    { label: 'Account Gmail', ok: isValidEmail(vleEmail) },
-                  ]);
-                  if (missingVleLoginFields.length > 0) {
-                    setVleAuthError(requiredFieldsMessage(missingVleLoginFields));
-                    return;
-                  }
-                  setIsVleAuthBusy(true);
-                  try {
-                    const captchaToken = await getCaptchaToken();
-                    const response = await fetchWithRetry('/api/auth/send-otp', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ channel: 'both', target: vlePhone, emailTarget: vleEmail, role: 'vle', name: vleName, captchaToken })
-                    });
-                    const data = await parseJsonResponse(response);
-                    if (!response.ok || !data.success) {
-                      throw new Error(data.error || ('Could not send the verification code. (HTTP ' + response.status + ') body=' + JSON.stringify(data)));
-                    }
-                    setVleOtpDeliveryMessage(data.message || '');
-                    setVleMobileOtpCode('');
-                    setVleAuthError('');
-                    setVleOtpSent(true);
-                  } catch (error) {
-                    setVleAuthError(error instanceof Error ? error.message : 'Could not start verification. Please try again.');
-                  } finally {
-                    setIsVleAuthBusy(false);
-                  }
-                }} className="space-y-4 relative z-10">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">CSC / Operator ID</label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={25}
-                      value={vleId}
-                      onChange={(e) => setVleId(e.target.value.slice(0, 25))}
-                      placeholder="CSC ID"
-                      className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">{t('Operator Name', 'ऑपरेटर का पूरा नाम')}</label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={50}
-                      value={vleName}
-                      onChange={(e) => setVleName(e.target.value.slice(0, 50))}
-                      placeholder={t('Operator Full Name', 'ऑपरेटर का पूरा नाम')}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 w-full">
-                    <div className="space-y-1.5 flex flex-col min-w-0">
-                      <label className="h-5 flex items-center justify-between text-xs font-medium text-slate-300 min-w-0">
-                        <span className="flex items-center gap-1.5 min-w-0 truncate">
-                          <MessageSquare className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          <span className="truncate">{t('Mobile Number', 'मोबाइल नंबर')}</span>
-                        </span>
-                      </label>
-                      <div className="h-12 relative rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 flex items-center transition-all">
-                        <input
-                          type="tel"
-                          required
-                          maxLength={10}
-                          value={vlePhone}
-                          onChange={(e) => setVlePhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                          placeholder="10 Digits No."
-                          className="w-full h-full px-3.5 sm:px-4 bg-transparent text-white text-sm focus:outline-none placeholder:text-zinc-500 font-mono min-w-0"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5 flex flex-col min-w-0">
-                      <label className="h-5 flex items-center text-xs font-medium text-slate-300 min-w-0">
-                        <span className="flex items-center gap-1.5 min-w-0 truncate">
-                          <Mail className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                          <span className="truncate">Account Gmail</span>
-                        </span>
-                      </label>
-                      <div className="h-12 relative rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-500/20 flex items-center transition-all">
-                        <input
-                          type="text"
-                          name="email"
-                          autoComplete="email"
-                          autoCapitalize="none"
-                          spellCheck={false}
-                          required
-                          maxLength={60}
-                          value={vleEmail}
-                          onChange={(e) => setVleEmail(e.target.value.slice(0, 60))}
-                          placeholder="name@example.com"
-                          className="w-full h-full px-3.5 sm:px-4 bg-transparent text-white text-sm focus:outline-none placeholder:text-zinc-500 min-w-0"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-500">{vleOtpDeliveryMessage || 'A verification code will be sent to your Gmail.'}</p>
-                  {vleAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{vleAuthError}</p>}
-                  <button
-                    type="submit"
-                    disabled={isVleAuthBusy}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-purple-600 hover:from-emerald-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-purple-900/30 text-sm flex items-center justify-center gap-2 hover:-translate-y-0.5 active:translate-y-0 transition-all cursor-pointer"
-                  >
-                    <Lock className="w-4 h-4" />
-                    <span>{isVleAuthBusy ? 'Sending code…' : 'Send Verification Code & Login'}</span>
-                  </button>
-
-                  <GoogleSignInButton
-                    onCredential={handleVleGoogleCredential}
-                    disabled={isVleAuthBusy}
+              <div className="space-y-4 relative z-10">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">CSC / Operator ID</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={25}
+                    value={vleId}
+                    onChange={(e) => setVleId(e.target.value.slice(0, 25))}
+                    placeholder="CSC ID"
+                    className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
-                </form>
-              ) : (
-                <form id="vle-otp-verify-form" onSubmit={async (e) => {
-                  e.preventDefault();
-                  if (isVleAuthBusy) return;
-                  setVleAuthError('');
-                  if (vleMobileOtpCode.length !== 4) {
-                    setVleAuthError('');
-                    return;
-                  }
-                  const missingVleVerifyFields = collectMissingFields([
-                    { label: 'CSC / Operator ID', ok: isNonEmpty(vleId) },
-                    { label: 'Operator Name', ok: isNonEmpty(vleName) },
-                    { label: '10-Digit Mobile Number', ok: isValidMobile(vlePhone) },
-                    { label: 'Account Gmail', ok: isValidEmail(vleEmail) },
-                  ]);
-                  if (missingVleVerifyFields.length > 0) {
-                    setVleAuthError(requiredFieldsMessage(missingVleVerifyFields));
-                    return;
-                  }
-                  if (vleVerifyLockRef.current) return;
-                  vleVerifyLockRef.current = true;
-                  setIsVleAuthBusy(true);
-                  try {
-                    const verifyResponse = await fetchWithRetry('/api/auth/verify-otp', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ target: vlePhone, code: vleMobileOtpCode })
-                    });
-                    const verifyData = await parseJsonResponse(verifyResponse);
-                    if (!verifyResponse.ok || !verifyData.verified) {
-                      throw new Error(verifyData.error || 'Invalid OTP. Please check the code and try again.');
-                    }
-                    if (!verifyData.verificationToken) {
-                      throw new Error('OTP verification expired. Request a new code.');
-                    }
-                    // Retain login permanently in backend (Zero Data Retention is NOT for logins)
-                    const loginResponse = await fetchWithRetry('/api/vle/login', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        cscId: vleId,
-                        name: vleName,
-                        phone: vlePhone,
-                        email: vleEmail,
-                        state: vleState,
-                        district: vleDistrict,
-                        city: vleCity,
-                        verificationToken: verifyData.verificationToken
-                      })
-                    });
-                    const loginData = await parseJsonResponse(loginResponse);
-                    if (!loginResponse.ok || !loginData.success) {
-                      throw new Error(loginData.error || 'Operator login failed. Please try again.');
-                    }
-                    // Prefer the saved server profile, so saved details always show
-                    // up even on a fresh browser/device.
-                    const savedAccount = loginData.user || {};
-                    const savedOperator = loginData.operator || {};
-                    const resolvedName = String(savedAccount.name || savedOperator.name || vleName || '').trim();
-                    const resolvedCenter = String(savedAccount.centerName || savedOperator.centerName || vleCenterName || '').trim();
-                    const resolvedCsc = String(savedAccount.cscId || savedOperator.cscId || vleId || '').trim();
-                    const resolvedPhone = String(savedAccount.phone || savedOperator.phone || vlePhone || '').replace(/\D/g, '').slice(-10);
-                    const resolvedEmail = String(savedAccount.email || savedOperator.email || vleEmail || '').trim().toLowerCase();
-                    const accountState = String(savedAccount.state || savedOperator.state || vleState || '').trim();
-                    const rawAccountDistrict = String(savedAccount.district || savedOperator.district || vleDistrict || '').trim();
-                    const accountDistrict = sameAsStateValue(rawAccountDistrict, accountState) ? '' : rawAccountDistrict;
-                    const rawAccountCity = String(savedAccount.city || savedOperator.city || vleCity || '').trim();
-                    const accountCity = sameAsStateValue(rawAccountCity, accountState) ? '' : rawAccountCity;
-                    const accountPhoto = String(savedAccount.photoUrl || savedOperator.photoUrl || '').trim();
-                    const savedPricing = savedOperator.pricingList;
-
-                    if (resolvedName) setVleName(resolvedName);
-                    if (resolvedCenter) setVleCenterName(resolvedCenter);
-                    if (resolvedCsc) setVleId(resolvedCsc);
-                    if (resolvedPhone) setVlePhone(resolvedPhone);
-                    if (resolvedEmail) setVleEmail(resolvedEmail);
-                    if (accountState) setVleState(accountState);
-                    if (accountDistrict) setVleDistrict(accountDistrict);
-                    if (accountCity) setVleCity(accountCity);
-                    if (Array.isArray(savedPricing) && savedPricing.length > 0) setCustomPricingList(savedPricing);
-                    if (accountPhoto) setVlePhotoUrl(accountPhoto);
-
-                    writeStoredSession({
-                      role: 'vle',
-                      loggedInAt: Date.now()
-                    });
-                    setIsVleLoggedIn(true);
-                    setActiveRole('vle');
-                    setPendingRole('vle');
-                    setLegalAccepted(false);
-                    try { localStorage.removeItem(LEGAL_ACCEPTED_KEY); } catch {}
-                    setShowLegalModal(true);
-                  } catch (error) {
-                    setVleAuthError(error instanceof Error ? error.message : 'Verification failed. Please try again.');
-                  } finally {
-                    vleVerifyLockRef.current = false;
-                    setIsVleAuthBusy(false);
-                  }
-                }} className="space-y-4 relative z-10">
-                  <div className="flex items-center justify-between pb-1">
-                    <span className="text-[11px] text-slate-400 font-semibold">{t('Enter the 4-digit code sent to your Gmail:', 'Gmail पर भेजा गया 4 अंकों का कोड दर्ज करें:')}</span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[10px] uppercase font-bold text-emerald-400">Gmail OTP</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      maxLength={4}
-                      required
-                      autoFocus
-                      autoComplete="one-time-code"
-                      value={vleMobileOtpCode}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                        setVleMobileOtpCode(val);
-                      }}
-                      placeholder="• • • •"
-                      className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-center text-lg font-black tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
-                    />
-                  </div>
-
-                  <p className="text-xs text-slate-400">The code was sent to {vleEmail}.</p>
-                  {vleAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{vleAuthError}</p>}
-                  <button
-                    type="submit"
-                    disabled={isVleAuthBusy || vleMobileOtpCode.length !== 4}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-purple-600 text-white font-black text-sm hover:shadow-xl transition-all"
-                  >
-                    {isVleAuthBusy ? t('Verifying…', 'सत्यापित हो रहा है…') : t('Verify & Enter CSC Dashboard', 'सत्यापित करें और CSC डैशबोर्ड खोलें')}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVleOtpSent(false);
-                      setVleMobileOtpCode('');
-                      setVleAuthError('');
-                    }}
-                    className="w-full text-center text-xs text-zinc-400 hover:text-emerald-300 transition-colors pt-1"
-                  >
-                    ← Edit Details / Resend Code
-                  </button>
-                </form>
-              )}
+                </div>
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  Google Gmail verify karne ke baad aapka saved profile apne aap load ho jayega. Naam aur mobile number dobara likhne ki zarurat nahi.
+                </p>
+                {vleAuthError && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300">{vleAuthError}</p>}
+                <GoogleSignInButton
+                  onCredential={handleVleGoogleCredential}
+                  disabled={isVleAuthBusy || !isNonEmpty(vleId)}
+                />
+                {isVleAuthBusy && (
+                  <p className="text-center text-xs text-purple-300 font-semibold">Gmail verify karke dashboard khol rahe hain…</p>
+                )}
+              </div>
 
               <div className="pt-2 text-center relative z-10">
                 <button

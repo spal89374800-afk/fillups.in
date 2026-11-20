@@ -73,24 +73,27 @@ function dedupeOrders(): VleOrder[] {
 }
 
 vleRouter.post('/vle/login', (req, res) => {
-  const { cscId, phone, email } = req.body;
+  // Returning operators log in with CSC ID + verified Gmail only. Name, mobile
+  // and location are already stored on the account and are never re-entered.
+  const { cscId, email } = req.body;
   const normalizedCscId = String(cscId || '').trim().toLowerCase();
-  const normalizedPhone = String(phone || '').replace(/\D/g, '').slice(-10);
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const registeredAccount = userAccountsStore.find(account =>
     account.role === 'vle' &&
     account.cscId?.trim().toLowerCase() === normalizedCscId &&
-    account.phone.replace(/\D/g, '').slice(-10) === normalizedPhone &&
-    account.email.trim().toLowerCase() === normalizedEmail
+    String(account.email || '').trim().toLowerCase() === normalizedEmail
   );
   if (!registeredAccount) {
-    return res.status(403).json({ success: false, error: 'No registered operator account matches this CSC ID, phone, and Gmail. Register first or check your details.' });
+    return res.status(403).json({ success: false, error: 'CSC ID aur Gmail registered account se match nahi kiye. Pehle register karein ya details check karein.' });
   }
   if (isAccountBlocked(registeredAccount)) {
     return res.status(403).json(accountBlockedPayload(registeredAccount));
   }
-  if (!consumeOtpVerification(phone, req.body.verificationToken, 'vle', email)) {
-    return res.status(401).json({ success: false, error: 'Verify the OTP sent to this phone and email before logging in.' });
+  // The Google grant is bound to the saved mobile from registration, so the
+  // operator no longer has to type it on every login.
+  const savedPhone = String(registeredAccount.phone || '').replace(/\D/g, '').slice(-10);
+  if (!consumeOtpVerification(savedPhone, req.body.verificationToken, 'vle', normalizedEmail)) {
+    return res.status(401).json({ success: false, error: 'Google verification expire ho gayi. Dobara Gmail se login karein.' });
   }
   registeredAccount.lastLoginAt = new Date().toISOString();
   void persistToMongo('userAccount', registeredAccount);

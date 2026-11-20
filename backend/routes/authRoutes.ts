@@ -386,14 +386,29 @@ authRouter.post('/auth/google', async (req, res) => {
 
     // Phone is only saved (never verified by SMS), exactly like the OTP flow.
     // Google verifies the email; the mobile number stays a stored detail.
+    // Returning VLEs send only CSC ID + Google credential, so resolve the saved
+    // mobile from their registered account instead of asking for it again.
     const enteredDigits = String(req.body?.target || '').replace(/\D/g, '');
-    const phone = enteredDigits.length === 12 && enteredDigits.startsWith('91')
+    let phone = enteredDigits.length === 12 && enteredDigits.startsWith('91')
       ? enteredDigits.slice(2)
       : enteredDigits;
+    let cscAccount: (typeof userAccountsStore)[number] | undefined;
+    if (!/^[6-9]\d{9}$/.test(phone) && userRole === 'vle') {
+      const cscId = String(req.body?.cscId || '').trim().toLowerCase();
+      cscAccount = cscId
+        ? userAccountsStore.find(account =>
+            account.role === 'vle' &&
+            String(account.cscId || '').trim().toLowerCase() === cscId
+          )
+        : undefined;
+      if (cscAccount) {
+        phone = String(cscAccount.phone || '').replace(/\D/g, '').slice(-10);
+      }
+    }
     if (!/^[6-9]\d{9}$/.test(phone)) {
       return res.status(400).json({
         success: false,
-        error: 'Enter a valid 10-digit Indian mobile number before continuing with Google.'
+        error: 'CSC ID aur saved mobile number nahi mila. Pehle operator register karein.'
       });
     }
 
@@ -411,6 +426,13 @@ authRouter.post('/auth/google', async (req, res) => {
     registerOtpVerify({ phone, ip: clientIp });
 
     const { email, name, picture } = await verifyGoogleCredential(credential, clientId);
+    if (userRole === 'vle' && cscAccount &&
+        normalizeEmail(cscAccount.email) !== normalizeEmail(email)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Yeh Gmail is CSC ID ke registered account se match nahi karta.'
+      });
+    }
     const blockedForGoogle = blockedIdentityResponse({ email, phone, role: userRole });
     if (blockedForGoogle) return res.status(403).json(blockedForGoogle);
 
