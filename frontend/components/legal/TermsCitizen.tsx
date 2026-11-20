@@ -38,7 +38,7 @@ export default function TermsCitizen({ onBack, language = 'EN' }: TermsCitizenPr
             </div>
           </div>
           <p className="text-slate-300 leading-relaxed">
-            Please read these Terms and Conditions carefully before using the FILLUP platform as a Citizen.
+            Please read these Terms and Conditions carefully before using the fillupo.in platform as a Citizen.
           </p>
         </div>
 
@@ -49,7 +49,7 @@ export default function TermsCitizen({ onBack, language = 'EN' }: TermsCitizenPr
               1. Platform Nature
             </h2>
             <div className="space-y-3 text-slate-300 leading-relaxed">
-              <p>FILLUP | Digital Jan Seva Kendra is an independent digital assistant platform and is NOT a government portal, website, or entity. We do not represent any government department or authority. The platform acts only as a facilitator connecting citizens with registered Jan Seva Kendra Operators and Form Filler Experts.</p>
+              <p>fillupo.in | Digital Jan Seva Kendra is an independent digital assistant platform and is NOT a government portal, website, or entity. We do not represent any government department or authority. The platform acts only as a facilitator connecting citizens with registered Jan Seva Kendra Operators and Form Filler Experts.</p>
             </div>
           </section>
 
@@ -85,7 +85,7 @@ export default function TermsCitizen({ onBack, language = 'EN' }: TermsCitizenPr
                 <li>You must review and approve the photo proof uploaded by the operator before making payment.</li>
                 <li>Payments are confirmed manually by respective parties. The platform does not use automated payment gateway webhooks.</li>
                 <li>Order is marked as paid only after all three legs are confirmed. Submitting UTR alone does not confirm payment.</li>
-                <li>You agree not to make any payment directly to the operator/form filler outside the platform. Any such direct payment is done at your own risk and FILLUP shall not be responsible for it.</li>
+                <li>You agree not to make any payment directly to the operator/form filler outside the platform. Any such direct payment is done at your own risk and fillupo.in shall not be responsible for it.</li>
               </ul>
             </div>
           </section>
@@ -99,7 +99,7 @@ export default function TermsCitizen({ onBack, language = 'EN' }: TermsCitizenPr
               <ul className="list-disc list-inside space-y-2 ml-4">
                 <li>Documents uploaded for service processing are subject to automatic deletion after 24 hours.</li>
                 <li>You are responsible for ensuring you have the rights to upload any document you share on the platform.</li>
-                <li>FILLUP does not guarantee the storage of documents beyond the retention period.</li>
+                <li>fillupo.in does not guarantee the storage of documents beyond the retention period.</li>
               </ul>
             </div>
           </section>
@@ -111,11 +111,11 @@ export default function TermsCitizen({ onBack, language = 'EN' }: TermsCitizenPr
             </h2>
             <div className="space-y-3 text-slate-300 leading-relaxed">
               <ul className="list-disc list-inside space-y-2 ml-4">
-                <li>FILLUP is only a facilitator. Approval/rejection of any application is at the sole discretion of the concerned government authority.</li>
-                <li>FILLUP does not guarantee approval, timeline or outcome of any form/application.</li>
+                <li>fillupo.in is only a facilitator. Approval/rejection of any application is at the sole discretion of the concerned government authority.</li>
+                <li>fillupo.in does not guarantee approval, timeline or outcome of any form/application.</li>
                 <li>Government fees, rules, eligibility and requirements may change without notice.</li>
-                <li>FILLUP shall not be liable for any loss, delay, rejection or damage arising from incorrect details provided by you, technical issues, or acts of government authorities.</li>
-                <li>In no event shall FILLUP be liable for any indirect, incidental, special or consequential damages.</li>
+                <li>fillupo.in shall not be liable for any loss, delay, rejection or damage arising from incorrect details provided by you, technical issues, or acts of government authorities.</li>
+                <li>In no event shall fillupo.in be liable for any indirect, incidental, special or consequential damages.</li>
               </ul>
             </div>
           </section>
@@ -174,7 +174,7 @@ export default function TermsCitizen({ onBack, language = 'EN' }: TermsCitizenPr
 
           <div className="p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl text-center">
             <p className="text-cyan-200 font-medium">
-              By using the FILLUP platform as a Citizen, you acknowledge that you have read, understood, and agree to be bound by these Terms & Conditions.
+              By using the fillupo.in platform as a Citizen, you acknowledge that you have read, understood, and agree to be bound by these Terms & Conditions.
             </p>
           </div>
         </div>

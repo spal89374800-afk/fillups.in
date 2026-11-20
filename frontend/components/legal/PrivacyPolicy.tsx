@@ -38,7 +38,7 @@ export default function PrivacyPolicy({ onBack, language = 'EN' }: PrivacyPolicy
             </div>
           </div>
           <p className="text-slate-300 leading-relaxed">
-            This Privacy Policy explains how FILLUP collects, uses and protects your information.
+            This Privacy Policy explains how fillupo.in collects, uses and protects your information.
           </p>
         </div>
 
@@ -107,14 +107,94 @@ export default function PrivacyPolicy({ onBack, language = 'EN' }: PrivacyPolicy
             <h2 className="text-xl font-bold text-white mb-4">5. Your Rights & Contact</h2>
             <div className="space-y-3 text-slate-300 leading-relaxed">
               <p>You may contact us regarding your data or privacy concerns:</p>
-              <p><strong className="text-white">Email:</strong> supportfillup.in@gmail.com</p>
-              <p className="text-sm text-slate-400">We aim to respond to all support and privacy requests within 24–48 hours.</p>
+              <p className="font-semibold text-white">{'Grievance Redressal & Contact'}</p>
+              <p>Under Indian IT and E-Commerce Rules, any complaint regarding your personal data or privacy will be acknowledged within 24–48 hours. We will make every reasonable effort to resolve the issue at the earliest (typically within 7–15 days) and no later than 30 days from the date of receipt.</p>
+              <ul className="list-disc list-inside space-y-2 ml-4">
+                <li>
+                  <strong className="text-white">{'Platform:'}</strong>{' '}
+                  <a href="https://fillupo.in" target="_blank" rel="noreferrer" className="text-cyan-300 hover:text-cyan-200 underline">https://fillupo.in</a>
+                </li>
+                <li>
+                  <strong className="text-white">{'Grievance & Support Email:'}</strong>{' '}
+                  <a href="mailto:supportfillupo.in@gmail.com" className="text-cyan-300 hover:text-cyan-200 underline">supportfillupo.in@gmail.com</a>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <section className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/[0.08] p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-cyan-400" />
+              6. Live Screen Sharing & Call Privacy
+            </h2>
+            <div className="space-y-3 text-slate-300 leading-relaxed">
+              <p>fillupo.in uses real-time screen sharing and in-built voice/chat features solely to let you verify your application live. Live screen sessions are not recorded or stored on our servers once the session ends.</p>
+            </div>
+          </section>
+
+          <section className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/[0.08] p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Shield className="w-5 h-5 text-cyan-400" />
+              7. 7-Day Chat Auto-Deletion
+            </h2>
+            <div className="space-y-3 text-slate-300 leading-relaxed">
+              <p>Along with the 24-hour automatic deletion of uploaded documents, all in-built chat messages exchanged between you and the operator are permanently and automatically deleted after 7 days of order completion (unless temporarily retained to resolve an active payment or fraud dispute).</p>
+            </div>
+          </section>
+
+          <section className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/[0.08] p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Shield className="w-5 h-5 text-cyan-400" />
+              8. Minors' Data Protection (DPDP Act)
+            </h2>
+            <div className="space-y-3 text-slate-300 leading-relaxed">
+              <p>We do not knowingly collect or process personal documents of individuals under 18 years of age without the verifiable consent and supervision of a parent or legal guardian, in compliance with India's Digital Personal Data Protection (DPDP) Act.</p>
+            </div>
+          </section>
+
+          <section className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/[0.08] p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Lock className="w-5 h-5 text-cyan-400" />
+              9. Data Security & Breach Notification
+            </h2>
+            <div className="space-y-3 text-slate-300 leading-relaxed">
+              <p>fillupo.in uses SSL encryption and strict access controls to protect your uploaded documents during the 24-hour active window. In the unlikely event of any unauthorized data breach, we will notify affected users and the Data Protection Board of India promptly in accordance with the DPDP Act.</p>
+            </div>
+          </section>
+
+          <section className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/[0.08] p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Lock className="w-5 h-5 text-cyan-400" />
+              10. Secure Cloud Storage & Essential Cookies
+            </h2>
+            <div className="space-y-3 text-slate-300 leading-relaxed">
+              <p>All user information, live session data, and temporary documents are processed and stored securely on encrypted cloud servers under strict confidentiality agreements. fillupo.in uses only strictly necessary session cookies to keep your login and live dashboard functioning securely.</p>
+            </div>
+          </section>
+
+          <section className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/[0.08] p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-400" />
+              11. Legal Disclosure
+            </h2>
+            <div className="space-y-3 text-slate-300 leading-relaxed">
+              <p>Aside from the assigned operator and the official government portal where you instruct us to apply, your information may be disclosed to law enforcement or cybercrime authorities strictly if required by Indian law or in cases of payment fraud/forged document submission.</p>
+            </div>
+          </section>
+
+          <section className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/[0.08] p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-cyan-400" />
+              12. Your Rights Under Indian Data Law (DPDP Act)
+            </h2>
+            <div className="space-y-3 text-slate-300 leading-relaxed">
+              <p>As a Citizen, you have the right to access a summary of your data, request correction of inaccurate details, withdraw your consent, or request permanent deletion of your account at any time.</p>
             </div>
           </section>
 
           <div className="p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl text-center">
             <p className="text-cyan-200 font-medium">
-              By using the FILLUP platform, you consent to this Privacy Policy.
+              By using the fillupo.in platform, you consent to this Privacy Policy.
             </p>
           </div>
         </div>

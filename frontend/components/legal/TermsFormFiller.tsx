@@ -38,7 +38,7 @@ export default function TermsFormFiller({ onBack, language = 'EN' }: TermsFormFi
             </div>
           </div>
           <p className="text-slate-300 leading-relaxed">
-            Please read these Terms and Conditions carefully before using the FILLUP platform as a Form Filler Expert.
+            Please read these Terms and Conditions carefully before using the fillupo.in platform as a Form Filler Expert.
           </p>
         </div>
 
@@ -52,7 +52,7 @@ export default function TermsFormFiller({ onBack, language = 'EN' }: TermsFormFi
               <ul className="list-disc list-inside space-y-2 ml-4">
                 <li>You must register with accurate details and provide valid information.</li>
                 <li>Your account is for your authorized use only. Sharing of account is strictly prohibited.</li>
-                <li>FILLUP reserves the right to verify and suspend accounts on finding false details.</li>
+                <li>fillupo.in reserves the right to verify and suspend accounts on finding false details.</li>
               </ul>
             </div>
           </section>
@@ -67,7 +67,7 @@ export default function TermsFormFiller({ onBack, language = 'EN' }: TermsFormFi
                 <li>You may only fill forms that are allowed on the platform. Do not fill unauthorized forms.</li>
                 <li>When filling forms, you must fill all details strictly as per the original documents provided by the citizen. You must only use information available in the documents - do not guess, assume, add or alter details.</li>
                 <li>It is mandatory to fill the form by referring to the documents. Ensuring accuracy by checking the documents is your sole responsibility.</li>
-                <li>If the application is rejected, requires correction or any issue arises due to an incorrect entry made by you while filling the form, the entire responsibility for such error shall rest with you. FILLUP platform shall have no legal, financial or any other liability in this regard.</li>
+                <li>If the application is rejected, requires correction or any issue arises due to an incorrect entry made by you while filling the form, the entire responsibility for such error shall rest with you. fillupo.in platform shall have no legal, financial or any other liability in this regard.</li>
                 <li>You must upload clear photo proof of the filled form before requesting payment approval.</li>
                 <li>You must not make false promises like "100% approval guaranteed" or similar claims.</li>
                 <li>You must follow all applicable government portal rules while submitting forms.</li>
@@ -113,8 +113,8 @@ export default function TermsFormFiller({ onBack, language = 'EN' }: TermsFormFi
             <div className="space-y-3 text-slate-300 leading-relaxed">
               <ul className="list-disc list-inside space-y-2 ml-4">
                 <li>Violation of these terms may result in warning, suspension or permanent termination of your account.</li>
-                <li>You shall indemnify and hold FILLUP harmless from any claims, losses or damages arising due to your negligence, incorrect entries, misconduct or violation of these terms.</li>
-                <li>FILLUP shall not be responsible for any loss arising out of your actions or services provided by you.</li>
+                <li>You shall indemnify and hold fillupo.in harmless from any claims, losses or damages arising due to your negligence, incorrect entries, misconduct or violation of these terms.</li>
+                <li>fillupo.in shall not be responsible for any loss arising out of your actions or services provided by you.</li>
               </ul>
             </div>
           </section>
@@ -128,7 +128,7 @@ export default function TermsFormFiller({ onBack, language = 'EN' }: TermsFormFi
 
           <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center">
             <p className="text-emerald-200 font-medium">
-              By using the FILLUP platform as a Form Filler Expert, you acknowledge that you have read, understood, and agree to be bound by these Terms & Conditions.
+              By using the fillupo.in platform as a Form Filler Expert, you acknowledge that you have read, understood, and agree to be bound by these Terms & Conditions.
             </p>
           </div>
         </div>
