@@ -235,6 +235,29 @@ export default function TermsFormFiller({ onBack, language = 'EN' }: TermsFormFi
             </div>
           </section>
 
+          <section className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/[0.08] p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-400" />
+              12. Additional Form Expert Restrictions
+            </h2>
+            <div className="space-y-3 text-slate-300 leading-relaxed">
+              <ul className="list-disc list-inside space-y-2 ml-4">
+                <li>
+                  <strong className="text-white">{'Single User & No Account Sharing:'}</strong> Your Form Expert account on fillupo.in is strictly personal. Sharing your login credentials or allowing any friend or third party to fill forms using your account is strictly prohibited and will lead to an immediate permanent ban.
+                </li>
+                <li>
+                  <strong className="text-white">{'Secure Network Requirement:'}</strong> You must process citizen applications only from your personal laptop/computer using a secure private internet connection (personal hotspot or home broadband). Using public Wi-Fi or shared public computers for citizen form filling is strictly forbidden.
+                </li>
+                <li>
+                  <strong className="text-white">{'Restriction on CSC / State Certificates:'}</strong> Form Experts without authorized government CSC/e-District credentials must not attempt to process or solicit state-specific government certificates (such as Income, Caste, or Domicile certificates), which are strictly reserved for verified Jan Seva Kendras.
+                </li>
+                <li>
+                  <strong className="text-white">{'Prohibition of False Cancellations & Abandonment:'}</strong> Accepting an order and then abandoning the citizen midway or selecting "Official Server Down" falsely when the portal is actually working will result in penalty points and permanent account suspension.
+                </li>
+              </ul>
+            </div>
+          </section>
+
           <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center">
             <p className="text-emerald-200 font-medium">
               By using the fillupo.in platform as a Form Filler Expert, you acknowledge that you have read, understood, and agree to be bound by these Terms & Conditions.
