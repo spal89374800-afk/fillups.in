@@ -16002,11 +16002,11 @@ export default function App() {
             {/* Contact Info */}
             <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
               <a
-                href="mailto:supportfillup.in@gmail.com"
+                href="mailto:supportfillupo.in@gmail.com"
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all"
               >
                 <Mail className="w-3.5 h-3.5 text-cyan-400" />
-                <span>supportfillup.in@gmail.com</span>
+                <span>supportfillupo.in@gmail.com</span>
               </a>
             </div>
           </div>
