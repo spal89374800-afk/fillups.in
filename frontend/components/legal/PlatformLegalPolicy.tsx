@@ -92,10 +92,18 @@ const SECTIONS: Array<{ no: number; title: string; points: string[] }> = [
       'Tax & Statutory Compliance: Independent operators (Jan Seva Kendras and students) are solely responsible for reporting their earnings and paying any applicable Income Tax or GST on their 83% service revenue. fillupo.in is accountable only for tax compliance on its 17% platform commission.',
       'No Guarantee of Order Volume: fillupo.in does not guarantee a fixed number of daily or monthly orders to any registered operator. Order allocation depends entirely on real-time citizen demand, location matching, and first-come-first-served acceptance.'
     ]
+  },
+  {
+    no: 11,
+    title: 'Protection Against False UPI Chargebacks & Entire Agreement',
+    points: [
+      'Prohibition of False UPI Chargebacks / Bank Disputes: Users are strictly prohibited from raising false UPI chargebacks, bank reversals, or cyber complaints after their form/service has been genuinely processed on fillupo.in. Any fraudulent payment reversal claim will be treated as digital fraud, resulting in permanent account blacklisting, submission of live session/receipt proofs to the bank/NPCI, and legal recovery action.',
+      'Entire Agreement: These Terms & Legal Policies constitute the complete and entire agreement between you and fillupo.in, superseding any prior verbal discussions, WhatsApp messages, or informal understandings.'
+    ]
   }
 ];
 
-const SECTION_ICONS = [FileText, Shield, CreditCard, Lock, AlertCircle, Gavel, Gavel, Shield, Shield, Shield];
+const SECTION_ICONS = [FileText, Shield, CreditCard, Lock, AlertCircle, Gavel, Gavel, Shield, Shield, Shield, Shield];
 
 export default function PlatformLegalPolicy({ onBack, language = 'EN' }: PlatformLegalPolicyProps) {
   const tr = (en: string, hi: string) => (language === 'HI' ? hi : en);
