@@ -297,7 +297,7 @@ function buildEntries(): Map<string, CatalogEntry> {
       const entry = getEntry(entries, name);
       addName(entry, name);
       addScope(entry, item.scope || 'online_form', name);
-      addPrice(entry, item.price, item.govtFee, '');
+      addPrice(entry, money(item.govtFee) + money(item.price), item.govtFee, item.price);
       addRequirement(entry, item.requirements);
       if (item.icon) entry.icon = item.icon;
       addOperator(entry, {

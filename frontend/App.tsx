@@ -11532,7 +11532,7 @@ export default function App() {
                             <input type="number" value={item.cscFee || ''} onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, cscFee: e.target.value } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                          </div>
                          <div className="space-y-1 col-span-2">
-                            <span className="text-[10px] text-indigo-400 font-bold">Shulka Name (Fee Description)</span>
+                            <span className="text-[10px] text-indigo-400 font-bold">{t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')}</span>
                             <input type="text" value={item.feeName || ''} onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, feeName: e.target.value } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                          </div>
                          <div className="space-y-1 col-span-2">
@@ -11577,7 +11577,7 @@ export default function App() {
                   <h4 className="text-xs font-bold text-slate-300">Add New Service</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <input type="text" placeholder="Service Name" value={newDocName} onChange={(e) => setNewDocName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
-                    <input type="text" placeholder="Fee Name (Shulka)" value={newDocFeeName} onChange={(e) => setNewDocFeeName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
+                    <input type="text" placeholder={t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')} value={newDocFeeName} onChange={(e) => setNewDocFeeName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
                     <input type="number" placeholder="Govt Fee" value={newDocGovtFee} onChange={(e) => setNewDocGovtFee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
                     <input type="number" placeholder="Service Fee (CSC)" value={newDocCscFee} onChange={(e) => setNewDocCscFee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
                     <select value={newDocScope} onChange={(e) => setNewDocScope(e.target.value as any)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white">
@@ -11648,17 +11648,20 @@ export default function App() {
                     <div key={item.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3 hover:border-emerald-500/30 transition-all shadow-inner overflow-hidden">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0 space-y-1">
-                          <span className="text-[10px] text-emerald-400 font-bold">Form Name</span>
+                          <span className="text-[10px] text-emerald-400 font-bold">{t('Form / Service Name', 'फॉर्म / सेवा का नाम')}</span>
                           <input
                             type="text"
                             value={item.docName}
                             onChange={(e) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, docName: e.target.value } : p))}
                             className="w-full bg-transparent text-sm font-bold text-white focus:outline-none focus:border-b border-slate-700 pb-0.5"
                           />
+                          <p className="text-[10px] text-slate-500 truncate">
+                            {t('Operator (auto):', 'ऑपरेटर (auto):')} {item.expertName || vleCenterName || vleName}
+                          </p>
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="space-y-1">
-                             <span className="text-[10px] text-emerald-400 font-bold block">Price (₹)</span>
+                             <span className="text-[10px] text-emerald-400 font-bold block">{t('Service Fee (₹)', 'सेवा शुल्क (₹)')}</span>
                              <input
                                type="number"
                                value={item.price}
@@ -11675,7 +11678,7 @@ export default function App() {
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[10px] text-emerald-400 font-bold">Fee Name (e.g. Govt Fee, Commission)</span>
+                        <span className="text-[10px] text-emerald-400 font-bold">{t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')}</span>
                         <input
                           type="text"
                           value={item.feeName || ''}
@@ -11726,7 +11729,7 @@ export default function App() {
                         </select>
                       </div>
                       <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] text-emerald-200">
-                        Total citizen pays = this fee. Admin fee (17%) is carved out; you keep 83%.
+                        Total citizen pays = Govt Fee + Service Fee. Admin fee (17%) is carved out of the service fee; you keep 83%.
                       </div>
                       <GovtFeeCategoryFields
                         value={item.govtFeeByCategory}
@@ -11756,9 +11759,9 @@ export default function App() {
                     <span>{t('Add New Form Filling Service', 'नई फॉर्म फिलिंग सेवा जोड़ें')}</span>
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <input type="text" placeholder="Exam Name" value={newDocName} onChange={(e) => setNewDocName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />
-                    <input type="text" placeholder="Shulka Name (Fee Desc)" value={newDocFeeName} onChange={(e) => setNewDocFeeName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />
-                    <input type="number" placeholder="Fee (₹)" value={newDocPrice} onChange={(e) => setNewDocPrice(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none" />
+                    <input type="text" placeholder={t('Form / Service Name', 'फॉर्म / सेवा का नाम')} value={newDocName} onChange={(e) => setNewDocName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />
+                    <input type="text" placeholder={t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')} value={newDocFeeName} onChange={(e) => setNewDocFeeName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />
+                    <input type="number" placeholder={t('Service Fee (₹)', 'सेवा शुल्क (₹)')} value={newDocPrice} onChange={(e) => setNewDocPrice(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none" />
                     <input type="number" placeholder="Govt Fee (₹)" value={newVleFormGovtFee} onChange={(e) => setNewVleFormGovtFee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none" />
                     <StateSelect
                       value={newVleFormState}
@@ -11769,10 +11772,21 @@ export default function App() {
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 pr-9 py-2 text-xs text-white outline-none"
                     />
                     <select value={newFormScope} onChange={(e) => setNewFormScope(e.target.value as any)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none">
-                      <option value="online_form">Online Form — all Jan Seva + Form Fillers</option>
+                      <option value="online_form">{t('Default — Online Form (all Jan Seva + Form Fillers)', 'डिफ़ॉल्ट — ऑनलाइन फॉर्म (सभी जन सेवा + फॉर्म फिलर)')}</option>
                       <option value="national">National — all India Jan Seva</option>
                       <option value="district">District — only my district</option>
                     </select>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <p className="text-[10px] text-slate-500 truncate">
+                      {t('Operator (auto):', 'ऑपरेटर (auto):')} {vleCenterName || vleName}
+                    </p>
+                    <p className="text-[10px] text-emerald-300">
+                      {t('Total citizen pays', 'कुल भुगतान')}: ₹{(Number(newDocPrice) || 0) + (Number(newVleFormGovtFee) || 0)}
+                    </p>
+                    <p className="text-[10px] text-slate-500 sm:col-span-2">
+                      {t('Default option: citizen Apply Now par form-filling section me yahi form preselect hoga.', 'डिफ़ॉल्ट विकल्प: नागरिक Apply Now दबाएगा तो form-filling section me yahi form preselect होगा.')}
+                    </p>
                   </div>
                   <input type="text" placeholder="Zaroori Documents..." value={newDocRequirements} onChange={(e) => setNewDocRequirements(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />
                   <GovtFeeCategoryFields
