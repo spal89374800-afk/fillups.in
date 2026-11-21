@@ -11544,7 +11544,7 @@ export default function App() {
                             <select value={item.scope || 'district'} onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, scope: e.target.value as any } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white">
                               <option value="district">District — only my district Jan Seva</option>
                               <option value="national">National — all India Jan Seva</option>
-                              <option value="online_form">Online Form — all Jan Seva + all Form Fillers</option>
+                              <option value="online_form">Default</option>
                             </select>
                          </div>
                          <div className="col-span-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] text-emerald-200">
@@ -11583,7 +11583,7 @@ export default function App() {
                     <select value={newDocScope} onChange={(e) => setNewDocScope(e.target.value as any)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white">
                       <option value="district">District scope</option>
                       <option value="national">National scope</option>
-                      <option value="online_form">Online Form scope</option>
+                      <option value="online_form">Default</option>
                     </select>
                     <StateSelect
                       value={newDocState}
@@ -11725,7 +11725,7 @@ export default function App() {
                         <select value={item.scope || 'online_form'} onChange={(e) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, scope: e.target.value as any } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white">
                           <option value="district">District — only my district Jan Seva</option>
                           <option value="national">National — all India Jan Seva</option>
-                          <option value="online_form">Online Form — all Jan Seva + all Form Fillers</option>
+                          <option value="online_form">Default</option>
                         </select>
                       </div>
                       <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] text-emerald-200">
@@ -11772,7 +11772,7 @@ export default function App() {
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 pr-9 py-2 text-xs text-white outline-none"
                     />
                     <select value={newFormScope} onChange={(e) => setNewFormScope(e.target.value as any)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none">
-                      <option value="online_form">{t('Default — Online Form (all Jan Seva + Form Fillers)', 'डिफ़ॉल्ट — ऑनलाइन फॉर्म (सभी जन सेवा + फॉर्म फिलर)')}</option>
+                      <option value="online_form">Default</option>
                       <option value="national">National — all India Jan Seva</option>
                       <option value="district">District — only my district</option>
                     </select>

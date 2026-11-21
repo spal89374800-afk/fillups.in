@@ -307,7 +307,6 @@ const hindiTranslations: Record<string, string> = {
   'Fee Detail (optional — citizen ko dikhega)': 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)',
   'Operator (auto):': 'ऑपरेटर (auto):',
   'Total citizen pays': 'कुल भुगतान',
-  'Default — Online Form (all Jan Seva + Form Fillers)': 'डिफ़ॉल्ट — ऑनलाइन फॉर्म (सभी जन सेवा + फॉर्म फिलर)',
   'Default option: citizen Apply Now par form-filling section me yahi form preselect hoga.': 'डिफ़ॉल्ट विकल्प: नागरिक Apply Now दबाएगा तो form-filling section me yahi form preselect होगा.',
   'Zaroori Documents...': 'जरूरी दस्तावेज़...',
   'Form Name *': 'फॉर्म का नाम *',
