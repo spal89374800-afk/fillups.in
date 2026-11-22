@@ -1482,6 +1482,7 @@ export default function App() {
   const [newFillerRequirements, setNewFillerRequirements] = useState('');
   // "All Saved Forms Here" me card ke andar hi edit karne ke liye.
   const [editingSaved, setEditingSaved] = useState<{ kind: 'document' | 'form'; id: string } | null>(null);
+  const [addingSaved, setAddingSaved] = useState<'document' | 'form' | null>(null);
   const [savedDraft, setSavedDraft] = useState<Record<string, any> | null>(null);
   const [vleFormFillingList, setVleFormFillingList] = useState<{ id: string; docName: string; price: string; govtFee?: string; govtFeeByCategory?: GovtFeeByCategory; feeName?: string; expertName?: string; requirements?: string; icon?: string; scope?: 'district' | 'national' | 'online_form'; state?: string }[]>([]);
   const [isSavingPricing, setIsSavingPricing] = useState(false);
@@ -5923,6 +5924,7 @@ export default function App() {
   };
 
   const startEditSaved = (kind: 'document' | 'form', item: Record<string, any>) => {
+    setAddingSaved(null);
     setEditingSaved({ kind, id: item.id });
     setSavedDraft({ ...item });
   };
@@ -5930,6 +5932,53 @@ export default function App() {
   const cancelEditSaved = () => {
     setEditingSaved(null);
     setSavedDraft(null);
+  };
+
+  const startAddSaved = (kind: 'document' | 'form') => {
+    setEditingSaved(null);
+    setAddingSaved(kind);
+    setSavedDraft({ scope: kind === 'document' ? 'district' : 'online_form', state: '' });
+  };
+
+  const cancelAddSaved = () => {
+    setAddingSaved(null);
+    setSavedDraft(null);
+  };
+
+  const saveNewSaved = async () => {
+    if (!addingSaved || !savedDraft) return;
+    if (!String(savedDraft.docName || '').trim()) {
+      setVleNotificationMsg('⚠️ कृपया नाम दर्ज करें।');
+      setTimeout(() => setVleNotificationMsg(''), 4000);
+      return;
+    }
+    if (addingSaved === 'document') {
+      const item = {
+        ...savedDraft,
+        id: 'price-' + Date.now(),
+        docName: String(savedDraft.docName).trim(),
+        price: (savedDraft.govtFee || savedDraft.cscFee)
+          ? String((Number(savedDraft.govtFee) || 0) + (Number(savedDraft.cscFee) || 0))
+          : '0'
+      };
+      const next = [...customPricingList, item];
+      setCustomPricingList(next);
+      cancelAddSaved();
+      await persistSavedPricing(next, vleFormFillingList, '✅ Document service added successfully!');
+    } else {
+      const item = {
+        ...savedDraft,
+        id: 'vle-f-' + Date.now(),
+        docName: String(savedDraft.docName).trim(),
+        price: String(Number(savedDraft.price) || 0),
+        icon: '📝',
+        expertName: vleCenterName || vleName
+      };
+      const next = [...vleFormFillingList, item];
+      setVleFormFillingList(next);
+      cancelAddSaved();
+      await persistSavedPricing(customPricingList, next, '✅ Form filling service added successfully!');
+    }
   };
 
   const saveEditedSaved = async () => {
@@ -11721,11 +11770,14 @@ export default function App() {
                     fallbackFee={newDocGovtFee}
                   />
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (!newDocName) return;
                       const tot = String((Number(newDocGovtFee) || 0) + (Number(newDocCscFee) || 0));
-                      setCustomPricingList([...customPricingList, { id: Date.now().toString(), docName: newDocName, govtFee: newDocGovtFee, govtFeeByCategory: newDocGovtFeeByCategory, cscFee: newDocCscFee, price: tot, feeName: newDocFeeName, requirements: newDocRequirements, scope: newDocScope, state: newDocState }]);
+                      const next = [...customPricingList, { id: Date.now().toString(), docName: newDocName, govtFee: newDocGovtFee, govtFeeByCategory: newDocGovtFeeByCategory, cscFee: newDocCscFee, price: tot, feeName: newDocFeeName, requirements: newDocRequirements, scope: newDocScope, state: newDocState }];
+                      setCustomPricingList(next);
                       setNewDocName(''); setNewDocGovtFee(''); setNewDocGovtFeeByCategory({}); setNewDocCscFee(''); setNewDocFeeName(''); setNewDocRequirements(''); setNewDocState('');
+                      await persistSavedPricing(next, vleFormFillingList, '✅ Document service added and saved!');
+                      setVleDashboardTab('all_saved');
                     }}
                     className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
                   >
@@ -11913,10 +11965,13 @@ export default function App() {
                     fallbackFee={newVleFormGovtFee}
                   />
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (!newFillerName || !newFillerServiceFee) return;
-                      setVleFormFillingList([...vleFormFillingList, { id: 'vle-f-' + Date.now(), docName: newFillerName, price: newFillerServiceFee, govtFee: newVleFormGovtFee, govtFeeByCategory: newVleFormGovtFeeByCategory, feeName: newFillerFeeName, requirements: newFillerRequirements, icon: '📝', expertName: vleCenterName || vleName, scope: newFormScope, state: newVleFormState }]);
+                      const next = [...vleFormFillingList, { id: 'vle-f-' + Date.now(), docName: newFillerName, price: newFillerServiceFee, govtFee: newVleFormGovtFee, govtFeeByCategory: newVleFormGovtFeeByCategory, feeName: newFillerFeeName, requirements: newFillerRequirements, icon: '📝', expertName: vleCenterName || vleName, scope: newFormScope, state: newVleFormState }];
+                      setVleFormFillingList(next);
                       setNewFillerName(''); setNewFillerServiceFee(''); setNewFillerRequirements(''); setNewFillerFeeName(''); setNewVleFormGovtFee(''); setNewVleFormGovtFeeByCategory({}); setNewVleFormState('');
+                      await persistSavedPricing(customPricingList, next, '✅ Form filling service added and saved!');
+                      setVleDashboardTab('all_saved');
                     }}
                     className="w-full py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-emerald-500/30"
                   >
@@ -11927,15 +11982,34 @@ export default function App() {
 
                 <button
                   onClick={async () => {
+                    // Form me likha hua naya form bhi save karo (Add click ki zarurat nahi).
+                    let formList = [...vleFormFillingList];
+                    if (newFillerName.trim() && (newFillerServiceFee.trim() || newVleFormGovtFee.trim())) {
+                      formList = [...formList, {
+                        id: 'vle-f-' + Date.now(),
+                        docName: newFillerName.trim(),
+                        price: newFillerServiceFee.trim() || '0',
+                        govtFee: newVleFormGovtFee.trim() || '0',
+                        govtFeeByCategory: newVleFormGovtFeeByCategory,
+                        feeName: newFillerFeeName.trim(),
+                        requirements: newFillerRequirements.trim(),
+                        icon: '📝',
+                        expertName: vleCenterName || vleName,
+                        scope: newFormScope,
+                        state: newVleFormState
+                      }];
+                      setVleFormFillingList(formList);
+                    }
                     setIsSavingPricing(true);
                     try {
                       const res = await fetchWithRetry('/api/vle/pricing', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ pricingList: customPricingList, formFillingList: vleFormFillingList })
+                        body: JSON.stringify({ pricingList: customPricingList, formFillingList: formList })
                       });
                       const data = await parseJsonResponse(res).catch(() => ({}));
                       if (res.ok && data.success !== false) {
+                        setNewFillerName(''); setNewFillerServiceFee(''); setNewFillerRequirements(''); setNewFillerFeeName(''); setNewVleFormGovtFee(''); setNewVleFormGovtFeeByCategory({}); setNewVleFormState('');
                         setVleNotificationMsg('✅ Form Filling Prices saved successfully!');
                         showSaveToast('✅ Form prices saved successfully!');
                         void fetchAllData();
@@ -11979,6 +12053,14 @@ export default function App() {
                       <span>📄</span>
                       <span>{t('Saved Document Prices', 'सेव किए गए दस्तावेज़ मूल्य')} ({customPricingList.length})</span>
                     </h4>
+                    <button
+                      type="button"
+                      onClick={() => startAddSaved('document')}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-bold transition-all flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      {t('Add New Service', 'नई सेवा जोड़ें')}
+                    </button>
                   </div>
                   {customPricingList.length === 0 ? (
                     <p className="text-xs text-slate-500 p-4 rounded-2xl bg-slate-950 border border-slate-800">
@@ -11986,6 +12068,55 @@ export default function App() {
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {addingSaved === 'document' && savedDraft && (
+                        <div className="p-4 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2 sm:col-span-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="col-span-2 space-y-1">
+                              <span className="text-[10px] text-amber-300 font-bold">Service / Document Name</span>
+                              <input type="text" value={savedDraft.docName || ''} onChange={(e) => updateSavedDraft({ docName: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-sky-400 font-bold">{t('Govt Fee (₹)', 'सरकारी शुल्क (₹)')}</span>
+                              <input type="number" value={savedDraft.govtFee || ''} onChange={(e) => updateSavedDraft({ govtFee: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-amber-400 font-bold">{t('Service Charge / CSC (₹)', 'सेवा शुल्क / CSC (₹)')}</span>
+                              <input type="number" value={savedDraft.cscFee || ''} onChange={(e) => updateSavedDraft({ cscFee: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <span className="text-[10px] text-indigo-400 font-bold">{t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')}</span>
+                              <input type="text" value={savedDraft.feeName || ''} onChange={(e) => updateSavedDraft({ feeName: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <span className="text-[10px] text-slate-400 font-bold">{t('Required Documents / Description (kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (क्या क्या लगेगा)')}</span>
+                              <input type="text" value={savedDraft.requirements || ''} onChange={(e) => updateSavedDraft({ requirements: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <span className="text-[10px] text-purple-400 font-bold">Service Scope (kahan bhejna hai)</span>
+                              <select value={savedDraft.scope || 'district'} onChange={(e) => updateSavedDraft({ scope: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white">
+                                <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
+                                <option value="national">{t('National scope', 'राष्ट्रीय स्तर')}</option>
+                                <option value="district">{t('District scope', 'ज़िला स्तर')}</option>
+                              </select>
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <span className="text-[10px] text-cyan-400 font-bold">Service State / UT</span>
+                              <StateSelect value={savedDraft.state || ''} onChange={(next) => updateSavedDraft({ state: next })} options={INDIAN_STATES} emptyLabel={t('All India', 'पूरे भारत')} ariaLabel="Service State / UT" className="w-full bg-slate-900 border border-slate-800 rounded px-2 pr-8 py-1 text-xs text-white" />
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-emerald-300 font-bold">
+                            {t('Total (auto) = Govt Fee + Service Charge', 'कुल (स्वतः) = सरकारी शुल्क + सेवा शुल्क')}: ₹{(Number(savedDraft.govtFee) || 0) + (Number(savedDraft.cscFee) || 0)}
+                          </p>
+                          <div className="flex gap-2 pt-1">
+                            <button type="button" onClick={saveNewSaved} disabled={isSavingPricing} className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all">
+                              <Save className="w-3.5 h-3.5" /> {t('Save', 'सहेजें')}
+                            </button>
+                            <button type="button" onClick={cancelAddSaved} className="flex-1 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold transition-all">
+                              {t('Cancel', 'रद्द करें')}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       {customPricingList.map(item => editingSaved?.kind === 'document' && editingSaved.id === item.id && savedDraft ? (
                         <div key={item.id} className="p-4 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2">
                           <div className="grid grid-cols-2 gap-2">
@@ -12087,6 +12218,14 @@ export default function App() {
                       <span>📝</span>
                       <span>{t('Saved Form Filling Prices', 'सेव किए गए फॉर्म भरने के मूल्य')} ({vleFormFillingList.length})</span>
                     </h4>
+                    <button
+                      type="button"
+                      onClick={() => startAddSaved('form')}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold transition-all flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      {t('Add New Service', 'नई सेवा जोड़ें')}
+                    </button>
                   </div>
                   {vleFormFillingList.length === 0 ? (
                     <p className="text-xs text-slate-500 p-4 rounded-2xl bg-slate-950 border border-slate-800">
@@ -12094,6 +12233,55 @@ export default function App() {
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {addingSaved === 'form' && savedDraft && (
+                        <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-2 sm:col-span-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="col-span-2 space-y-1">
+                              <span className="text-[10px] text-emerald-300 font-bold">Form / Service Name</span>
+                              <input type="text" value={savedDraft.docName || ''} onChange={(e) => updateSavedDraft({ docName: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-emerald-400 font-bold">{t('Service Fee (₹)', 'सेवा शुल्क (₹)')}</span>
+                              <input type="number" value={savedDraft.price || ''} onChange={(e) => updateSavedDraft({ price: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-amber-400 font-bold">{t('Govt Fee (₹)', 'सरकारी शुल्क (₹)')}</span>
+                              <input type="number" value={savedDraft.govtFee || ''} onChange={(e) => updateSavedDraft({ govtFee: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <span className="text-[10px] text-indigo-400 font-bold">{t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')}</span>
+                              <input type="text" value={savedDraft.feeName || ''} onChange={(e) => updateSavedDraft({ feeName: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <span className="text-[10px] text-slate-400 font-bold">{t('Required Documents / Description (kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (क्या क्या लगेगा)')}</span>
+                              <input type="text" value={savedDraft.requirements || ''} onChange={(e) => updateSavedDraft({ requirements: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <span className="text-[10px] text-purple-400 font-bold">Service Scope (kahan bhejna hai)</span>
+                              <select value={savedDraft.scope || 'online_form'} onChange={(e) => updateSavedDraft({ scope: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white">
+                                <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
+                                <option value="national">{t('National scope', 'राष्ट्रीय स्तर')}</option>
+                                <option value="district">{t('District scope', 'ज़िला स्तर')}</option>
+                              </select>
+                            </div>
+                            <div className="col-span-2 space-y-1">
+                              <span className="text-[10px] text-cyan-400 font-bold">Service State / UT</span>
+                              <StateSelect value={savedDraft.state || ''} onChange={(next) => updateSavedDraft({ state: next })} options={INDIAN_STATES} emptyLabel={t('All India', 'पूरे भारत')} ariaLabel="Service State / UT" className="w-full bg-slate-900 border border-slate-800 rounded px-2 pr-8 py-1 text-xs text-white" />
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-emerald-300 font-bold">
+                            {t('Total citizen pays', 'कुल भुगतान')}: ₹{(Number(savedDraft.price) || 0) + (Number(savedDraft.govtFee) || 0)}
+                          </p>
+                          <div className="flex gap-2 pt-1">
+                            <button type="button" onClick={saveNewSaved} disabled={isSavingPricing} className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all">
+                              <Save className="w-3.5 h-3.5" /> {t('Save', 'सहेजें')}
+                            </button>
+                            <button type="button" onClick={cancelAddSaved} className="flex-1 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold transition-all">
+                              {t('Cancel', 'रद्द करें')}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       {vleFormFillingList.map(item => editingSaved?.kind === 'form' && editingSaved.id === item.id && savedDraft ? (
                         <div key={item.id} className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-2">
                           <div className="grid grid-cols-2 gap-2">
