@@ -352,6 +352,15 @@ async function createAndDispatchFormRequest(req: any, res: any, fallbackTitle: s
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
   }
+  newBid.chatMessages.push({
+    id: 'sys-citizen-warning-' + Date.now(),
+    sender: 'operator',
+    senderName: 'fillupo.in',
+    audience: 'client',
+    text: `🚨 Strict Payment & Session Warning\n1. No payment after proof: If proof is submitted and you do not complete payment, and there is no activity for 2 hours, your account may be auto-blocked.\n2. Fake proof / intentional non-payment: Uploading fake/edited payment proof or intentionally leaving without paying after service work may lead to account block and legal action.\n✅ Note: If the government website/server is down or there is a genuine technical issue and the operator cancels the order, your account will NOT be blocked.`,
+    textHi: `🚨 सख्त भुगतान और सेशन चेतावनी\n1. प्रूफ के बाद भुगतान नहीं: अगर प्रूफ सबमिट हो गया है और आप भुगतान नहीं करते, और 2 घंटे तक कोई एक्टिविटी नहीं मिलती, तो आपका अकाउंट ऑटो-ब्लॉक हो सकता है।\n2. फर्जी प्रूफ / जानबूझकर भुगतान न करना: फर्जी/एडिट किया हुआ पेमेंट प्रूफ अपलोड करना या सर्विस होने के बाद जानबूझकर भुगतान किए बिना छोड़ना अकाउंट ब्लॉक और कानूनी कार्रवाई का कारण बन सकता है।\n✅ नोट: अगर सरकारी वेबसाइट/सर्वर डाउन हो या कोई वास्तविक तकनीकी समस्या हो और ऑपरेटर ऑर्डर कैंसिल करे, तो आपका अकाउंट ब्लॉक नहीं होगा।`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  });
 
   // Broadcast to BOTH Form Fillers (all India) and Jan Seva Kendra network.
   const allVle = vleListStore.filter(operator => operator.role !== 'filler');

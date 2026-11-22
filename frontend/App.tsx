@@ -4722,6 +4722,7 @@ export default function App() {
     if (!msg) return;
     // Deleted message ko quote karna bekaar hai — uska content hi nahi bacha.
     if (msg.isDeleted) return;
+    if (msg.audience === 'client') return;
     const target: ChatReplyTarget = {
       id: String(msg.id || ''),
       senderName: String(msg.senderName || (msg.sender === 'operator' ? 'Operator' : 'Client')),
@@ -4744,6 +4745,7 @@ export default function App() {
   const canDeleteMessage = (msg: any) => {
     if (!msg || msg.isDeleted) return false;
     if (msg._pending || msg._failed) return false;
+    if (msg.audience === 'client') return false;
     const isMine = (activeRole === 'client' && msg.sender === 'client') ||
       (activeRole !== 'client' && msg.sender === 'operator');
     if (!isMine) return false;
@@ -13971,7 +13973,7 @@ export default function App() {
                   }}
                 >
                   {(() => {
-                    const msgs = activeWorkspaceOrder.chatMessages || [];
+                    const msgs = (activeWorkspaceOrder.chatMessages || []).filter((msg: any) => !(msg?.audience === 'client' && activeRole !== 'client'));
                     const groups: any[] = [];
                     for (let i = 0; i < msgs.length; i++) {
                       const msg = msgs[i];
@@ -13992,6 +13994,8 @@ export default function App() {
                             {group.items.map((msg: any, idx: number) => {
                               const isFirst = idx === 0;
                               const messageKey = msg.id || `${gIdx}-${idx}`;
+                              const isCitizenWarning = msg?.audience === 'client';
+                              const messageText = (lang === 'HI' && msg?.textHi) ? msg.textHi : msg.text;
                               const isVoicePlaying = voiceNotePlayback?.key === messageKey && voiceNotePlayback?.playing === true;
                               // Tick cache fallback — order refresh ke baad bhi ✓ bacha rahe.
                               const localTick = (msg.id && localTicksRef.current[msg.id]) || {};
@@ -14003,7 +14007,7 @@ export default function App() {
                               return (
                                 <div key={msg.id || `${gIdx}-${idx}`} className="group relative w-fit max-w-full">
                                   {/* 🖱️ Laptop hover ↩ — mobile par render nahi hota. */}
-                                  {supportsHoverPointer && !msg.isDeleted && (
+                                  {supportsHoverPointer && !msg.isDeleted && !isCitizenWarning && (
                                     <button
                                       type="button"
                                       onClick={() => startReplyToMessage(msg)}
@@ -14037,7 +14041,9 @@ export default function App() {
                                     }}
                                     style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none' }}
                                     className={`p-2.5 text-xs leading-relaxed w-fit max-w-full break-words select-none transition-shadow ${
-                                      isMine
+                                      isCitizenWarning
+                                        ? `bg-amber-950/70 text-amber-100 border border-amber-500/40 ${isFirst ? 'rounded-tr-2xl rounded-tl-2xl rounded-br-2xl' : 'rounded-2xl rounded-tl-md'} ${!isFirst ? '-mt-0.5' : ''}`
+                                        : isMine
                                         ? `bg-indigo-600 text-white font-medium ${isFirst ? 'rounded-tl-2xl rounded-tr-2xl rounded-bl-2xl' : 'rounded-2xl rounded-tr-md'} ${!isFirst ? '-mt-0.5' : ''}`
                                         : `bg-slate-800 text-slate-200 border border-slate-700 ${isFirst ? 'rounded-tr-2xl rounded-tl-2xl rounded-br-2xl' : 'rounded-2xl rounded-tl-md'} ${!isFirst ? '-mt-0.5' : ''}`
                                     } ${highlightedMessageId === messageKey ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900' : ''}`}
@@ -14091,7 +14097,7 @@ export default function App() {
                             </div>
                           </div>
                         ) : (
-                          msg.text
+                          <span className="whitespace-pre-wrap">{messageText}</span>
                         )}
 
                         {/* Rich Document Card inside Chat message */}

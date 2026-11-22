@@ -27,6 +27,10 @@ export interface ChatMessage {
   sender: 'client' | 'operator';
   senderName: string;
   text: string;
+  // Optional localized Hindi text for system/citizen-facing warnings.
+  textHi?: string;
+  // Optional audience gate. 'client' means only citizen/client UI should show it.
+  audience?: 'client' | 'all';
   time: string;
   attachment?: {
     name: string;
