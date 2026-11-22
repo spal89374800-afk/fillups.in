@@ -69,7 +69,7 @@ const PortalVideoLink = ({
   if (!href.trim()) {
     return (
       <div className="pt-2 text-center">
-        <span className="text-[11px] font-semibold text-slate-500">🎬 {label} — jaldi available</span>
+        <span className="text-[11px] font-semibold text-slate-500">🎬 {label} — Coming Soon</span>
       </div>
     );
   }
