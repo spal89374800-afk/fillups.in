@@ -34,6 +34,7 @@ const TermsJanSeva = lazy(() => import('./components/legal/TermsJanSeva'));
 const TermsFormFiller = lazy(() => import('./components/legal/TermsFormFiller'));
 const PrivacyPolicy = lazy(() => import('./components/legal/PrivacyPolicy'));
 const PlatformLegalPolicy = lazy(() => import('./components/legal/PlatformLegalPolicy'));
+const AboutUs = lazy(() => import('./components/legal/AboutUs'));
 const QRCodeSVG = lazy(() =>
   import('qrcode.react').then(module => ({ default: module.QRCodeSVG }))
 );
@@ -484,6 +485,7 @@ export default function App() {
     | 'terms_formfiller'
     | 'privacy_policy'
     | 'platform_legal_policy'
+    | 'about_us'
   >(() => {
     const session = readStoredSession();
     if (session?.role === 'client') return 'client_portal';
@@ -16340,6 +16342,14 @@ export default function App() {
                 <Mail className="w-3.5 h-3.5 text-cyan-400" />
                 <span>supportfillupo.in@gmail.com</span>
               </a>
+              <button
+                type="button"
+                onClick={() => setStep('about_us')}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{lang === 'HI' ? 'हमारे बारे में' : 'About Us'}</span>
+              </button>
             </div>
           </div>
 
@@ -16435,6 +16445,23 @@ export default function App() {
       {step === 'platform_legal_policy' && (
         <Suspense fallback={<LazyFeatureFallback />}>
           <PlatformLegalPolicy onBack={() => {
+            if (showLegalModal || pendingRole) {
+              setShowLegalModal(true);
+              setStep('landing');
+              return;
+            } else {
+              const session = readStoredSession();
+              if (session?.role === 'client') setStep('client_portal');
+              else if (session?.role === 'vle') setStep('vle_home');
+              else if (session?.role === 'form_filler') setStep('form_filler_app');
+              else setStep('landing');
+            }
+          }} language={lang} />
+        </Suspense>
+      )}
+      {step === 'about_us' && (
+        <Suspense fallback={<LazyFeatureFallback />}>
+          <AboutUs onBack={() => {
             if (showLegalModal || pendingRole) {
               setShowLegalModal(true);
               setStep('landing');
