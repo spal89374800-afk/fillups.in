@@ -14,3 +14,4 @@ uploads/
 .env
 frontend/dist/
 backend/dist/
+.wrangler/

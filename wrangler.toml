@@ -1,0 +1,8 @@
+name = "fillupo-seo-proxy"
+main = "worker/index.ts"
+compatibility_date = "2026-05-03"
+workers_dev = false
+
+[[routes]]
+pattern = "fillupo.in/*"
+zone_id = "8e65f47496f3d317d6c9a765b743600c"

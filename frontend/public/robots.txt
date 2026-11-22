@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /login
+Disallow: /order/
+Disallow: /admin
+Disallow: /dashboard
+
+Sitemap: https://fillupo.in/sitemap.xml
