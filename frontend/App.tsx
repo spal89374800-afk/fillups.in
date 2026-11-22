@@ -16335,7 +16335,7 @@ export default function App() {
             </div>
 
             {/* Contact Info */}
-            <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 text-xs">
               <a
                 href="mailto:supportfillupo.in@gmail.com"
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all"
@@ -16343,53 +16343,53 @@ export default function App() {
                 <Mail className="w-3.5 h-3.5 text-cyan-400" />
                 <span>supportfillupo.in@gmail.com</span>
               </a>
-              <button
-                type="button"
-                onClick={() => setStep('about_us')}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer"
-              >
-                <FileText className="w-3.5 h-3.5 text-cyan-400" />
-                <span>{lang === 'HI' ? 'हमारे बारे में' : 'About Us'}</span>
-              </button>
             </div>
           </div>
 
           {/* Legal Links */}
-          <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:gap-3 text-xs">
             <button
               type="button"
               onClick={() => setStep('platform_legal_policy')}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer text-left"
             >
-              <FileText className="w-3.5 h-3.5 text-cyan-400" />
+              <FileText className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>{lang === 'HI' ? 'प्लेटफ़ॉर्म नियम और कानूनी नीति' : 'Platform Terms & Legal Policy'}</span>
             </button>
             <button
               type="button"
               onClick={() => setStep('privacy_policy')}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer text-left"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+              <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>{lang === 'HI' ? 'गोपनीयता नीति' : 'Privacy Policy'}</span>
             </button>
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowFooterTerms(v => !v)}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer text-left"
               >
-                <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                <FileText className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                 <span>{lang === 'HI' ? 'नियम और शर्तें' : 'Terms & Conditions'}</span>
-                <ChevronUp className={`w-3 h-3 transition-transform ${showFooterTerms ? '' : 'rotate-180'}`} />
+                <ChevronUp className={`w-3 h-3 shrink-0 transition-transform ${showFooterTerms ? '' : 'rotate-180'}`} />
               </button>
               {showFooterTerms && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 rounded-xl border border-white/[0.08] bg-[#0f172a] shadow-2xl p-2 z-20">
+                <div className="absolute bottom-full left-0 mb-2 w-[min(16rem,calc(100vw-2rem))] rounded-xl border border-white/[0.08] bg-[#0f172a] shadow-2xl p-2 z-20">
                   <button type="button" onClick={() => { setShowFooterTerms(false); setStep('terms_citizen'); }} className="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-200 hover:bg-white/[0.06] hover:text-cyan-300 cursor-pointer">{lang === 'HI' ? 'नागरिक नियम और शर्तें' : 'Citizen Terms & Conditions'}</button>
                   <button type="button" onClick={() => { setShowFooterTerms(false); setStep('terms_janseva'); }} className="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-200 hover:bg-white/[0.06] hover:text-cyan-300 cursor-pointer">{lang === 'HI' ? 'जन सेवा केंद्र नियम और शर्तें' : 'Jan Seva Kendra Terms & Conditions'}</button>
                   <button type="button" onClick={() => { setShowFooterTerms(false); setStep('terms_formfiller'); }} className="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-200 hover:bg-white/[0.06] hover:text-cyan-300 cursor-pointer">{lang === 'HI' ? 'फॉर्म एक्सपर्ट नियम और शर्तें' : 'Form Expert Terms & Conditions'}</button>
                 </div>
               )}
             </div>
+            <button
+              type="button"
+              onClick={() => setStep('about_us')}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer text-left"
+            >
+              <FileText className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>{lang === 'HI' ? 'हमारे बारे में' : 'About Us'}</span>
+            </button>
           </div>
 
           {/* Copyright */}
