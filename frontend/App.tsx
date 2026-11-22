@@ -17,6 +17,7 @@ import { createBlinkLivenessEngine } from './services/blinkLiveness';
 import { getCaptchaToken } from './services/turnstile';
 import { API_FALLBACK_ORIGIN, fetchWithRetry, isApiRequestUrl, parseJsonResponse, shouldFallbackToApiOrigin } from './services/apiClient';
 import type { BlinkEngine } from './services/blinkLiveness';
+import { PORTAL_VIDEOS } from './portalVideos';
 
 const AdminSecurityPanel = lazy(() =>
   import('./components/AdminSecurityPanel').then(module => ({ default: module.AdminSecurityPanel }))
@@ -45,6 +46,46 @@ const LazyFeatureFallback = () => (
     <span>Loading…</span>
   </div>
 );
+
+// Har portal card ke neeche usi portal ka registration video dikhte hain.
+// YouTube link frontend/portalVideos.ts me ek jagah badal kar set karein.
+const PortalVideoLink = ({
+  href,
+  label,
+  accent
+}: {
+  href: string;
+  label: string;
+  accent: 'cyan' | 'purple' | 'emerald';
+}) => {
+  const accentClass = {
+    cyan: 'border-cyan-500/25 text-cyan-300 hover:bg-cyan-500/10',
+    purple: 'border-purple-500/25 text-purple-300 hover:bg-purple-500/10',
+    emerald: 'border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/10'
+  }[accent];
+
+  if (!href.trim()) {
+    return (
+      <div className="pt-2 text-center">
+        <span className="text-[11px] font-semibold text-slate-500">🎬 {label} — jaldi available</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pt-2 text-center">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`inline-flex items-center gap-1.5 rounded-xl border bg-white/[0.02] px-3 py-2 text-[11px] font-bold transition-all ${accentClass}`}
+      >
+        <span>🎬 {label}</span>
+        <ExternalLink className="h-3 w-3" aria-hidden="true" />
+      </a>
+    </div>
+  );
+};
 
 export const getDocRequirements = (item: { id?: string; docName?: string; requirements?: string; title?: string }) => {
   if (item.requirements && item.requirements.trim()) return item.requirements;
@@ -7553,6 +7594,7 @@ export default function App() {
                     <span>{t('Enter Citizen Portal', 'नागरिक पोर्टल में प्रवेश करें')}</span>
                     <ArrowRight className="w-4 h-4 text-white group-hover/btn:translate-x-1 transition-transform" />
                   </button>
+                  <PortalVideoLink href={PORTAL_VIDEOS.citizen} label="Citizen Registration Video (Hindi)" accent="cyan" />
                 </div>
               </div>
             </div>
@@ -7869,6 +7911,7 @@ export default function App() {
                     <span>{t('Operator Secure Login', 'ऑपरेटर सुरक्षित लॉगिन')}</span>
                     <ArrowRight className="w-4 h-4 text-white group-hover/btn:translate-x-1 transition-transform ml-1" />
                   </button>
+                  <PortalVideoLink href={PORTAL_VIDEOS.janSeva} label="Jan Seva Kendra Registration Video (Hindi)" accent="purple" />
                 </div>
               </div>
             </div>
@@ -8187,6 +8230,7 @@ export default function App() {
                     <span>{t('Filler Secure Login', 'फॉर्म फिलर सुरक्षित लॉगिन')}</span>
                     <ArrowRight className="w-4 h-4 text-white group-hover/btn:translate-x-1 transition-transform ml-1" />
                   </button>
+                  <PortalVideoLink href={PORTAL_VIDEOS.formExpert} label="Form Expert Registration Video (Hindi)" accent="emerald" />
                 </div>
               </div>
             </div>
