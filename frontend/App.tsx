@@ -1490,8 +1490,6 @@ export default function App() {
 
   // Saved pricing lists ko chhota rakhne ke liye collapse/expand state.
   // Poori list "All Saved Forms Here" tab me dikhti hai.
-  const [showAllVleDocPricing, setShowAllVleDocPricing] = useState(false);
-  const [showAllVleFormPricing, setShowAllVleFormPricing] = useState(false);
   const [showAllFillerForms, setShowAllFillerForms] = useState(false);
 
   // --- SEARCH STATE ---
@@ -11659,84 +11657,6 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="space-y-3 max-h-[400px] overflow-y-auto overflow-x-hidden pr-1">
-                  {(showAllVleDocPricing ? customPricingList : customPricingList.slice(0, 3)).map(item => (
-                    <div key={item.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3 hover:border-slate-700 transition-all shadow-inner overflow-hidden">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <span className="text-[10px] text-sky-400 font-bold">Service / Document Name</span>
-                          <input
-                            type="text"
-                            value={item.docName}
-                            onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, docName: e.target.value } : p))}
-                            className="w-full bg-transparent text-sm font-bold text-white focus:outline-none focus:border-b border-slate-700 pb-0.5"
-                          />
-                        </div>
-                        <button
-                          onClick={() => setCustomPricingList(customPricingList.filter(p => p.id !== item.id))}
-                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                         <div className="space-y-1">
-                            <span className="text-[10px] text-sky-400 font-bold">{t('Govt Fee (₹)', 'सरकारी शुल्क (₹)')}</span>
-                            <input type="number" value={item.govtFee || ''} onChange={(e) => {
-                              const govtFee = e.target.value;
-                              setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, govtFee, price: String((Number(govtFee) || 0) + (Number(p.cscFee) || 0)) } : p));
-                            }} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
-                         </div>
-                         <div className="space-y-1">
-                            <span className="text-[10px] text-amber-400 font-bold">{t('Service Charge / CSC (₹)', 'सेवा शुल्क / CSC (₹)')}</span>
-                            <input type="number" value={item.cscFee || ''} onChange={(e) => {
-                              const cscFee = e.target.value;
-                              setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, cscFee, price: String((Number(p.govtFee) || 0) + (Number(cscFee) || 0)) } : p));
-                            }} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
-                         </div>
-                         <div className="space-y-1 col-span-2">
-                            <span className="text-[10px] text-indigo-400 font-bold">{t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')}</span>
-                            <input type="text" value={item.feeName || ''} onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, feeName: e.target.value } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
-                         </div>
-                         <div className="space-y-1 col-span-2">
-                            <span className="text-[10px] text-slate-400 font-bold">{t('Required Documents / Description (ise banane ke liye kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (इसे बनाने के लिए क्या क्या लगेगा)')}</span>
-                            <input type="text" value={item.requirements || ''} onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, requirements: e.target.value } : p))} placeholder={t('e.g. Aadhaar Card, Photo, Signature', 'जैसे आधार कार्ड, फ़ोटो, हस्ताक्षर')} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
-                         </div>
-                         <div className="space-y-1 col-span-2">
-                            <span className="text-[10px] text-emerald-400 font-bold">{t('Total (auto) = Govt Fee + Service Charge', 'कुल (स्वतः) = सरकारी शुल्क + सेवा शुल्क')}</span>
-                            <div className="w-full bg-slate-950 border border-emerald-500/30 rounded px-2 py-1 text-xs text-emerald-300 font-bold font-mono">₹{getServiceTotal(item)}</div>
-                         </div>
-                         <div className="col-span-2 space-y-1">
-                            <span className="text-[10px] text-purple-400 font-bold">Service Scope (kahan bhejna hai)</span>
-                            <select value={item.scope || 'district'} onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, scope: e.target.value as any } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white">
-                              <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
-                              <option value="national">{t('National scope', 'राष्ट्रीय स्तर')}</option>
-                              <option value="district">{t('District scope', 'ज़िला स्तर')}</option>
-                            </select>
-                         </div>
-                      </div>
-                      <GovtFeeCategoryFields
-                        value={item.govtFeeByCategory}
-                        onChange={(next) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, govtFeeByCategory: next } : p))}
-                        t={t}
-                        accent="amber"
-                        fallbackFee={item.govtFee}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {customPricingList.length > 3 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllVleDocPricing(prev => !prev)}
-                    className="w-full py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-slate-700"
-                  >
-                    {showAllVleDocPricing ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    <span>{showAllVleDocPricing ? t('Show Less', 'कम दिखाएँ') : `${t('Show All', 'सभी दिखाएँ')} (${customPricingList.length})`}</span>
-                  </button>
-                )}
-
                 <div className="space-y-3 pt-4 border-t border-slate-800">
                   <h4 className="text-xs font-bold text-slate-300">Add New Service</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -11813,113 +11733,6 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-
-                <div className="space-y-3 max-h-[400px] overflow-y-auto overflow-x-hidden pr-1">
-                  {(showAllVleFormPricing ? vleFormFillingList : vleFormFillingList.slice(0, 3)).map(item => (
-                    <div key={item.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3 hover:border-emerald-500/30 transition-all shadow-inner overflow-hidden">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <span className="text-[10px] text-emerald-400 font-bold">{t('Form / Service Name', 'फॉर्म / सेवा का नाम')}</span>
-                          <input
-                            type="text"
-                            value={item.docName}
-                            onChange={(e) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, docName: e.target.value } : p))}
-                            className="w-full bg-transparent text-sm font-bold text-white focus:outline-none focus:border-b border-slate-700 pb-0.5"
-                          />
-                          <p className="text-[10px] text-slate-500 truncate">
-                            {t('Operator (auto):', 'ऑपरेटर (auto):')} {item.expertName || vleCenterName || vleName}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="space-y-1">
-                             <span className="text-[10px] text-emerald-400 font-bold block">{t('Service Fee (₹)', 'सेवा शुल्क (₹)')}</span>
-                             <input
-                               type="number"
-                               value={item.price}
-                               onChange={(e) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, price: e.target.value } : p))}
-                               className="w-16 bg-slate-900 px-2 py-1 rounded text-xs text-white font-mono font-bold focus:outline-none border border-slate-800"
-                             />
-                          </div>
-                          <button
-                            onClick={() => setVleFormFillingList(vleFormFillingList.filter(p => p.id !== item.id))}
-                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors self-end"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-emerald-400 font-bold">{t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')}</span>
-                        <input
-                          type="text"
-                          value={item.feeName || ''}
-                          onChange={(e) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, feeName: e.target.value } : p))}
-                          className="w-full bg-slate-900 px-3 py-1.5 rounded-xl text-[11px] text-slate-300 border border-slate-800 focus:outline-none"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-amber-400 font-bold">Govt Fee (₹)</span>
-                          <input
-                            type="number"
-                            value={item.govtFee || ''}
-                            onChange={(e) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, govtFee: e.target.value } : p))}
-                            className="w-full bg-slate-900 px-3 py-1.5 rounded-xl text-[11px] text-slate-300 border border-slate-800 focus:outline-none"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-cyan-400 font-bold">Service State / UT</span>
-                          <StateSelect
-                            value={item.state || ''}
-                            onChange={(nextState) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, state: nextState } : p))}
-                            options={INDIAN_STATES}
-                            emptyLabel={t('All India', 'पूरे भारत')}
-                            ariaLabel="Service State / UT"
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 pr-8 py-1.5 text-[11px] text-white"
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-emerald-400 font-bold">
-                          {t('Required Documents (Requirements)', 'ज़रूरी दस्तावेज़ (Required Documents)')}
-                        </span>
-                        <input
-                          type="text"
-                          value={item.requirements || ''}
-                          onChange={(e) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, requirements: e.target.value } : p))}
-                          placeholder="Required Documents..."
-                          className="w-full bg-slate-900 px-3 py-1.5 rounded-xl text-[11px] text-slate-300 border border-slate-800 focus:outline-none"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-purple-400 font-bold">Service Scope (kahan bhejna hai)</span>
-                        <select value={item.scope || 'online_form'} onChange={(e) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, scope: e.target.value as any } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white">
-                          <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
-                          <option value="national">{t('National scope', 'राष्ट्रीय स्तर')}</option>
-                          <option value="district">{t('District scope', 'ज़िला स्तर')}</option>
-                        </select>
-                      </div>
-                      <GovtFeeCategoryFields
-                        value={item.govtFeeByCategory}
-                        onChange={(next) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, govtFeeByCategory: next } : p))}
-                        t={t}
-                        accent="emerald"
-                        fallbackFee={item.govtFee}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {vleFormFillingList.length > 3 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllVleFormPricing(prev => !prev)}
-                    className="w-full py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-slate-700"
-                  >
-                    {showAllVleFormPricing ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    <span>{showAllVleFormPricing ? t('Show Less', 'कम दिखाएँ') : `${t('Show All', 'सभी दिखाएँ')} (${vleFormFillingList.length})`}</span>
-                  </button>
-                )}
 
                 <div className="space-y-3 pt-4 border-t border-slate-800">
                   <h4 className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
