@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
-import type { MouseEvent, TouchEvent } from 'react';
+import type { KeyboardEvent, MouseEvent, TouchEvent } from 'react';
 import { UserCheck, Building2, Search, FileText, CheckCircle2, ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Loader2, Lock, Phone, Mail, Globe, Save, Check, Reply, Maximize, Minimize, Minus, AlertCircle, Bell, MapPin, Edit3, Plus, Trash2, X, Users, CheckCircle, Clock, LogOut, ChevronRight, ChevronUp, User as UserIcon, Send, MessageSquare, PhoneCall, Paperclip, Image as ImageIcon, CreditCard, Smartphone, ExternalLink, ShieldAlert, Mic, MicOff, FileUp, Eye, Zap, Copy, Filter, Camera, Download, Sun, Moon, RefreshCw, Volume2, VolumeX, MonitorUp, Ban } from 'lucide-react';
 import { HeartbeatToFormLine } from './components/HeartbeatToFormLine';
 import { BrandEmblem3D } from './components/BrandEmblem3D';
@@ -1468,7 +1468,6 @@ export default function App() {
   const [newDocGovtFeeByCategory, setNewDocGovtFeeByCategory] = useState<GovtFeeByCategory>({});
   const [newDocCscFee, setNewDocCscFee] = useState('');
   const [newDocRequirements, setNewDocRequirements] = useState('');
-  const [newDocFeeName, setNewDocFeeName] = useState('');
   const [newDocScope, setNewDocScope] = useState<'district' | 'national' | 'online_form'>('district');
   const [newDocState, setNewDocState] = useState('');
   const [newFormScope, setNewFormScope] = useState<'district' | 'national' | 'online_form'>('online_form');
@@ -1477,7 +1476,6 @@ export default function App() {
   const [newVleFormState, setNewVleFormState] = useState('');
   // Form Filling tab ke apne alag fields — Document Pricing ke inputs se text na aaye.
   const [newFillerName, setNewFillerName] = useState('');
-  const [newFillerFeeName, setNewFillerFeeName] = useState('');
   const [newFillerServiceFee, setNewFillerServiceFee] = useState('');
   const [newFillerRequirements, setNewFillerRequirements] = useState('');
   // "All Saved Forms Here" me card ke andar hi edit karne ke liye.
@@ -5838,7 +5836,6 @@ export default function App() {
           govtFeeByCategory: newDocGovtFeeByCategory,
           cscFee: cFee,
           price: tot,
-          feeName: newDocFeeName.trim(),
           requirements: newDocRequirements.trim(),
           scope: newDocScope,
           state: newDocState
@@ -5849,7 +5846,6 @@ export default function App() {
         setNewDocGovtFee('');
         setNewDocGovtFeeByCategory({});
         setNewDocCscFee('');
-        setNewDocFeeName('');
         setNewDocRequirements('');
         setNewDocState('');
       }
@@ -5883,6 +5879,20 @@ export default function App() {
 
   const updateSavedDraft = (patch: Record<string, unknown>) => {
     setSavedDraft(prev => prev ? { ...prev, ...patch } : prev);
+  };
+
+  // Enter dabane par usi form ke agle field par focus bhejta hai (Tab jaise).
+  const focusNextOnEnter = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const target = event.target as HTMLElement;
+    const group = target.closest('[data-enter-group]');
+    if (!group) return;
+    const fields = Array.from(group.querySelectorAll<HTMLElement>('input:not([type="hidden"]), select, textarea, button:not([disabled])'));
+    const currentIndex = fields.indexOf(target);
+    if (currentIndex >= 0 && currentIndex + 1 < fields.length) {
+      fields[currentIndex + 1].focus();
+    }
   };
 
   const persistSavedPricing = async (pricingList: typeof customPricingList, formFillingList: typeof vleFormFillingList, successMsg: string) => {
@@ -11657,11 +11667,10 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="space-y-3 pt-4 border-t border-slate-800">
+                <div data-enter-group onKeyDown={focusNextOnEnter} className="space-y-3 pt-4 border-t border-slate-800">
                   <h4 className="text-xs font-bold text-slate-300">Add New Service</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <input type="text" placeholder="Service Name" value={newDocName} onChange={(e) => setNewDocName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
-                    <input type="text" placeholder={t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')} value={newDocFeeName} onChange={(e) => setNewDocFeeName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
                     <input type="number" placeholder={t('Govt Fee (₹)', 'सरकारी शुल्क (₹)')} value={newDocGovtFee} onChange={(e) => setNewDocGovtFee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
                     <input type="number" placeholder={t('Service Charge / CSC (₹)', 'सेवा शुल्क / CSC (₹)')} value={newDocCscFee} onChange={(e) => setNewDocCscFee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
                     <input type="text" placeholder={t('Required Documents / Description (kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (क्या क्या लगेगा)')} value={newDocRequirements} onChange={(e) => setNewDocRequirements(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white sm:col-span-3" />
@@ -11693,9 +11702,9 @@ export default function App() {
                     onClick={async () => {
                       if (!newDocName) return;
                       const tot = String((Number(newDocGovtFee) || 0) + (Number(newDocCscFee) || 0));
-                      const next = [...customPricingList, { id: Date.now().toString(), docName: newDocName, govtFee: newDocGovtFee, govtFeeByCategory: newDocGovtFeeByCategory, cscFee: newDocCscFee, price: tot, feeName: newDocFeeName, requirements: newDocRequirements, scope: newDocScope, state: newDocState }];
+                      const next = [...customPricingList, { id: Date.now().toString(), docName: newDocName, govtFee: newDocGovtFee, govtFeeByCategory: newDocGovtFeeByCategory, cscFee: newDocCscFee, price: tot, requirements: newDocRequirements, scope: newDocScope, state: newDocState }];
                       setCustomPricingList(next);
-                      setNewDocName(''); setNewDocGovtFee(''); setNewDocGovtFeeByCategory({}); setNewDocCscFee(''); setNewDocFeeName(''); setNewDocRequirements(''); setNewDocState('');
+                      setNewDocName(''); setNewDocGovtFee(''); setNewDocGovtFeeByCategory({}); setNewDocCscFee(''); setNewDocRequirements(''); setNewDocState('');
                       await persistSavedPricing(next, vleFormFillingList, '✅ Document service added and saved!');
                       setVleDashboardTab('all_saved');
                     }}
@@ -11734,14 +11743,13 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="space-y-3 pt-4 border-t border-slate-800">
+                <div data-enter-group onKeyDown={focusNextOnEnter} className="space-y-3 pt-4 border-t border-slate-800">
                   <h4 className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
                     <Plus className="w-3.5 h-3.5" />
                     <span>{t('Add New Form Filling Service', 'नई फॉर्म फिलिंग सेवा जोड़ें')}</span>
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <input type="text" placeholder={t('Form / Service Name', 'फॉर्म / सेवा का नाम')} value={newFillerName} onChange={(e) => setNewFillerName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />
-                    <input type="text" placeholder={t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')} value={newFillerFeeName} onChange={(e) => setNewFillerFeeName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />
                     <input type="number" placeholder={t('Service Fee (₹)', 'सेवा शुल्क (₹)')} value={newFillerServiceFee} onChange={(e) => setNewFillerServiceFee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none" />
                     <input type="number" placeholder="Govt Fee (₹)" value={newVleFormGovtFee} onChange={(e) => setNewVleFormGovtFee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none" />
                     <StateSelect
@@ -11780,9 +11788,9 @@ export default function App() {
                   <button
                     onClick={async () => {
                       if (!newFillerName || !newFillerServiceFee) return;
-                      const next = [...vleFormFillingList, { id: 'vle-f-' + Date.now(), docName: newFillerName, price: newFillerServiceFee, govtFee: newVleFormGovtFee, govtFeeByCategory: newVleFormGovtFeeByCategory, feeName: newFillerFeeName, requirements: newFillerRequirements, icon: '📝', expertName: vleCenterName || vleName, scope: newFormScope, state: newVleFormState }];
+                      const next = [...vleFormFillingList, { id: 'vle-f-' + Date.now(), docName: newFillerName, price: newFillerServiceFee, govtFee: newVleFormGovtFee, govtFeeByCategory: newVleFormGovtFeeByCategory, requirements: newFillerRequirements, icon: '📝', expertName: vleCenterName || vleName, scope: newFormScope, state: newVleFormState }];
                       setVleFormFillingList(next);
-                      setNewFillerName(''); setNewFillerServiceFee(''); setNewFillerRequirements(''); setNewFillerFeeName(''); setNewVleFormGovtFee(''); setNewVleFormGovtFeeByCategory({}); setNewVleFormState('');
+                      setNewFillerName(''); setNewFillerServiceFee(''); setNewFillerRequirements(''); setNewVleFormGovtFee(''); setNewVleFormGovtFeeByCategory({}); setNewVleFormState('');
                       await persistSavedPricing(customPricingList, next, '✅ Form filling service added and saved!');
                       setVleDashboardTab('all_saved');
                     }}
@@ -11804,7 +11812,6 @@ export default function App() {
                         price: newFillerServiceFee.trim() || '0',
                         govtFee: newVleFormGovtFee.trim() || '0',
                         govtFeeByCategory: newVleFormGovtFeeByCategory,
-                        feeName: newFillerFeeName.trim(),
                         requirements: newFillerRequirements.trim(),
                         icon: '📝',
                         expertName: vleCenterName || vleName,
@@ -11822,7 +11829,7 @@ export default function App() {
                       });
                       const data = await parseJsonResponse(res).catch(() => ({}));
                       if (res.ok && data.success !== false) {
-                        setNewFillerName(''); setNewFillerServiceFee(''); setNewFillerRequirements(''); setNewFillerFeeName(''); setNewVleFormGovtFee(''); setNewVleFormGovtFeeByCategory({}); setNewVleFormState('');
+                        setNewFillerName(''); setNewFillerServiceFee(''); setNewFillerRequirements(''); setNewVleFormGovtFee(''); setNewVleFormGovtFeeByCategory({}); setNewVleFormState('');
                         setVleNotificationMsg('✅ Form Filling Prices saved successfully!');
                         showSaveToast('✅ Form prices saved successfully!');
                         void fetchAllData();
@@ -11882,7 +11889,7 @@ export default function App() {
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {addingSaved === 'document' && savedDraft && (
-                        <div className="p-4 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2 sm:col-span-2">
+                        <div data-enter-group onKeyDown={focusNextOnEnter} className="p-4 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2 sm:col-span-2">
                           <div className="grid grid-cols-2 gap-2">
                             <div className="col-span-2 space-y-1">
                               <span className="text-[10px] text-amber-300 font-bold">Service / Document Name</span>
@@ -11897,8 +11904,6 @@ export default function App() {
                               <input type="number" value={savedDraft.cscFee || ''} onChange={(e) => updateSavedDraft({ cscFee: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                             </div>
                             <div className="col-span-2 space-y-1">
-                              <span className="text-[10px] text-indigo-400 font-bold">{t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')}</span>
-                              <input type="text" value={savedDraft.feeName || ''} onChange={(e) => updateSavedDraft({ feeName: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                             </div>
                             <div className="col-span-2 space-y-1">
                               <span className="text-[10px] text-slate-400 font-bold">{t('Required Documents / Description (kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (क्या क्या लगेगा)')}</span>
@@ -11931,7 +11936,7 @@ export default function App() {
                         </div>
                       )}
                       {customPricingList.map(item => editingSaved?.kind === 'document' && editingSaved.id === item.id && savedDraft ? (
-                        <div key={item.id} className="p-4 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2">
+                        <div key={item.id} data-enter-group onKeyDown={focusNextOnEnter} className="p-4 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2">
                           <div className="grid grid-cols-2 gap-2">
                             <div className="col-span-2 space-y-1">
                               <span className="text-[10px] text-amber-300 font-bold">Service / Document Name</span>
@@ -11946,8 +11951,6 @@ export default function App() {
                               <input type="number" value={savedDraft.cscFee || ''} onChange={(e) => updateSavedDraft({ cscFee: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                             </div>
                             <div className="col-span-2 space-y-1">
-                              <span className="text-[10px] text-indigo-400 font-bold">{t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')}</span>
-                              <input type="text" value={savedDraft.feeName || ''} onChange={(e) => updateSavedDraft({ feeName: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                             </div>
                             <div className="col-span-2 space-y-1">
                               <span className="text-[10px] text-slate-400 font-bold">{t('Required Documents / Description (kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (क्या क्या लगेगा)')}</span>
@@ -11986,7 +11989,6 @@ export default function App() {
                               ₹{getServiceTotal(item)}
                             </span>
                           </div>
-                          {item.feeName && <p className="text-[10px] text-slate-400 truncate">{item.feeName}</p>}
                           {item.requirements && (
                             <p className="text-[10px] text-slate-400 line-clamp-2">
                               <b className="text-slate-300">Docs:</b> {item.requirements}
@@ -12047,7 +12049,7 @@ export default function App() {
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {addingSaved === 'form' && savedDraft && (
-                        <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-2 sm:col-span-2">
+                        <div data-enter-group onKeyDown={focusNextOnEnter} className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-2 sm:col-span-2">
                           <div className="grid grid-cols-2 gap-2">
                             <div className="col-span-2 space-y-1">
                               <span className="text-[10px] text-emerald-300 font-bold">Form / Service Name</span>
@@ -12062,8 +12064,6 @@ export default function App() {
                               <input type="number" value={savedDraft.govtFee || ''} onChange={(e) => updateSavedDraft({ govtFee: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                             </div>
                             <div className="col-span-2 space-y-1">
-                              <span className="text-[10px] text-indigo-400 font-bold">{t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')}</span>
-                              <input type="text" value={savedDraft.feeName || ''} onChange={(e) => updateSavedDraft({ feeName: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                             </div>
                             <div className="col-span-2 space-y-1">
                               <span className="text-[10px] text-slate-400 font-bold">{t('Required Documents / Description (kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (क्या क्या लगेगा)')}</span>
@@ -12096,7 +12096,7 @@ export default function App() {
                         </div>
                       )}
                       {vleFormFillingList.map(item => editingSaved?.kind === 'form' && editingSaved.id === item.id && savedDraft ? (
-                        <div key={item.id} className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-2">
+                        <div key={item.id} data-enter-group onKeyDown={focusNextOnEnter} className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-2">
                           <div className="grid grid-cols-2 gap-2">
                             <div className="col-span-2 space-y-1">
                               <span className="text-[10px] text-emerald-300 font-bold">Form / Service Name</span>
@@ -12111,8 +12111,6 @@ export default function App() {
                               <input type="number" value={savedDraft.govtFee || ''} onChange={(e) => updateSavedDraft({ govtFee: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                             </div>
                             <div className="col-span-2 space-y-1">
-                              <span className="text-[10px] text-indigo-400 font-bold">{t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')}</span>
-                              <input type="text" value={savedDraft.feeName || ''} onChange={(e) => updateSavedDraft({ feeName: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                             </div>
                             <div className="col-span-2 space-y-1">
                               <span className="text-[10px] text-slate-400 font-bold">{t('Required Documents / Description (kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (क्या क्या लगेगा)')}</span>
@@ -12151,7 +12149,6 @@ export default function App() {
                               ₹{Number(item.price) || 0}
                             </span>
                           </div>
-                          {item.feeName && <p className="text-[10px] text-slate-400 truncate">{item.feeName}</p>}
                           <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
                             <span className="text-amber-300">Govt ₹{item.govtFee || 0}</span>
                             <span className="text-cyan-300">{item.state || 'All India'}</span>
