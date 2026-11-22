@@ -4305,7 +4305,7 @@ export default function App() {
     if (aCityMatch && !bCityMatch) return -1;
     if (!aCityMatch && bCityMatch) return 1;
     return 0;
-  }).slice(0, 50);
+  }).slice(0, 500);
 
   // Mixed List of Form Filler Experts & Jan Seva Kendra Operators for Form Filling Hub
   const mixedFormFillingExperts = useMemo(() => {
@@ -4355,7 +4355,7 @@ export default function App() {
     [matchedVles]
   );
   const janSevaOnlyOperators = useMemo(() => {
-    if (showAllJanSeva) return allLocalJanSevas.slice(0, 50);
+    if (showAllJanSeva) return allLocalJanSevas.slice(0, 500);
     return rotateSlice(
       allLocalJanSevas,
       5,
