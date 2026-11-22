@@ -416,6 +416,7 @@ export default function App() {
   });
   const [showLegalModal, setShowLegalModal] = useState(false);
   const [pendingRole, setPendingRole] = useState<'client' | 'vle' | 'form_filler' | null>(null);
+  const [showFooterTerms, setShowFooterTerms] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<any | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelNote, setCancelNote] = useState('');
@@ -16358,11 +16359,37 @@ export default function App() {
             <button
               type="button"
               onClick={() => setStep('platform_legal_policy')}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer"
             >
               <FileText className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Platform Terms & Legal Policy — fillupo.in</span>
+              <span>{lang === 'HI' ? 'प्लेटफ़ॉर्म नियम और कानूनी नीति' : 'Platform Terms & Legal Policy'}</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setStep('privacy_policy')}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{lang === 'HI' ? 'गोपनीयता नीति' : 'Privacy Policy'}</span>
+            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowFooterTerms(v => !v)}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-400 border border-white/[0.06] transition-all cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{lang === 'HI' ? 'नियम और शर्तें' : 'Terms & Conditions'}</span>
+                <ChevronUp className={`w-3 h-3 transition-transform ${showFooterTerms ? '' : 'rotate-180'}`} />
+              </button>
+              {showFooterTerms && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 rounded-xl border border-white/[0.08] bg-[#0f172a] shadow-2xl p-2 z-20">
+                  <button type="button" onClick={() => { setShowFooterTerms(false); setStep('terms_citizen'); }} className="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-200 hover:bg-white/[0.06] hover:text-cyan-300 cursor-pointer">{lang === 'HI' ? 'नागरिक नियम और शर्तें' : 'Citizen Terms & Conditions'}</button>
+                  <button type="button" onClick={() => { setShowFooterTerms(false); setStep('terms_janseva'); }} className="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-200 hover:bg-white/[0.06] hover:text-cyan-300 cursor-pointer">{lang === 'HI' ? 'जन सेवा केंद्र नियम और शर्तें' : 'Jan Seva Kendra Terms & Conditions'}</button>
+                  <button type="button" onClick={() => { setShowFooterTerms(false); setStep('terms_formfiller'); }} className="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-200 hover:bg-white/[0.06] hover:text-cyan-300 cursor-pointer">{lang === 'HI' ? 'फॉर्म एक्सपर्ट नियम और शर्तें' : 'Form Expert Terms & Conditions'}</button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Copyright */}
