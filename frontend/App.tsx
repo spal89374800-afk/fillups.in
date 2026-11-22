@@ -11849,15 +11849,9 @@ export default function App() {
                       <option value="district">{t('District scope', 'ज़िला स्तर')}</option>
                     </select>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <p className="text-[10px] text-slate-500 truncate">
-                      {t('Operator (auto):', 'ऑपरेटर (auto):')} {vleCenterName || vleName}
-                    </p>
+                  <div className="space-y-1">
                     <p className="text-[10px] text-emerald-300">
                       {t('Total citizen pays', 'कुल भुगतान')}: ₹{(Number(newFillerServiceFee) || 0) + (Number(newVleFormGovtFee) || 0)}
-                    </p>
-                    <p className="text-[10px] text-slate-500 sm:col-span-2">
-                      {t('Default option: citizen Apply Now par form-filling section me yahi form preselect hoga.', 'डिफ़ॉल्ट विकल्प: नागरिक Apply Now दबाएगा तो form-filling section me yahi form preselect होगा.')}
                     </p>
                   </div>
                   <input type="text" placeholder={t('Required Documents / Description (kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (क्या क्या लगेगा)')} value={newFillerRequirements} onChange={(e) => setNewFillerRequirements(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />
