@@ -1450,6 +1450,7 @@ export default function App() {
   const [newFormExpertName, setNewFormExpertName] = useState('');
   const [newFormRequirements, setNewFormRequirements] = useState('');
   const [newFormIcon, setNewFormIcon] = useState('📝');
+  const [newFillerFormScope, setNewFillerFormScope] = useState<'district' | 'national' | 'online_form'>('online_form');
   const [editingFillerServiceId, setEditingFillerServiceId] = useState('');
   const [formSaveSuccessMsg, setFormSaveSuccessMsg] = useState('');
 
@@ -5340,6 +5341,7 @@ export default function App() {
           price: newFormPrice.trim(),
           govtFee: newFillerFormGovtFee.trim(),
           govtFeeByCategory: newFillerFormGovtFeeByCategory,
+          scope: newFillerFormScope,
           state: formState,
           expertName: expName,
           requirements: reqs,
@@ -5369,6 +5371,7 @@ export default function App() {
         setNewFillerFormGovtFeeByCategory({});
         setNewFillerFormState('');
         setNewFormIcon('');
+        setNewFillerFormScope('online_form');
         setNewFormExpertName('');
         setEditingFillerServiceId('');
         void fetchAllData();
@@ -5383,6 +5386,7 @@ export default function App() {
         price: newFormPrice.trim(),
         govtFee: newFillerFormGovtFee.trim(),
         govtFeeByCategory: newFillerFormGovtFeeByCategory,
+        scope: newFillerFormScope,
         state: formState,
         expertName: expName,
         requirements: reqs,
@@ -5402,6 +5406,7 @@ export default function App() {
       setNewFillerFormGovtFeeByCategory({});
       setNewFillerFormState('');
       setNewFormIcon('');
+      setNewFillerFormScope('online_form');
       setNewFormExpertName('');
       setEditingFillerServiceId('');
       setTimeout(() => setFormSaveSuccessMsg(''), 6000);
@@ -5418,6 +5423,9 @@ export default function App() {
     setNewFormExpertName(String(service.expertName || ''));
     setNewFormRequirements(String(service.requirements || service.description || ''));
     setNewFormIcon(String(service.icon || '📝'));
+    setNewFillerFormScope(
+      service.scope === 'national' || service.scope === 'district' ? service.scope : 'online_form'
+    );
     setFillerNotificationMsg(`✏️ Editing "${service.docName}" — change the government fee and save.`);
     setTimeout(() => document.getElementById('filler-form-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   };
@@ -5432,6 +5440,7 @@ export default function App() {
     setNewFormExpertName('');
     setNewFormRequirements('');
     setNewFormIcon('📝');
+    setNewFillerFormScope('online_form');
     setFillerNotificationMsg('');
   };
 
@@ -12930,6 +12939,23 @@ export default function App() {
                     <option value="⚡">⚡ Engineering &amp; JEE</option>
                     <option value="👮">👮 Police &amp; Defence</option>
                     <option value="📝">📝 General Exam / Form</option>
+                  </select>
+                </div>
+
+                {/* 3a. Service Scope */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-emerald-400 font-black">3a.</span>
+                    <span>Service Scope (kahan bhejna hai)</span>
+                  </label>
+                  <select
+                    value={newFillerFormScope}
+                    onChange={(e) => setNewFillerFormScope(e.target.value as 'district' | 'national' | 'online_form')}
+                    className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="online_form">Default</option>
+                    <option value="national">National scope</option>
+                    <option value="district">District scope</option>
                   </select>
                 </div>
               </div>
