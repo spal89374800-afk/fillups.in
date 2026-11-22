@@ -1458,6 +1458,10 @@ export default function App() {
   const [newFillerFormScope, setNewFillerFormScope] = useState<'district' | 'national' | 'online_form'>('online_form');
   const [editingFillerServiceId, setEditingFillerServiceId] = useState('');
   const [formSaveSuccessMsg, setFormSaveSuccessMsg] = useState('');
+  // Form Expert "All Saved Forms Here" me card ke andar hi add/edit karne ke liye.
+  const [editingSavedFiller, setEditingSavedFiller] = useState<string | null>(null);
+  const [addingSavedFiller, setAddingSavedFiller] = useState(false);
+  const [savedFillerDraft, setSavedFillerDraft] = useState<Record<string, any> | null>(null);
 
   // --- VLE DIRECTORY & DYNAMIC PRICING ---
   const [registeredVles, setRegisteredVles] = useState<any[]>([]);
@@ -1488,7 +1492,6 @@ export default function App() {
 
   // Saved pricing lists ko chhota rakhne ke liye collapse/expand state.
   // Poori list "All Saved Forms Here" tab me dikhti hai.
-  const [showAllFillerForms, setShowAllFillerForms] = useState(false);
 
   // --- SEARCH STATE ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -5385,6 +5388,7 @@ export default function App() {
         setEditingFillerServiceId('');
         void fetchAllData();
         setTimeout(() => setFormSaveSuccessMsg(''), 6000);
+        setFillerDashboardTab('all_saved');
       } else {
         setFillerNotificationMsg(data.error || 'Could not save the form. Please try again.');
       }
@@ -5419,24 +5423,100 @@ export default function App() {
       setNewFormExpertName('');
       setEditingFillerServiceId('');
       setTimeout(() => setFormSaveSuccessMsg(''), 6000);
+      setFillerDashboardTab('all_saved');
     }
   };
 
-  const handleEditFillerForm = (service: any) => {
-    setEditingFillerServiceId(String(service.id || ''));
-    setNewFormDocName(String(service.docName || ''));
-    setNewFormPrice(String(service.price ?? ''));
-    setNewFillerFormGovtFee(String(service.govtFee ?? ''));
-    setNewFillerFormGovtFeeByCategory(normalizeGovtFeeByCategory(service.govtFeeByCategory) || {});
-    setNewFillerFormState(String(service.state || ''));
-    setNewFormExpertName(String(service.expertName || ''));
-    setNewFormRequirements(String(service.requirements || service.description || ''));
-    setNewFormIcon(String(service.icon || '📝'));
-    setNewFillerFormScope(
-      service.scope === 'national' || service.scope === 'district' ? service.scope : 'online_form'
-    );
-    setFillerNotificationMsg(`✏️ Editing "${service.docName}" — change the government fee and save.`);
-    setTimeout(() => document.getElementById('filler-form-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  const updateSavedFillerDraft = (patch: Record<string, unknown>) => {
+    setSavedFillerDraft(prev => prev ? { ...prev, ...patch } : prev);
+  };
+
+  const persistFillerServices = async (payload: Record<string, any>, successMsg: string) => {
+    try {
+      const res = await fetchWithRetry('/api/filler/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await parseJsonResponse(res);
+      if (!res.ok || data.success === false) throw new Error(data.error || 'Could not save form.');
+      if (Array.isArray(data.services)) {
+        setFillerServices(data.services);
+      } else if (data.service) {
+        setFillerServices(prev => [data.service, ...prev.filter(s => s.id !== data.service.id)]);
+      }
+      setFillerNotificationMsg(successMsg);
+      showSaveToast(successMsg);
+      void fetchAllData();
+      setTimeout(() => setFillerNotificationMsg(''), 4000);
+    } catch (err) {
+      console.warn('Error saving filler form:', err);
+      setFillerNotificationMsg('⚠️ फॉर्म सहेजते समय त्रुटि हुई। कृपया पुनः प्रयास करें।');
+    }
+  };
+
+  const startAddSavedFiller = () => {
+    setEditingSavedFiller(null);
+    setAddingSavedFiller(true);
+    setSavedFillerDraft({
+      scope: 'online_form',
+      icon: '📝',
+      expertName: fillerName || 'Form Filler Expert',
+      state: fillerState || '',
+      govtFee: '',
+      price: '',
+      requirements: '',
+      govtFeeByCategory: {}
+    });
+  };
+
+  const startEditSavedFiller = (service: any) => {
+    setAddingSavedFiller(false);
+    setEditingSavedFiller(String(service.id || ''));
+    setSavedFillerDraft({
+      ...service,
+      scope: service.scope || 'online_form',
+      icon: service.icon || '📝',
+      expertName: service.expertName || fillerName || 'Form Filler Expert',
+      state: service.state || fillerState || '',
+      govtFeeByCategory: normalizeGovtFeeByCategory(service.govtFeeByCategory) || {}
+    });
+  };
+
+  const cancelSavedFillerEdit = () => {
+    setEditingSavedFiller(null);
+    setAddingSavedFiller(false);
+    setSavedFillerDraft(null);
+  };
+
+  const saveSavedFiller = async () => {
+    if (!savedFillerDraft) return;
+    if (!String(savedFillerDraft.docName || '').trim()) {
+      setFillerNotificationMsg('⚠️ कृपया फॉर्म का नाम दर्ज करें।');
+      setTimeout(() => setFillerNotificationMsg(''), 4000);
+      return;
+    }
+    if (!String(savedFillerDraft.price || '').trim()) {
+      setFillerNotificationMsg('⚠️ कृपया सेवा शुल्क दर्ज करें।');
+      setTimeout(() => setFillerNotificationMsg(''), 4000);
+      return;
+    }
+    const payload = {
+      id: editingSavedFiller || undefined,
+      docName: String(savedFillerDraft.docName).trim(),
+      price: String(savedFillerDraft.price).trim(),
+      govtFee: String(savedFillerDraft.govtFee || '').trim(),
+      govtFeeByCategory: savedFillerDraft.govtFeeByCategory || {},
+      scope: savedFillerDraft.scope || 'online_form',
+      state: savedFillerDraft.state || fillerState || '',
+      expertName: savedFillerDraft.expertName || fillerName || 'Form Filler Expert',
+      requirements: String(savedFillerDraft.requirements || '').trim(),
+      description: String(savedFillerDraft.requirements || '').trim(),
+      icon: savedFillerDraft.icon || '📝'
+    };
+    const wasEdit = Boolean(editingSavedFiller);
+    cancelSavedFillerEdit();
+    await persistFillerServices(payload, wasEdit ? '✅ फॉर्म अपडेट हो गया!' : '✅ नया फॉर्म जोड़ा गया!');
   };
 
   const cancelFillerFormEdit = () => {
@@ -5457,6 +5537,9 @@ export default function App() {
     if (deletingServiceId) return;
     if (editingFillerServiceId === serviceId) {
       cancelFillerFormEdit();
+    }
+    if (editingSavedFiller === serviceId) {
+      cancelSavedFillerEdit();
     }
     setDeletingServiceId(serviceId);
     try {
@@ -12921,49 +13004,170 @@ export default function App() {
                       <span>{t('All Saved Forms Here', 'सभी सेव किए गए फॉर्म यहाँ')}</span>
                     </h3>
                     <p className="text-xs text-slate-400 mt-1">
-                      {t('All your published forms in one place. To edit or delete, open the Forms & Requests tab.', 'आपके प्रकाशित सभी फॉर्म एक ही जगह। संपादित या हटाने के लिए Forms & Requests टैब खोलें।')}
+                      {t('All your published forms in one place. Edit, delete or add a new form right here.', 'आपके प्रकाशित सभी फॉर्म एक ही जगह। यहाँ से ही संपादित, हटाएँ या नया फॉर्म जोड़ें।')}
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setFillerDashboardTab('services')}
-                    className="px-4 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all shrink-0"
+                    onClick={startAddSavedFiller}
+                    className="px-4 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all shrink-0 flex items-center gap-1.5"
                   >
-                    + Add / Edit Forms
+                    <Plus className="w-3.5 h-3.5" />
+                    {t('Add New Form', 'नया फॉर्म जोड़ें')}
                   </button>
                 </div>
-                {fillerServices.length === 0 ? (
-                  <p className="text-xs text-slate-500 p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                    {t('No forms published yet. Add a new form in the Forms & Requests tab.', 'अभी कोई फॉर्म प्रकाशित नहीं हुआ है। Forms & Requests टैब में नया फॉर्म जोड़ें।')}
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {fillerServices.map((srv) => (
-                      <div key={srv.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <FormCard3DIcon icon={srv.icon} size="md" />
-                            <div className="min-w-0">
-                              <h5 className="text-xs sm:text-sm font-bold text-white line-clamp-2">{srv.docName}</h5>
-                              <span className="text-[11px] text-emerald-400 font-medium">By: {srv.expertName}</span>
-                            </div>
-                          </div>
-                          <span className="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold font-mono">
-                            ₹{Number(srv.price) + Number(srv.govtFee || 0)}
-                          </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {addingSavedFiller && savedFillerDraft && (
+                    <div data-enter-group onKeyDown={focusNextOnEnter} className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-2 md:col-span-2 lg:col-span-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="sm:col-span-2 space-y-1">
+                          <span className="text-[10px] text-emerald-300 font-bold">Form / Service Name</span>
+                          <input type="text" value={savedFillerDraft.docName || ''} onChange={(e) => updateSavedFillerDraft({ docName: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                         </div>
-                        <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-300 line-clamp-2">
-                          <b className="text-slate-400">Required Documents:</b> {srv.requirements}
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-emerald-400 font-bold">{t('Service Fee (₹)', 'सेवा शुल्क (₹)')}</span>
+                          <input type="number" value={savedFillerDraft.price || ''} onChange={(e) => updateSavedFillerDraft({ price: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
-                          <span className="text-amber-300">Govt ₹{srv.govtFee || 0}</span>
-                          <span className="text-emerald-300">Service ₹{srv.price}</span>
-                          <span className="text-cyan-300">{srv.state || 'All India'}</span>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-amber-400 font-bold">{t('Govt Fee (₹)', 'सरकारी शुल्क (₹)')}</span>
+                          <input type="number" value={savedFillerDraft.govtFee || ''} onChange={(e) => updateSavedFillerDraft({ govtFee: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-indigo-400 font-bold">Category Icon</span>
+                          <select value={savedFillerDraft.icon || '📝'} onChange={(e) => updateSavedFillerDraft({ icon: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white">
+                            <option value="🎓">🎓 Scholarship &amp; College</option>
+                            <option value="📋">📋 Sarkari Job &amp; SSC</option>
+                            <option value="🩺">🩺 Medical &amp; NEET</option>
+                            <option value="⚡">⚡ Engineering &amp; JEE</option>
+                            <option value="👮">👮 Police &amp; Defence</option>
+                            <option value="📝">📝 General Exam / Form</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-purple-400 font-bold">Service Scope (kahan bhejna hai)</span>
+                          <select value={savedFillerDraft.scope || 'online_form'} onChange={(e) => updateSavedFillerDraft({ scope: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white">
+                            <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
+                            <option value="national">{t('National scope', 'राष्ट्रीय स्तर')}</option>
+                            <option value="district">{t('District scope', 'ज़िला स्तर')}</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2 space-y-1">
+                          <span className="text-[10px] text-cyan-400 font-bold">Service State / UT</span>
+                          <StateSelect value={savedFillerDraft.state || ''} onChange={(next) => updateSavedFillerDraft({ state: next })} options={INDIAN_STATES} emptyLabel={t('All India', 'पूरे भारत')} ariaLabel="Service State / UT" className="w-full bg-slate-900 border border-slate-800 rounded px-2 pr-8 py-1 text-xs text-white" />
+                        </div>
+                        <div className="sm:col-span-2 space-y-1">
+                          <span className="text-[10px] text-slate-400 font-bold">{t('Required Documents / Description', 'ज़रूरी दस्तावेज़ / विवरण')}</span>
+                          <textarea rows={2} value={savedFillerDraft.requirements || ''} onChange={(e) => updateSavedFillerDraft({ requirements: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <GovtFeeCategoryFields value={savedFillerDraft.govtFeeByCategory} onChange={(next) => updateSavedFillerDraft({ govtFeeByCategory: next })} t={t} accent="emerald" fallbackFee={savedFillerDraft.govtFee} />
+                      <p className="text-[10px] text-emerald-300 font-bold">
+                        {t('Total (auto) = Service Fee + Govt Fee', 'कुल (स्वतः) = सेवा शुल्क + सरकारी शुल्क')}: ₹{(Number(savedFillerDraft.price) || 0) + (Number(savedFillerDraft.govtFee) || 0)}
+                      </p>
+                      <div className="flex gap-2 pt-1">
+                        <button type="button" onClick={saveSavedFiller} className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold">{t('Save', 'सहेजें')}</button>
+                        <button type="button" onClick={cancelSavedFillerEdit} className="flex-1 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold">{t('Cancel', 'रद्द करें')}</button>
+                      </div>
+                    </div>
+                  )}
+                  {fillerServices.map((srv) => editingSavedFiller === String(srv.id) && savedFillerDraft ? (
+                    <div key={srv.id} data-enter-group onKeyDown={focusNextOnEnter} className="p-4 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2 md:col-span-2 lg:col-span-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="sm:col-span-2 space-y-1">
+                          <span className="text-[10px] text-amber-300 font-bold">Form / Service Name</span>
+                          <input type="text" value={savedFillerDraft.docName || ''} onChange={(e) => updateSavedFillerDraft({ docName: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-emerald-400 font-bold">{t('Service Fee (₹)', 'सेवा शुल्क (₹)')}</span>
+                          <input type="number" value={savedFillerDraft.price || ''} onChange={(e) => updateSavedFillerDraft({ price: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-amber-400 font-bold">{t('Govt Fee (₹)', 'सरकारी शुल्क (₹)')}</span>
+                          <input type="number" value={savedFillerDraft.govtFee || ''} onChange={(e) => updateSavedFillerDraft({ govtFee: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-indigo-400 font-bold">Category Icon</span>
+                          <select value={savedFillerDraft.icon || '📝'} onChange={(e) => updateSavedFillerDraft({ icon: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white">
+                            <option value="🎓">🎓 Scholarship &amp; College</option>
+                            <option value="📋">📋 Sarkari Job &amp; SSC</option>
+                            <option value="🩺">🩺 Medical &amp; NEET</option>
+                            <option value="⚡">⚡ Engineering &amp; JEE</option>
+                            <option value="👮">👮 Police &amp; Defence</option>
+                            <option value="📝">📝 General Exam / Form</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-purple-400 font-bold">Service Scope (kahan bhejna hai)</span>
+                          <select value={savedFillerDraft.scope || 'online_form'} onChange={(e) => updateSavedFillerDraft({ scope: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white">
+                            <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
+                            <option value="national">{t('National scope', 'राष्ट्रीय स्तर')}</option>
+                            <option value="district">{t('District scope', 'ज़िला स्तर')}</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2 space-y-1">
+                          <span className="text-[10px] text-cyan-400 font-bold">Service State / UT</span>
+                          <StateSelect value={savedFillerDraft.state || ''} onChange={(next) => updateSavedFillerDraft({ state: next })} options={INDIAN_STATES} emptyLabel={t('All India', 'पूरे भारत')} ariaLabel="Service State / UT" className="w-full bg-slate-900 border border-slate-800 rounded px-2 pr-8 py-1 text-xs text-white" />
+                        </div>
+                        <div className="sm:col-span-2 space-y-1">
+                          <span className="text-[10px] text-slate-400 font-bold">{t('Required Documents / Description', 'ज़रूरी दस्तावेज़ / विवरण')}</span>
+                          <textarea rows={2} value={savedFillerDraft.requirements || ''} onChange={(e) => updateSavedFillerDraft({ requirements: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                        </div>
+                      </div>
+                      <GovtFeeCategoryFields value={savedFillerDraft.govtFeeByCategory} onChange={(next) => updateSavedFillerDraft({ govtFeeByCategory: next })} t={t} accent="amber" fallbackFee={savedFillerDraft.govtFee} />
+                      <p className="text-[10px] text-emerald-300 font-bold">
+                        {t('Total (auto) = Service Fee + Govt Fee', 'कुल (स्वतः) = सेवा शुल्क + सरकारी शुल्क')}: ₹{(Number(savedFillerDraft.price) || 0) + (Number(savedFillerDraft.govtFee) || 0)}
+                      </p>
+                      <div className="flex gap-2 pt-1">
+                        <button type="button" onClick={saveSavedFiller} className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold">{t('Save', 'सहेजें')}</button>
+                        <button type="button" onClick={cancelSavedFillerEdit} className="flex-1 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold">{t('Cancel', 'रद्द करें')}</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={srv.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FormCard3DIcon icon={srv.icon} size="md" />
+                          <div className="min-w-0">
+                            <h5 className="text-xs sm:text-sm font-bold text-white line-clamp-2">{srv.docName}</h5>
+                            <span className="text-[11px] text-emerald-400 font-medium">By: {srv.expertName}</span>
+                          </div>
+                        </div>
+                        <span className="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold font-mono">
+                          ₹{Number(srv.price) + Number(srv.govtFee || 0)}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-300 line-clamp-2">
+                        <b className="text-slate-400">Required Documents:</b> {srv.requirements}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+                        <span className="text-amber-300">Govt ₹{srv.govtFee || 0}</span>
+                        <span className="text-emerald-300">Service ₹{srv.price}</span>
+                        <span className="text-cyan-300">{srv.state || 'All India'}</span>
+                        <span className="text-violet-300">
+                          {srv.scope === 'national' ? 'National' : srv.scope === 'district' ? 'District' : 'Online Form'}
+                        </span>
+                      </div>
+                      <div className="flex gap-2 pt-2 border-t border-slate-800/80">
+                        <button
+                          type="button"
+                          onClick={() => startEditSavedFiller(srv)}
+                          className="flex-1 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 text-[11px] font-bold transition-all"
+                        >
+                          {t('Edit', 'संपादित करें')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFillerForm(srv.id)}
+                          disabled={Boolean(deletingServiceId)}
+                          className="flex-1 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-[11px] font-bold transition-all disabled:opacity-60 flex items-center justify-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          {deletingServiceId === srv.id ? t('Deleting…', 'हटाया जा रहा…') : t('Delete', 'हटाएँ')}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           ) : (
@@ -13069,7 +13273,7 @@ export default function App() {
             )}
 
             {/* Form Inputs Grid */}
-            <form id="filler-form-editor" onSubmit={handlePublishFillerForm} className="space-y-4">
+            <form id="filler-form-editor" data-enter-group onKeyDown={focusNextOnEnter} onSubmit={handlePublishFillerForm} className="space-y-4">
               {editingFillerServiceId && (
                 <div className="flex flex-col gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200 sm:flex-row sm:items-center sm:justify-between">
                   <span className="font-bold">✏️ Edit mode: published form update ho raha hai. Govt fee change karke Save karo.</span>
@@ -13217,78 +13421,6 @@ export default function App() {
               </div>
             </form>
 
-            {/* List of Published Forms */}
-            <div className="space-y-3 pt-6 border-t border-slate-800">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-emerald-400" />
-                  <span>Currently Published Forms ({fillerServices.length})</span>
-                </h4>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {(showAllFillerForms ? fillerServices : fillerServices.slice(0, 3)).map((srv) => (
-                  <div key={srv.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5 relative group">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <FormCard3DIcon icon={srv.icon} size="md" />
-                        <div>
-                          <h5 className="text-xs sm:text-sm font-bold text-white line-clamp-1">{srv.docName}</h5>
-                          <span className="text-[11px] text-emerald-400 font-medium">By: {srv.expertName}</span>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold font-mono">
-                        ₹{Number(srv.price) + Number(srv.govtFee || 0)}
-                      </span>
-                    </div>
-
-                    <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-300 line-clamp-2">
-                      <b className="text-slate-400">Required Documents:</b> {srv.requirements}
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] font-bold">
-                      <span className="text-amber-300">Govt ₹{srv.govtFee || 0}</span>
-                      <span className="text-emerald-300">Service ₹{srv.price}</span>
-                      <span className="text-cyan-300">{srv.state || 'All India'}</span>
-                    </div>
-
-                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/80 text-[11px]">
-                      {!!srv.ownerEmail && srv.ownerEmail.toLowerCase() === fillerEmail.toLowerCase() && (
-                        <button
-                          type="button"
-                          onClick={() => handleEditFillerForm(srv)}
-                          className="text-sky-400 hover:text-sky-300 flex items-center gap-1 text-[11px] font-bold p-1 rounded hover:bg-sky-500/10 cursor-pointer"
-                          title="Edit form and government fee"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Edit</span>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFillerForm(srv.id)}
-                        disabled={Boolean(deletingServiceId)}
-                        className="text-rose-400 hover:text-rose-300 flex items-center gap-1 text-[11px] font-bold p-1 rounded hover:bg-rose-500/10 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                        title="Remove form"
-                      >
-                        {deletingServiceId === srv.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                        <span>{deletingServiceId === srv.id ? 'Deleting…' : 'Delete'}</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {fillerServices.length > 3 && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllFillerForms(prev => !prev)}
-                  className="w-full mt-3 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-violet-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-slate-700"
-                >
-                  {showAllFillerForms ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  <span>{showAllFillerForms ? t('Show Less', 'कम दिखाएँ') : `${t('Show All', 'सभी दिखाएँ')} (${fillerServices.length})`}</span>
-                </button>
-              )}
-            </div>
           </div>
 
           {/* Form Requests Feed */}
