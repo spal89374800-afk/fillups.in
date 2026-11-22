@@ -18,6 +18,7 @@ import { getCaptchaToken } from './services/turnstile';
 import { API_FALLBACK_ORIGIN, fetchWithRetry, isApiRequestUrl, parseJsonResponse, shouldFallbackToApiOrigin } from './services/apiClient';
 import type { BlinkEngine } from './services/blinkLiveness';
 import { PORTAL_VIDEOS } from './portalVideos';
+import { getViewerKey, rotateSlice } from './services/operatorRotation';
 
 const AdminSecurityPanel = lazy(() =>
   import('./components/AdminSecurityPanel').then(module => ({ default: module.AdminSecurityPanel }))
@@ -787,6 +788,7 @@ export default function App() {
   const [clientState, setClientState] = useState('');
   const [clientDistrictFilter, setClientDistrictFilter] = useState('');
   const [clientCityFilter, setClientCityFilter] = useState('');
+  const [showAllJanSeva, setShowAllJanSeva] = useState(false);
   const [clientOrderSuccessMsg, setClientOrderSuccessMsg] = useState('');
   const [clientPortalTab, setClientPortalTab] = useState<'home' | 'notifications' | 'services' | 'orders' | 'custom_form' | 'form_filling' | 'jan_seva_docs'>('home');
   const clientPortalTopRef = useRef<HTMLElement | null>(null);
@@ -4346,11 +4348,21 @@ export default function App() {
   }, [visibleFillerServices, registeredVles, clientState]);
 
   // Dedicated 100% Pure Jan Seva Kendra / CSC VLE Operators List (for Jan Seva Kendra Document Center)
+  // District + city priority above is untouched; only the shown window rotates
+  // weekly so every local operator gets a fair turn.
+  const allLocalJanSevas = useMemo(
+    () => matchedVles.filter(v => v.role !== 'filler'),
+    [matchedVles]
+  );
   const janSevaOnlyOperators = useMemo(() => {
-    // Exclusively operators who are Jan Seva Kendra / CSC VLEs (role !== 'filler')
-    const localJanSevas = matchedVles.filter(v => v.role !== 'filler');
-    return localJanSevas.slice(0, 30);
-  }, [matchedVles]);
+    if (showAllJanSeva) return allLocalJanSevas.slice(0, 50);
+    return rotateSlice(
+      allLocalJanSevas,
+      5,
+      getViewerKey(),
+      `janseva:${clientDistrictFilter || 'all'}`
+    );
+  }, [allLocalJanSevas, clientDistrictFilter, showAllJanSeva]);
 
   // Home page ke "Login" buttons: agar user ek baar login kar chuka hai to
   // seedha uske saved dashboard par bhejo. Login page sirf tab khule jab
@@ -10972,9 +10984,15 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-amber-400 uppercase tracking-widest flex items-center gap-2">
                     <Users className="w-4 h-4" />
-                    <span>Recommended Jan Seva Kendra Operators Near You ({janSevaOnlyOperators.length})</span>
+                    <span>Recommended Jan Seva Kendra Operators Near You ({allLocalJanSevas.length})</span>
                   </h4>
-                  <span className="text-[10px] text-slate-500 font-mono">Showing Jan Seva Kendras in {clientDistrictFilter || 'your district'}; city matches appear first</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllJanSeva(value => !value)}
+                    className="text-[10px] font-bold text-amber-300 hover:text-amber-200 underline underline-offset-2 cursor-pointer"
+                  >
+                    {showAllJanSeva ? '← Show featured 5' : `Sab ${allLocalJanSevas.length} operators dekhein →`}
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

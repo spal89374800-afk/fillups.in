@@ -461,9 +461,10 @@ function assembleServices(entries: Map<string, CatalogEntry>): PublicService[] {
       serviceFeeMax: serviceFees.length ? Math.max(...serviceFees) : 0
     };
     const scope = pickScope(entry, name);
+    // Return every operator for this service. The front end shows a fair
+    // rotating window; capping here would permanently hide later operators.
     const operators = Array.from(entry.operators.values())
-      .sort((a, b) => b.complianceScore - a.complianceScore)
-      .slice(0, 30);
+      .sort((a, b) => b.complianceScore - a.complianceScore);
 
     services.push({
       slug,

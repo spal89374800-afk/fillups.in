@@ -11,6 +11,7 @@ import {
   Users
 } from 'lucide-react';
 import { fetchPublicService, PublicService } from '../services/publicCatalogApi';
+import { getViewerKey, rotateSlice } from '../services/operatorRotation';
 import { applyUrlLanguage, fromUrlLanguage, storeLanguage } from '../language';
 
 type Lang = 'en' | 'hi';
@@ -34,6 +35,7 @@ export function PublicServicePage({ slug, lang, initialService }: PublicServiceP
   const [service, setService] = useState<PublicService | null>(initialService || null);
   const [loading, setLoading] = useState(!initialService);
   const [error, setError] = useState('');
+  const [showAllOperators, setShowAllOperators] = useState(false);
 
   const t = (en: string, hi: string) => (lang === 'hi' ? hi : en);
 
@@ -70,6 +72,15 @@ export function PublicServicePage({ slug, lang, initialService }: PublicServiceP
     if (!service) return '/';
     return `/?service=${encodeURIComponent(service.slug)}&apply=1&name=${encodeURIComponent(service.name)}&scope=${encodeURIComponent(service.scope)}`;
   }, [service]);
+
+  // Fair weekly rotation: different citizens see different operators, and the
+  // window shifts forward every week. Incoming compliance-score order is kept
+  // inside the window. "View all" is always available.
+  const visibleOperators = useMemo(() => {
+    if (!service) return [];
+    if (showAllOperators) return service.operators;
+    return rotateSlice(service.operators, 5, getViewerKey(), `service:${service.slug}`);
+  }, [service, showAllOperators]);
 
   const handleApply = () => {
     storeLanguage(fromUrlLanguage(lang));
@@ -316,7 +327,7 @@ export function PublicServicePage({ slug, lang, initialService }: PublicServiceP
           </div>
           {service.operators.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {service.operators.slice(0, 6).map(operator => (
+              {visibleOperators.map(operator => (
                 <div key={`${operator.role}-${operator.id}-${operator.city}`} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -344,6 +355,17 @@ export function PublicServicePage({ slug, lang, initialService }: PublicServiceP
                 'इस सेवा के लिए ऑपरेटर की उपलब्धता लॉगिन के बाद पुष्टि की जाती है।'
               )}
             </p>
+          )}
+          {service.operators.length > 5 && (
+            <button
+              type="button"
+              onClick={() => setShowAllOperators(value => !value)}
+              className="text-xs font-bold text-amber-300 hover:text-amber-200 underline underline-offset-2 cursor-pointer"
+            >
+              {showAllOperators
+                ? t('← Show featured operators', '← फीचर्ड ऑपरेटर दिखाएँ')
+                : `Sab ${service.operators.length} operators dekhein →`}
+            </button>
           )}
           <button
             type="button"
