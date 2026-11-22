@@ -1,4 +1,4 @@
-name = "fillupo-seo-proxy"
+name = "fillupo-seo-v2"
 main = "worker/index.ts"
 compatibility_date = "2026-05-03"
 workers_dev = false
