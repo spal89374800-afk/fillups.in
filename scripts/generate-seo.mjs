@@ -54,6 +54,7 @@ async function loadServices() {
 }
 
 function page({ lang, title, description, canonical, enUrl, hiUrl, body, jsonLd }) {
+  const ogImage = `${SITE}/og-image.png`;
   return `${MARKER}\n<!doctype html>
 <html lang="${lang}">
 <head>
@@ -66,12 +67,24 @@ function page({ lang, title, description, canonical, enUrl, hiUrl, body, jsonLd 
 <link rel="alternate" hreflang="en-IN" href="${esc(enUrl)}" />
 <link rel="alternate" hreflang="hi-IN" href="${esc(hiUrl)}" />
 <link rel="alternate" hreflang="x-default" href="${esc(enUrl)}" />
+<link rel="icon" href="/favicon.ico" sizes="48x48" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="fillupo.in" />
 <meta property="og:title" content="${esc(title)}" />
 <meta property="og:description" content="${esc(description)}" />
 <meta property="og:url" content="${esc(canonical)}" />
-<meta name="twitter:card" content="summary" />
+<meta property="og:image" content="${ogImage}" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="${esc(title)}" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="${esc(title)}" />
+<meta name="twitter:description" content="${esc(description)}" />
+<meta name="twitter:image" content="${ogImage}" />
 <script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, '\\u003c')}</script>
 <style>body{font-family:system-ui,sans-serif;max-width:860px;margin:40px auto;padding:0 20px;color:#0f172a;line-height:1.6}a{color:#0d9488}</style>
 </head>
