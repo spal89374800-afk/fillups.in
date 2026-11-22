@@ -9543,6 +9543,11 @@ export default function App() {
                           <p className="text-xs text-slate-400 mb-1">
                             Priced by {item.operatorName || 'a certified Jan Seva Kendra'} ({item.operatorCity || item.operatorDistrict || 'across India'}).
                           </p>
+                          {item.requirements && (
+                            <p className="text-[10px] text-slate-400 line-clamp-2">
+                              <b className="text-slate-300">Required docs:</b> {item.requirements}
+                            </p>
+                          )}
                         </div>
 
                         <div className="space-y-2.5 pt-3 border-t border-slate-800/80">
@@ -11545,6 +11550,10 @@ export default function App() {
                             <input type="text" value={item.feeName || ''} onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, feeName: e.target.value } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                          </div>
                          <div className="space-y-1 col-span-2">
+                            <span className="text-[10px] text-slate-400 font-bold">{t('Required Documents / Description (ise banane ke liye kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (इसे बनाने के लिए क्या क्या लगेगा)')}</span>
+                            <input type="text" value={item.requirements || ''} onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, requirements: e.target.value } : p))} placeholder={t('e.g. Aadhaar Card, Photo, Signature', 'जैसे आधार कार्ड, फ़ोटो, हस्ताक्षर')} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
+                         </div>
+                         <div className="space-y-1 col-span-2">
                             <span className="text-[10px] text-emerald-400 font-bold">Total Final Price (₹)</span>
                             <input type="number" value={item.price || ''} onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, price: e.target.value } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white" />
                          </div>
@@ -11553,7 +11562,7 @@ export default function App() {
                             <select value={item.scope || 'district'} onChange={(e) => setCustomPricingList(prev => prev.map(p => p.id === item.id ? { ...p, scope: e.target.value as any } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white">
                               <option value="district">District — only my district Jan Seva</option>
                               <option value="national">National — all India Jan Seva</option>
-                              <option value="online_form">Default</option>
+                              <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
                             </select>
                          </div>
                          <div className="col-span-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] text-emerald-200">
@@ -11589,10 +11598,11 @@ export default function App() {
                     <input type="text" placeholder={t('Fee Detail (optional — citizen ko dikhega)', 'Fee Detail (वैकल्पिक — नागरिक को दिखेगा)')} value={newDocFeeName} onChange={(e) => setNewDocFeeName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
                     <input type="number" placeholder="Govt Fee" value={newDocGovtFee} onChange={(e) => setNewDocGovtFee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
                     <input type="number" placeholder="Service Fee (CSC)" value={newDocCscFee} onChange={(e) => setNewDocCscFee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
+                    <input type="text" placeholder={t('Required Documents / Description (kya kya lagega)', 'ज़रूरी दस्तावेज़ / विवरण (क्या क्या लगेगा)')} value={newDocRequirements} onChange={(e) => setNewDocRequirements(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white sm:col-span-3" />
                     <select value={newDocScope} onChange={(e) => setNewDocScope(e.target.value as any)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white">
                       <option value="district">District scope</option>
                       <option value="national">National scope</option>
-                      <option value="online_form">Default</option>
+                      <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
                     </select>
                     <StateSelect
                       value={newDocState}
@@ -11734,7 +11744,7 @@ export default function App() {
                         <select value={item.scope || 'online_form'} onChange={(e) => setVleFormFillingList(prev => prev.map(p => p.id === item.id ? { ...p, scope: e.target.value as any } : p))} className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white">
                           <option value="district">District — only my district Jan Seva</option>
                           <option value="national">National — all India Jan Seva</option>
-                          <option value="online_form">Default</option>
+                          <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
                         </select>
                       </div>
                       <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] text-emerald-200">
@@ -11781,7 +11791,7 @@ export default function App() {
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 pr-9 py-2 text-xs text-white outline-none"
                     />
                     <select value={newFormScope} onChange={(e) => setNewFormScope(e.target.value as any)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none">
-                      <option value="online_form">Default</option>
+                      <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
                       <option value="national">National — all India Jan Seva</option>
                       <option value="district">District — only my district</option>
                     </select>
@@ -11894,6 +11904,11 @@ export default function App() {
                             </span>
                           </div>
                           {item.feeName && <p className="text-[10px] text-slate-400 truncate">{item.feeName}</p>}
+                          {item.requirements && (
+                            <p className="text-[10px] text-slate-400 line-clamp-2">
+                              <b className="text-slate-300">Docs:</b> {item.requirements}
+                            </p>
+                          )}
                           <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
                             <span className="text-amber-300">Govt ₹{item.govtFee || 0}</span>
                             <span className="text-emerald-300">CSC ₹{item.cscFee || 0}</span>
@@ -12953,7 +12968,7 @@ export default function App() {
                     onChange={(e) => setNewFillerFormScope(e.target.value as 'district' | 'national' | 'online_form')}
                     className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
-                    <option value="online_form">Default</option>
+                    <option value="online_form">{t('Online Form', 'ऑनलाइन फॉर्म')}</option>
                     <option value="national">National scope</option>
                     <option value="district">District scope</option>
                   </select>
