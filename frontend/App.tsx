@@ -5872,7 +5872,8 @@ export default function App() {
       setPricingJustUpdated(true);
       setVleNotificationMsg(`✅ दस्तावेज़ शुल्क सफलतापूर्वक सहेज लिया गया है और ग्राहक पोर्टल पर लाइव अपडेट हो गया है!`);
       showSaveToast('✅ Pricing saved successfully!');
-      // Stay on VLE dashboard safely without switching step to prevent black screen
+      // Save ke baad seedha "All Saved Forms Here" me le jate hain.
+      setVleDashboardTab('all_saved');
     } catch (err) {
       console.warn('Error saving pricing:', err);
       setVleNotificationMsg('⚠️ शुल्क सहेजते समय त्रुटि हुई। कृपया पुनः प्रयास करें।');
@@ -5905,6 +5906,19 @@ export default function App() {
       setVleNotificationMsg('⚠️ शुल्क सहेजते समय त्रुटि हुई। कृपया पुनः प्रयास करें।');
     } finally {
       setIsSavingPricing(false);
+    }
+  };
+
+  const deleteSavedPricingItem = async (kind: 'document' | 'form', id: string) => {
+    if (editingSaved?.id === id) cancelEditSaved();
+    if (kind === 'document') {
+      const next = customPricingList.filter(item => item.id !== id);
+      setCustomPricingList(next);
+      await persistSavedPricing(next, vleFormFillingList, '✅ Document price deleted successfully!');
+    } else {
+      const next = vleFormFillingList.filter(item => item.id !== id);
+      setVleFormFillingList(next);
+      await persistSavedPricing(customPricingList, next, '✅ Form filling price deleted successfully!');
     }
   };
 
@@ -11925,6 +11939,7 @@ export default function App() {
                         setVleNotificationMsg('✅ Form Filling Prices saved successfully!');
                         showSaveToast('✅ Form prices saved successfully!');
                         void fetchAllData();
+                        setVleDashboardTab('all_saved');
                       } else {
                         setVleNotificationMsg(data.error || 'Could not save form prices. Please try again.');
                       }
@@ -12041,13 +12056,24 @@ export default function App() {
                               {item.scope === 'national' ? 'National' : item.scope === 'online_form' ? 'Online Form' : 'District'}
                             </span>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => startEditSaved('document', item)}
-                            className="w-full py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-bold transition-all"
-                          >
-                            {t('Edit', 'संपादित करें')}
-                          </button>
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => startEditSaved('document', item)}
+                              className="flex-1 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-bold transition-all"
+                            >
+                              {t('Edit', 'संपादित करें')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteSavedPricingItem('document', item.id)}
+                              disabled={isSavingPricing}
+                              className="flex-1 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-[11px] font-bold transition-all disabled:opacity-60 flex items-center justify-center gap-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              {t('Delete', 'हटाएँ')}
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -12137,13 +12163,24 @@ export default function App() {
                               <b className="text-slate-300">Docs:</b> {item.requirements}
                             </p>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => startEditSaved('form', item)}
-                            className="w-full py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold transition-all"
-                          >
-                            {t('Edit', 'संपादित करें')}
-                          </button>
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => startEditSaved('form', item)}
+                              className="flex-1 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold transition-all"
+                            >
+                              {t('Edit', 'संपादित करें')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteSavedPricingItem('form', item.id)}
+                              disabled={isSavingPricing}
+                              className="flex-1 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-[11px] font-bold transition-all disabled:opacity-60 flex items-center justify-center gap-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              {t('Delete', 'हटाएँ')}
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
