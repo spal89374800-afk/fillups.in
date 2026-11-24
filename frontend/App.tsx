@@ -6675,6 +6675,74 @@ export default function App() {
     );
   };
 
+  // Mission-style stat: real count / honest target + level badge + progress bar.
+  // The "+" is only shown once the real count reaches the target — never a fake floor.
+  const missionProgress = (
+    value: number,
+    target: number,
+    accent: 'cyan' | 'emerald' | 'amber',
+    levelsEn: [string, string, string, string],
+    levelsHi: [string, string, string, string]
+  ) => {
+    const ready = platformStatsState === 'ready';
+    const numeric = ready && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+    const shownValue = ready ? (numeric >= target ? `${target}+` : String(numeric)) : statValue(value);
+    const pct = ready ? Math.min(100, Math.round((numeric / target) * 100)) : 0;
+    const levelIndex = !ready
+      ? 0
+      : numeric >= target ? 3 : numeric >= target / 2 ? 2 : numeric >= target / 5 ? 1 : 0;
+    const names = lang === 'HI' ? levelsHi : levelsEn;
+    const barGradient = {
+      cyan: 'from-cyan-400 via-sky-400 to-blue-500',
+      emerald: 'from-emerald-400 via-teal-400 to-green-500',
+      amber: 'from-amber-300 via-orange-400 to-orange-500'
+    }[accent];
+    const chipClass = {
+      cyan: 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200',
+      emerald: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200',
+      amber: 'border-amber-400/40 bg-amber-500/10 text-amber-200'
+    }[accent];
+
+    return (
+      <div className="space-y-2">
+        <div className="flex items-end justify-between gap-2">
+          <div className={`text-2xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-slate-100 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] ${accent === 'cyan' ? 'group-hover:to-cyan-200' : accent === 'emerald' ? 'group-hover:to-emerald-200' : 'group-hover:to-amber-200'} transition-colors`}>
+            {shownValue}
+            <span className="ml-1 text-sm font-bold text-zinc-400">/ {target}+</span>
+          </div>
+          <div className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold ${chipClass}`}>
+            🏅 {names[levelIndex]}
+          </div>
+        </div>
+        <p className="text-[11px] font-bold text-slate-200 drop-shadow-sm">
+          {target} {t('Mission', 'मिशन')} • {pct}% {t('complete', 'पूर्ण')}
+        </p>
+        <div className="h-2 w-full overflow-hidden rounded-full border border-white/10 bg-white/10">
+          <div
+            className={`h-full rounded-full bg-gradient-to-r ${barGradient} shadow-[0_0_10px_rgba(255,255,255,0.25)] transition-[width] duration-700`}
+            style={{ width: `${pct}%` }}
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          />
+        </div>
+        <div className="flex justify-between text-[8px] font-semibold text-zinc-500">
+          <span>0</span>
+          <span>{Math.round(target / 2)}</span>
+          <span>{target}+</span>
+        </div>
+        <p className="text-[10px] leading-relaxed text-zinc-400">
+          {!ready
+            ? t('Live mission progress…', 'लाइव मिशन प्रोग्रेस…')
+            : numeric >= target
+              ? t('🎉 Mission complete — thank you!', '🎉 मिशन पूरा — धन्यवाद!')
+              : `${t('Next', 'अगला')}: ${names[Math.min(levelIndex + 1, 3)]} • ${target - numeric} ${t('more to go', 'और चाहिए')}`}
+        </p>
+      </div>
+    );
+  };
+
   return (
     <LocalizedTree language={lang}>
     <div className={`min-h-screen flex flex-col font-['Inter',sans-serif] w-full max-w-full box-border transition-colors duration-200 ${
@@ -7043,15 +7111,23 @@ export default function App() {
                 </div>
 
                 <div className="relative z-10">
-                  <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-cyan-50 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] group-hover:from-white group-hover:to-cyan-200 transition-colors">
-                    {statValue(platformStats.activeUsers)}
+                  <p className="text-xs font-bold text-slate-200 drop-shadow-sm">
+                    {t('50 Citizens Mission', '50 नागरिक मिशन')}
+                  </p>
+                  {missionProgress(
+                    platformStats.activeUsers,
+                    50,
+                    'cyan',
+                    ['Starter', 'Growing', 'Trusted', '50+ Club'],
+                    ['शुरुआत', 'बढ़ता', 'विश्वसनीय', '50+ क्लब']
+                  )}
+                  <div className="mt-2 flex items-center gap-1.5 text-[9px] font-semibold text-cyan-300/90">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-70" />
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                    </span>
+                    <span>{t('LIVE • auto-updates every 15 sec', 'LIVE • हर 15 सेकंड में अपडेट')}</span>
                   </div>
-                  <p className="text-xs font-bold text-slate-200 mt-1 drop-shadow-sm">
-                    {t('Active Citizens & Users', 'सक्रिय नागरिक एवं उपभोक्ता')}
-                  </p>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    {t('Applying online from home', 'घर बैठे ऑनलाइन आवेदन')}
-                  </p>
                 </div>
 
 
@@ -7103,15 +7179,16 @@ export default function App() {
                 </div>
 
                 <div className="relative z-10">
-                  <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-emerald-50 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] group-hover:from-white group-hover:to-emerald-200 transition-colors">
-                    {statValue(platformStats.totalTrustedFormsFilled, 25)}
-                  </div>
-                  <p className="text-xs font-bold text-slate-200 mt-1 drop-shadow-sm">
-                    {t('Successfully Submitted Forms', 'सफलतापूर्वक पूर्ण सेवाएं')}
+                  <p className="text-xs font-bold text-slate-200 drop-shadow-sm">
+                    {t('25 Forms Submitted Goal', '25 फॉर्म लक्ष्य')}
                   </p>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    {t('Govt receipts generated', 'सरकारी रसीद व प्रमाण पत्र जारी')}
-                  </p>
+                  {missionProgress(
+                    platformStats.totalTrustedFormsFilled,
+                    25,
+                    'emerald',
+                    ['First', 'Regular', 'Trusted', '25+ Milestone'],
+                    ['पहला', 'नियमित', 'विश्वसनीय', '25+ उपलब्धि']
+                  )}
                 </div>
 
 
@@ -7164,15 +7241,16 @@ export default function App() {
                 </div>
 
                 <div className="relative z-10">
-                  <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-amber-50 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] group-hover:from-white group-hover:to-amber-200 transition-colors">
-                    {statValue(platformStats.activeVles)}
-                  </div>
-                  <p className="text-xs font-bold text-slate-200 mt-1 drop-shadow-sm">
-                    {t('Active Jan Seva Kendras', 'सक्रिय जन सेवा केंद्र')}
+                  <p className="text-xs font-bold text-slate-200 drop-shadow-sm">
+                    {t('45 Jan Seva Kendras Goal', '45 जन सेवा केंद्र लक्ष्य')}
                   </p>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    {t('CSC VLEs & Cyber Cafes', 'सीएससी वीएलई व अधिकृत केंद्र')}
-                  </p>
+                  {missionProgress(
+                    platformStats.activeVles,
+                    45,
+                    'amber',
+                    ['New', 'Active', 'Verified', '45+ Network'],
+                    ['नया', 'सक्रिय', 'सत्यापित', '45+ नेटवर्क']
+                  )}
                 </div>
 
 
