@@ -9,6 +9,6 @@
  */
 export const PORTAL_VIDEOS = {
   citizen: '',
-  janSeva: '',
+  janSeva: 'https://youtu.be/PEUSAqAzJ8g',
   formExpert: ''
 } as const;
