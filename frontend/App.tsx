@@ -6680,7 +6680,7 @@ export default function App() {
   const missionProgress = (
     value: number,
     target: number,
-    accent: 'cyan' | 'emerald' | 'amber',
+    accent: 'cyan' | 'emerald' | 'amber' | 'purple',
     levelsEn: [string, string, string, string],
     levelsHi: [string, string, string, string]
   ) => {
@@ -6695,18 +6695,20 @@ export default function App() {
     const barGradient = {
       cyan: 'from-cyan-400 via-sky-400 to-blue-500',
       emerald: 'from-emerald-400 via-teal-400 to-green-500',
-      amber: 'from-amber-300 via-orange-400 to-orange-500'
+      amber: 'from-amber-300 via-orange-400 to-orange-500',
+      purple: 'from-purple-400 via-fuchsia-400 to-violet-500'
     }[accent];
     const chipClass = {
       cyan: 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200',
       emerald: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200',
-      amber: 'border-amber-400/40 bg-amber-500/10 text-amber-200'
+      amber: 'border-amber-400/40 bg-amber-500/10 text-amber-200',
+      purple: 'border-purple-400/40 bg-purple-500/10 text-purple-200'
     }[accent];
 
     return (
       <div className="space-y-2">
         <div className="flex items-end justify-between gap-2">
-          <div className={`text-2xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-slate-100 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] ${accent === 'cyan' ? 'group-hover:to-cyan-200' : accent === 'emerald' ? 'group-hover:to-emerald-200' : 'group-hover:to-amber-200'} transition-colors`}>
+          <div className={`text-2xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-slate-100 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] ${accent === 'cyan' ? 'group-hover:to-cyan-200' : accent === 'emerald' ? 'group-hover:to-emerald-200' : accent === 'amber' ? 'group-hover:to-amber-200' : 'group-hover:to-purple-200'} transition-colors`}>
             {shownValue}
             <span className="ml-1 text-sm font-bold text-zinc-400">/ {target}+</span>
           </div>
@@ -7301,15 +7303,16 @@ export default function App() {
                 </div>
 
                 <div className="relative z-10">
-                  <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-purple-50 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] group-hover:from-white group-hover:to-purple-200 transition-colors">
-                    {statValue(platformStats.activeOperators)}
-                  </div>
-                  <p className="text-xs font-bold text-slate-200 mt-1 drop-shadow-sm">
-                    {t('Connected Members', 'सत्यापित ऑपरेटर सदस्य')}
+                  <p className="text-xs font-bold text-slate-200 drop-shadow-sm">
+                    {t('100 Connected Members Mission', '100 सदस्य मिशन')}
                   </p>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    {t('Operators & Form Fillers', 'ऑपरेटर एवं फॉर्म विशेषज्ञ')}
-                  </p>
+                  {missionProgress(
+                    platformStats.activeOperators,
+                    100,
+                    'purple',
+                    ['Starter', 'Building', 'Strong', '100+ Network'],
+                    ['शुरुआत', 'निर्माण', 'मजबूत', '100+ नेटवर्क']
+                  )}
                 </div>
 
 
