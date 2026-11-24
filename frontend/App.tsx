@@ -6651,8 +6651,12 @@ export default function App() {
   };
 
   // Live platform stats: show the real number only once loaded.
-  const statValue = (value: number) => {
-    if (platformStatsState === 'ready') return value;
+  // Optional threshold = honest floor label: "25+" when real count is >= 25,
+  // otherwise the real number (never a fake minimum).
+  const statValue = (value: number, threshold?: number) => {
+    if (platformStatsState === 'ready') {
+      return threshold !== undefined && value >= threshold ? `${threshold}+` : value;
+    }
     if (platformStatsState === 'unavailable') {
       return (
         <span
@@ -7100,7 +7104,7 @@ export default function App() {
 
                 <div className="relative z-10">
                   <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-emerald-50 to-slate-400 tracking-tight font-['Poppins'] drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] group-hover:from-white group-hover:to-emerald-200 transition-colors">
-                    {statValue(platformStats.totalTrustedFormsFilled)}
+                    {statValue(platformStats.totalTrustedFormsFilled, 25)}
                   </div>
                   <p className="text-xs font-bold text-slate-200 mt-1 drop-shadow-sm">
                     {t('Successfully Submitted Forms', 'सफलतापूर्वक पूर्ण सेवाएं')}
